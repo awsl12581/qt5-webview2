@@ -7,6 +7,8 @@
 
 namespace webview
 {
+class WkWebViewSession;
+
 class WkWebView final : public IWebView
 {
 public:
@@ -23,7 +25,10 @@ public:
     void sendMessage(const BridgeMessage& message, MessageCompletion completion) override;
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
+    void* nativeConfigurationForTesting() const;
+
 private:
+    friend class WkWebViewSession;
     WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy);
     void initialize(void* configuration, WebViewPolicyPtr policy);
 

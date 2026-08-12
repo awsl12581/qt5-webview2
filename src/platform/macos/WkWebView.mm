@@ -265,4 +265,9 @@ void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
         impl_->bridge.callbacks = std::move(callbacks);
     }
 }
+
+void* WkWebView::nativeConfigurationForTesting() const
+{
+    return impl_->view ? static_cast<void*>(impl_->view.configuration) : nullptr;
+}
 } // namespace webview

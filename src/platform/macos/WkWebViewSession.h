@@ -18,6 +18,8 @@ public:
     void clearCookies(ClearCompletion completion) override;
     void clearWebsiteData(ClearCompletion completion) override;
 
+    void* nativeConfigurationForTesting() const;
+
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
