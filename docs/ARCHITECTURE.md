@@ -43,6 +43,8 @@ The default policy permits HTTPS navigation. `app://` hosts and `file://` roots 
 
 Bridge authority belongs to the current committed main-frame origin. A trusted `app://` host or exact HTTPS origin must be configured. Subframes, untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
 
+On macOS, trusted pages send through `window.systemWebView.postMessage(message)`. The document-start transport attaches an unguessable token that native code rotates before each allowed main-frame navigation. The raw `window.webkit.messageHandlers.systemWebView` object is a backend detail: messages without the current token, including iframe calls and queued messages from an earlier same-origin document, are rejected.
+
 Messages use this envelope:
 
 ```json

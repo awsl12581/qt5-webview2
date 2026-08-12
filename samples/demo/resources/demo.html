@@ -14,7 +14,7 @@
 <button id="new-tab">Open a new tab</button>
 <script>
   document.querySelector('#send').onclick = () => {
-    window.webkit.messageHandlers.systemWebView.postMessage({
+    window.systemWebView.postMessage({
       version: 1,
       type: 'hello',
       payload: { message: 'Hello from WKWebView' }

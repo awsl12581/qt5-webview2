@@ -1,8 +1,11 @@
 #include "webview/IWebView.h"
 #include "webview/WebViewFactory.h"
+#include "platform/macos/WkWebView.h"
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
@@ -100,7 +103,7 @@ int main(int argc, char** argv)
 window.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('system-webview-message', event => {
     document.body.dataset.nativeMessage = event.detail.payload.message;
-    window.webkit.messageHandlers.systemWebView.postMessage({
+    window.systemWebView.postMessage({
       version: 1,
       type: 'hello',
       payload: {
@@ -109,7 +112,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-  window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'main'}});
+  window.systemWebView.postMessage({version:1,type:'hello',payload:{message:'main'}});
   window.open('https://trusted.example/popup');
 });
 </script>
@@ -162,6 +165,27 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(hostileReturned);
     assert(hostileReturnedPayload == hostilePayload);
     assert(!hostileExecuted);
+
+    const auto staleToken = static_cast<webview::WkWebView*>(view.get())->documentTokenForTesting();
+    const auto staleTokenJson = QString::fromUtf8(
+        QJsonDocument(QJsonArray { staleToken }).toJson(QJsonDocument::Compact));
+    const auto staleTokenLiteral = staleTokenJson.mid(1, staleTokenJson.size() - 2);
+    const QString replayHtml = QStringLiteral(R"HTML(
+<!doctype html><script>
+window.addEventListener('DOMContentLoaded', () => {
+  window.webkit.messageHandlers.systemWebView.postMessage({
+    documentToken: %1,
+    message: {version:1,type:'hello',payload:{message:'stale'}}
+  });
+});
+</script>)HTML")
+                                   .arg(staleTokenLiteral);
+    events.clear();
+    view->setHtml(replayHtml, QUrl(QStringLiteral("https://trusted.example/next.html")));
+    timeout.start(10000);
+    loop.exec();
+    assert(events.back().state == webview::LoadState::Finished);
+    assert(messageCount == 2);
 
     QTcpServer server;
     assert(server.listen(QHostAddress::LocalHost, 0));

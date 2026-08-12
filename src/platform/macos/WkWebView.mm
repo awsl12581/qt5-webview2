@@ -5,10 +5,12 @@
 #include "webview/DocumentLifetime.h"
 
 #include <QEvent>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QResizeEvent>
 #include <QString>
 #include <QTimer>
+#include <QUuid>
 #include <QWidget>
 
 #include <unordered_map>
@@ -103,6 +105,8 @@ struct NativeState {
     WebViewPolicyPtr policy;
     std::function<void*(void*, const NewWindowRequest&)> createWebView;
     QUrl committedUrl;
+    QString documentToken;
+    bool documentTransportPrepared = false;
     quint64 navigationId = 0;
     DocumentLifetime lifetime;
     std::unordered_map<void*, quint64> navigationIds;
@@ -120,6 +124,39 @@ struct NativeState {
         return found == navigationIds.end() ? navigationId : found->second;
     }
 };
+
+void installDocumentTransport(NativeState& state, WKUserContentController* content)
+{
+    state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto escapedToken = QString::fromUtf8(
+        QJsonDocument(QJsonArray { state.documentToken }).toJson(QJsonDocument::Compact));
+    const auto tokenLiteral = escapedToken.mid(1, escapedToken.size() - 2);
+    const auto source = QStringLiteral(R"JS((() => {
+  const documentToken = %1;
+  const nativeHandler = window.webkit.messageHandlers.systemWebView;
+  const transport = Object.freeze({
+    postMessage(message) {
+      nativeHandler.postMessage({ documentToken, message });
+    }
+  });
+  Object.defineProperty(window, 'systemWebView', {
+    value: transport,
+    configurable: false,
+    enumerable: true,
+    writable: false
+  });
+  window.__systemWebViewReceive = function(message) {
+    window.dispatchEvent(new CustomEvent('system-webview-message', { detail: message }));
+  };
+})();)JS")
+                            .arg(tokenLiteral);
+    [content removeAllUserScripts];
+    auto* script = [[WKUserScript alloc] initWithSource:toNSString(source)
+                                          injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+                                       forMainFrameOnly:YES];
+    [content addUserScript:script];
+    state.documentTransportPrepared = true;
+}
 
 class WkWebView::Impl
 {
@@ -160,8 +197,11 @@ public:
     if (!data || error) {
         return;
     }
-    QJsonObject object;
-    if (webview::parseMessage(QString::fromUtf8(static_cast<const char*>(data.bytes), data.length), &object)) {
+    QJsonObject wrapper;
+    if (webview::parseMessage(QString::fromUtf8(static_cast<const char*>(data.bytes), data.length), &wrapper)
+        && wrapper.value(QStringLiteral("documentToken")).toString() == self.state->documentToken
+        && wrapper.value(QStringLiteral("message")).isObject()) {
+        const auto object = wrapper.value(QStringLiteral("message")).toObject();
         webview::BridgeMessage bridgeMessage;
         bridgeMessage.version = object.value(QStringLiteral("version")).toInt(-1);
         bridgeMessage.type = object.value(QStringLiteral("type")).toString();
@@ -262,6 +302,13 @@ public:
         if (isMainFrame) {
             self.state->lifetime.invalidate();
             self.state->committedUrl = QUrl();
+            if (self.state->documentTransportPrepared) {
+                self.state->documentTransportPrepared = false;
+            } else {
+                webview::installDocumentTransport(
+                    *self.state, webView.configuration.userContentController);
+                self.state->documentTransportPrepared = false;
+            }
         }
         decisionHandler(WKNavigationActionPolicyAllow);
         return;
@@ -388,13 +435,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
     impl_->messageDelegate = [[SystemWebViewMessageDelegate alloc] init];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = impl_->state.get();
     [content addScriptMessageHandler:impl_->messageDelegate name:@(kBridgeName)];
-
-    NSString* scriptSource = @"window.__systemWebViewReceive = function(message) { window.dispatchEvent(new "
-                             @"CustomEvent('system-webview-message', { detail: message })); };";
-    auto* script = [[WKUserScript alloc] initWithSource:scriptSource
-                                          injectionTime:WKUserScriptInjectionTimeAtDocumentStart
-                                       forMainFrameOnly:YES];
-    [content addUserScript:script];
+    installDocumentTransport(*impl_->state, content);
 
     auto* nativeConfiguration = static_cast<WKWebViewConfiguration*>(configuration);
     if (!nativeConfiguration) {
@@ -450,6 +491,9 @@ void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
     if (impl_->state->policy->decideNavigation(request) != NavigationDecision::Allow) {
         return;
     }
+    impl_->state->lifetime.invalidate();
+    impl_->state->committedUrl = QUrl();
+    installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
     [impl_->view loadHTMLString:toNSString(html) baseURL:[NSURL URLWithString:toNSString(baseUrl.toString())]];
 }
 
@@ -463,6 +507,9 @@ void WkWebView::stop()
 void WkWebView::reload()
 {
     if (!impl_->state->lifetime.isClosed()) {
+        impl_->state->lifetime.invalidate();
+        impl_->state->committedUrl = QUrl();
+        installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
         [impl_->view reload];
     }
 }
@@ -475,6 +522,8 @@ void WkWebView::close()
     impl_->state->lifetime.close();
     impl_->state->callbacks = { };
     impl_->state->createWebView = { };
+    impl_->state->documentToken.clear();
+    impl_->state->documentTransportPrepared = false;
     impl_->state->navigationIds.clear();
     [impl_->view stopLoading];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = nullptr;
@@ -561,4 +610,6 @@ void* WkWebView::nativeConfigurationForTesting() const
 {
     return impl_->view ? static_cast<void*>(impl_->view.configuration) : nullptr;
 }
+
+QString WkWebView::documentTokenForTesting() const { return impl_->state->documentToken; }
 } // namespace webview

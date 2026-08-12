@@ -26,6 +26,7 @@ public:
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
     void* nativeConfigurationForTesting() const;
+    QString documentTokenForTesting() const;
 
 private:
     friend class WkWebViewSession;
