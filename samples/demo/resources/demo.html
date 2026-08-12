@@ -14,13 +14,17 @@
 <button id="new-tab">Open a new tab</button>
 <script>
   document.querySelector('#send').onclick = () => {
-    window.webkit.messageHandlers.systemWebView.postMessage({ type: 'hello', message: 'Hello from WKWebView' });
+    window.webkit.messageHandlers.systemWebView.postMessage({
+      version: 1,
+      type: 'hello',
+      payload: { message: 'Hello from WKWebView' }
+    });
   };
   document.querySelector('#new-tab').onclick = () => {
     window.open('https://example.com/', '_blank');
   };
   window.addEventListener('system-webview-message', event => {
-    document.querySelector('#status').textContent = event.detail.message;
+    document.querySelector('#status').textContent = event.detail.payload.message;
   });
 </script>
 </html>
