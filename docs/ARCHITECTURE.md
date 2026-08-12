@@ -39,6 +39,8 @@ Queued native callbacks see the closed state or a changed document token and can
 
 The default policy permits HTTPS navigation. `app://` hosts and `file://` roots require explicit allowlisting. Malformed URLs, `javascript:`, unknown schemes, popups, downloads, media capture, and other permissions are rejected by default. An `OpenExternally` decision cancels in-view navigation and invokes the host only when an external handler exists.
 
+`IWebViewSession::permissionSupport` and `downloadSupport` report whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, downloads require macOS 11.3, and file picking is supported. Location, notifications, and clipboard permission categories currently report `Unsupported` rather than being silently granted.
+
 Bridge authority belongs to the current committed main-frame origin. A trusted `app://` host or exact HTTPS origin must be configured. Subframes, untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
 
 Messages use this envelope:

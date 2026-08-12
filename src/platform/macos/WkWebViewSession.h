@@ -17,6 +17,8 @@ public:
     void clearCache(ClearCompletion completion) override;
     void clearCookies(ClearCompletion completion) override;
     void clearWebsiteData(ClearCompletion completion) override;
+    CapabilitySupport permissionSupport(PermissionKind kind) const override;
+    CapabilitySupport downloadSupport() const override;
 
     void* nativeConfigurationForTesting() const;
 

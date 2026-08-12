@@ -71,4 +71,31 @@ void WkWebViewSession::clearWebsiteData(ClearCompletion completion)
 {
     clearData(impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes], std::move(completion));
 }
+
+CapabilitySupport WkWebViewSession::permissionSupport(PermissionKind kind) const
+{
+    switch (kind) {
+    case PermissionKind::Camera:
+    case PermissionKind::Microphone:
+        if (@available(macOS 12.0, *)) {
+            return CapabilitySupport::Supported;
+        }
+        return CapabilitySupport::Unsupported;
+    case PermissionKind::FilePicker:
+        return CapabilitySupport::Supported;
+    case PermissionKind::Location:
+    case PermissionKind::Notifications:
+    case PermissionKind::Clipboard:
+        return CapabilitySupport::Unsupported;
+    }
+    return CapabilitySupport::Unsupported;
+}
+
+CapabilitySupport WkWebViewSession::downloadSupport() const
+{
+    if (@available(macOS 11.3, *)) {
+        return CapabilitySupport::Supported;
+    }
+    return CapabilitySupport::Unsupported;
+}
 } // namespace webview

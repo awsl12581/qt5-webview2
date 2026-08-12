@@ -40,6 +40,7 @@ enum class NewWindowDecision { Allow, Cancel };
 enum class PermissionDecision { Allow, Deny, Unsupported };
 enum class PermissionKind { Camera, Microphone, Location, Notifications, Clipboard, FilePicker };
 enum class DownloadDecision { Allow, Cancel };
+enum class CapabilitySupport { Supported, Unsupported };
 
 struct PermissionRequest {
     PermissionKind kind = PermissionKind::Camera;

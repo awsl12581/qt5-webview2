@@ -1,4 +1,5 @@
 #include "webview/DocumentLifetime.h"
+#include "platform/macos/WkPolicyMapping.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
 
@@ -79,4 +80,15 @@ int main()
     assert(lifetime.resultFor(secondDocument) == webview::MessageError::Closed);
     lifetime.close();
     assert(lifetime.resultFor(lifetime.token()) == webview::MessageError::Closed);
+
+    assert(webview::mapPermissionDecision(webview::PermissionDecision::Allow)
+        == webview::NativePermissionDecision::Grant);
+    assert(webview::mapPermissionDecision(webview::PermissionDecision::Deny)
+        == webview::NativePermissionDecision::Deny);
+    assert(webview::mapPermissionDecision(webview::PermissionDecision::Unsupported)
+        == webview::NativePermissionDecision::Deny);
+    assert(webview::mapDownloadDecision(webview::DownloadDecision::Allow)
+        == webview::NativeDownloadDecision::Download);
+    assert(webview::mapDownloadDecision(webview::DownloadDecision::Cancel)
+        == webview::NativeDownloadDecision::Cancel);
 }

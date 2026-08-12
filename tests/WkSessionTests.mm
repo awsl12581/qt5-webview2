@@ -50,6 +50,23 @@ int main(int argc, char** argv)
         static_cast<webview::WkWebViewSession*>(ephemeral.get())->nativeConfigurationForTesting());
     assert(!privateConfiguration.websiteDataStore.persistent);
     assert(privateConfiguration.websiteDataStore != [WKWebsiteDataStore defaultDataStore]);
+    assert(session->permissionSupport(webview::PermissionKind::FilePicker)
+        == webview::CapabilitySupport::Supported);
+    assert(session->permissionSupport(webview::PermissionKind::Location)
+        == webview::CapabilitySupport::Unsupported);
+    assert(session->permissionSupport(webview::PermissionKind::Notifications)
+        == webview::CapabilitySupport::Unsupported);
+    assert(session->permissionSupport(webview::PermissionKind::Clipboard)
+        == webview::CapabilitySupport::Unsupported);
+    if (@available(macOS 12.0, *)) {
+        assert(session->permissionSupport(webview::PermissionKind::Camera)
+            == webview::CapabilitySupport::Supported);
+        assert(session->permissionSupport(webview::PermissionKind::Microphone)
+            == webview::CapabilitySupport::Supported);
+    }
+    if (@available(macOS 11.3, *)) {
+        assert(session->downloadSupport() == webview::CapabilitySupport::Supported);
+    }
 
     assert(waitForClear([&](auto completion) { session->clearCache(std::move(completion)); }));
     assert(waitForClear([&](auto completion) { session->clearCookies(std::move(completion)); }));

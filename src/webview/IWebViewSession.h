@@ -19,6 +19,8 @@ public:
     virtual void clearCache(ClearCompletion completion = { }) = 0;
     virtual void clearCookies(ClearCompletion completion = { }) = 0;
     virtual void clearWebsiteData(ClearCompletion completion = { }) = 0;
+    virtual CapabilitySupport permissionSupport(PermissionKind kind) const = 0;
+    virtual CapabilitySupport downloadSupport() const = 0;
 };
 
 using WebViewSessionPtr = std::unique_ptr<IWebViewSession>;

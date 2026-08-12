@@ -1,4 +1,5 @@
 #include "platform/macos/WkWebView.h"
+#include "platform/macos/WkPolicyMapping.h"
 
 #include "webview/JsonMessage.h"
 #include "webview/DocumentLifetime.h"
@@ -36,6 +37,24 @@ id foundationObject(const QJsonObject& object)
     const auto json = QJsonDocument(object).toJson(QJsonDocument::Compact);
     NSData* data = [NSData dataWithBytes:json.constData() length:json.size()];
     return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+}
+
+webview::PermissionKind permissionKind(WKMediaCaptureType type)
+{
+    return type == WKMediaCaptureTypeMicrophone ? webview::PermissionKind::Microphone
+                                                 : webview::PermissionKind::Camera;
+}
+
+WKPermissionDecision nativePermission(webview::PermissionDecision decision)
+{
+    switch (webview::mapPermissionDecision(decision)) {
+    case webview::NativePermissionDecision::Grant:
+        return WKPermissionDecisionGrant;
+    case webview::NativePermissionDecision::Prompt:
+        return WKPermissionDecisionPrompt;
+    case webview::NativePermissionDecision::Deny:
+        return WKPermissionDecisionDeny;
+    }
 }
 
 class NativeViewHost final : public QWidget
@@ -178,7 +197,39 @@ public:
                                      type:(WKMediaCaptureType)type
                           decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler
 {
-    decisionHandler(WKPermissionDecisionDeny);
+    if (!self.state || self.state->lifetime.isClosed() || !frame.mainFrame) {
+        decisionHandler(WKPermissionDecisionDeny);
+        return;
+    }
+    const QUrl originUrl(QStringLiteral("%1://%2:%3")
+                             .arg(QString::fromUtf8(origin.protocol.UTF8String),
+                                 QString::fromUtf8(origin.host.UTF8String))
+                             .arg(origin.port));
+    decisionHandler(nativePermission(
+        self.state->policy->decidePermission({ permissionKind(type), originUrl })));
+}
+
+- (void)webView:(WKWebView*)webView
+    runOpenPanelWithParameters:(WKOpenPanelParameters*)parameters
+             initiatedByFrame:(WKFrameInfo*)frame
+            completionHandler:(void (^)(NSArray<NSURL*>* URLs))completionHandler
+{
+    if (!self.state || self.state->lifetime.isClosed() || !frame.mainFrame
+        || self.state->policy->decidePermission(
+               { webview::PermissionKind::FilePicker,
+                   QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)) })
+            != webview::PermissionDecision::Allow) {
+        completionHandler(nil);
+        return;
+    }
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
+    if (@available(macOS 10.13.4, *)) {
+        panel.canChooseDirectories = parameters.allowsDirectories;
+    }
+    [panel beginWithCompletionHandler:^(NSModalResponse result) {
+        completionHandler(result == NSModalResponseOK ? panel.URLs : nil);
+    }];
 }
 @end
 
@@ -196,6 +247,16 @@ public:
     const bool isUserInitiated = navigationAction.navigationType == WKNavigationTypeLinkActivated
         || navigationAction.navigationType == WKNavigationTypeFormSubmitted;
     const webview::NavigationRequest request { url, isMainFrame, isUserInitiated, false };
+    if (@available(macOS 11.3, *)) {
+        if (navigationAction.shouldPerformDownload) {
+            const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
+            decisionHandler(webview::mapDownloadDecision(self.state->policy->decideDownload(download))
+                    == webview::NativeDownloadDecision::Download
+                ? WKNavigationActionPolicyDownload
+                : WKNavigationActionPolicyCancel);
+            return;
+        }
+    }
     const auto decision = self.state->policy->decideNavigation(request);
     if (decision == webview::NavigationDecision::Allow) {
         if (isMainFrame) {
@@ -215,8 +276,25 @@ public:
     decidePolicyForNavigationResponse:(WKNavigationResponse*)navigationResponse
                       decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler
 {
-    decisionHandler(navigationResponse.canShowMIMEType ? WKNavigationResponsePolicyAllow
-                                                       : WKNavigationResponsePolicyCancel);
+    if (!self.state || self.state->lifetime.isClosed()) {
+        decisionHandler(WKNavigationResponsePolicyCancel);
+        return;
+    }
+    if (navigationResponse.canShowMIMEType) {
+        decisionHandler(WKNavigationResponsePolicyAllow);
+        return;
+    }
+    const QUrl url(QString::fromUtf8(navigationResponse.response.URL.absoluteString.UTF8String));
+    const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
+    if (@available(macOS 11.3, *)) {
+        decisionHandler(webview::mapDownloadDecision(self.state->policy->decideDownload(download))
+                == webview::NativeDownloadDecision::Download
+            ? WKNavigationResponsePolicyDownload
+            : WKNavigationResponsePolicyCancel);
+    } else {
+        self.state->policy->decideDownload(download);
+        decisionHandler(WKNavigationResponsePolicyCancel);
+    }
 }
 
 - (void)webView:(WKWebView*)webView didStartProvisionalNavigation:(WKNavigation*)navigation
