@@ -1,0 +1,89 @@
+{
+  "review_agent_mode": "self-review",
+  "review_independence": false,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "unknown",
+  "review_model_evidence": "unknown",
+  "result": "gaps_found",
+  "claim_coverage": "18/20",
+  "claim_coverage_status": "gaps",
+  "validation_limited": [
+    "The reviewer subagent timed out before returning a conclusion.",
+    "The read-only codex exec fallback could not initialize because the Codex state database was read-only.",
+    "The real WKWebView page suite requires WindowServer and was run outside the restricted sandbox."
+  ],
+  "summary": "The session, lifecycle, navigation, popup, bridge-origin, demo, and documentation work is present and tested, but two approved security semantics remain incomplete: outbound payloads are still interpolated into JavaScript source, and native permission/download callbacks do not consult WebViewPolicy.",
+  "gaps": [
+    {
+      "id": "FOLLOWUP-01",
+      "title": "Pass outbound bridge payloads as native JavaScript arguments",
+      "source_ref": "docs/specs/2026-08-12-webview-session-policy-api.md:78",
+      "evidence_ref": "src/platform/macos/WkWebView.mm:435",
+      "why_it_matters": "JSON serialization prevents basic quoting errors but the approved contract explicitly forbids inserting payload text into executable source.",
+      "suggested_followup_issue": "Use callAsyncJavaScript arguments on supported macOS versions and return Unsupported on older versions, with a hostile-payload integration test."
+    },
+    {
+      "id": "FOLLOWUP-02",
+      "title": "Route macOS permission and download requests through policy",
+      "source_ref": "docs/specs/2026-08-12-webview-session-policy-api.md:110",
+      "evidence_ref": "src/platform/macos/WkWebView.mm:160",
+      "why_it_matters": "Direct native deny/cancel behavior is fail-closed, but it bypasses the policy contract and prevents an application policy from making an explicit decision.",
+      "suggested_followup_issue": "Map media capture, file picker, navigation-action download, and navigation-response download callbacks to typed WebViewPolicy requests while keeping deny as the fallback."
+    }
+  ],
+  "assumptions": [
+    "On macOS, profilePath is a logical profile identifier because public WKWebsiteDataStore cannot select an arbitrary persistent directory.",
+    "WKProcessPool identity is retained for old systems but is not claimed as process isolation on macOS 12 or later."
+  ],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": [],
+  "outcome_answers": [
+    {
+      "question_id": "OUTCOME-001",
+      "verdict": "pass",
+      "answer": "The public API requires explicit sessions, and the superseded standalone factory and direct bridge/popup setters are absent from production headers and consumers.",
+      "evidence_refs": ["src/webview/WebViewFactory.h:9", "src/webview/IWebView.h:12", "samples/demo/DemoWindow.cpp:77"],
+      "confidence": "high",
+      "boundary": "This is a source-level contract result and does not provide a compatibility layer for old callers.",
+      "next_action": "None"
+    },
+    {
+      "question_id": "OUTCOME-002",
+      "verdict": "pass",
+      "answer": "Views from one macOS session share the website data store and assigned process-pool identity, while ephemeral sessions use non-persistent storage.",
+      "evidence_refs": ["src/platform/macos/WkWebViewSession.mm:10", "tests/WkSessionTests.mm:31", "ctest webview_macos_session_tests passed"],
+      "confidence": "high",
+      "boundary": "profilePath is not a custom WebKit storage directory, and WKProcessPool does not add isolation on modern macOS.",
+      "next_action": "None"
+    },
+    {
+      "question_id": "OUTCOME-003",
+      "verdict": "pass",
+      "answer": "macOS exposes ordered lifecycle events, policy-controlled navigation and popups, stable navigation IDs, and idempotent close with stale callback suppression.",
+      "evidence_refs": ["src/platform/macos/WkWebView.mm:69", "tests/WkViewTests.mm:49", "ctest webview_macos_view_tests passed"],
+      "confidence": "high",
+      "boundary": "The real page suite needs a logged-in macOS WindowServer session.",
+      "next_action": "None"
+    },
+    {
+      "question_id": "OUTCOME-004",
+      "verdict": "partial",
+      "answer": "Inbound bridge messages are restricted to the trusted current main frame and validated by size, version, type, and schema, but outbound payloads are still inserted into JavaScript source after JSON serialization.",
+      "evidence_refs": ["src/platform/macos/WkWebView.mm:111", "src/platform/macos/WkWebView.mm:435", "tests/JsonMessageTests.cpp:10"],
+      "confidence": "high",
+      "boundary": "The approved no-source-interpolation guarantee is not met until FOLLOWUP-01 is complete.",
+      "next_action": "Complete FOLLOWUP-01 and rerun the hostile-payload WKWebView integration test."
+    },
+    {
+      "question_id": "OUTCOME-005",
+      "verdict": "pass",
+      "answer": "The common headers contain no native profile types and the architecture maps the contract to WKWebView, WebView2, and WebKit2GTK; only macOS is implemented.",
+      "evidence_refs": ["src/webview/WebViewTypes.h:1", "docs/ARCHITECTURE.md:54", "docs/ARCHITECTURE.md:62"],
+      "confidence": "moderate",
+      "boundary": "Portability is a reviewed design claim, not production evidence for the two unimplemented backends.",
+      "next_action": "Validate each mapping when its backend is implemented."
+    }
+  ],
+  "handoff_markdown": "Review found two current-scope gaps; see the human handoff artifact."
+}
