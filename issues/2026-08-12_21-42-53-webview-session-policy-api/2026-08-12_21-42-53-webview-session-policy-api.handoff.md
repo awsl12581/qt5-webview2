@@ -1,29 +1,29 @@
 # WebView Session 与安全策略重构 - 施工交工单
 
-> 独立性: false | mode=self-review | requested_model=gpt-5.6-sol
+> 独立性: true | mode=reviewer-subagent | requested_model=gpt-5.6-sol
 > 日期: 2026-08-12
 
 ## 先看结论
 
-这轮重构的主体已经落地：应用必须先创建 session，再从 session 创建页面；macOS 的登录态共享、无痕存储、加载事件、导航拦截、popup、bridge 来源校验和关闭流程都有实现与测试。但现在还不能判定整体通过。第一处明确缺口是 native 发往网页的消息仍会拼进 JavaScript 源码；另一个缺口是权限与下载回调没有经过统一 policy。WebView2 和 WebKit2GTK 也仍然只是接口映射设计，并未实现。
+第二轮审查确认，出站消息已经改成原生参数传递，权限和下载也接入了统一 policy。不过整体仍是 `partial`：旧页面的同源 bridge 消息还没有文档 token，redirect 没有传给 policy，session 销毁也不会主动关闭外部仍持有的 view。另有几条原生路径需要留下更完整的集成测试记录。
 
 ## 这份交工单告诉你什么
 
-这份交工单把批准规范、代码、自动测试、真实 WKWebView 测试和提交记录放在一起说明。它供接口维护者和后端实现者判断当前进度，不会把“代码写完”说成“所有平台能力都已验证”，也不会替代以后两套后端自己的平台测试。
+这份交工单面向接口维护者和后端实现者，依据批准规范、代码、测试、提交记录和独立审查结果说明当前状态。它不把设计映射当成另外两套后端已经可用，也不把静态接线检查写成真实系统交互已经通过。
 
 ## 你现在可以确定什么
 
 | 你关心的问题 | 判定 | 直接答案 | 关键证据 | 可信度 | 结论边界 | 下一步 |
 |---|---|---|---|---|---|---|
-| Does the public API require explicit sessions and fully remove the superseded standalone and unrestricted bridge APIs? | pass | The public API requires explicit sessions, and the superseded standalone factory and direct bridge/popup setters are absent from production headers and consumers. | src/webview/WebViewFactory.h:9; src/webview/IWebView.h:12; samples/demo/DemoWindow.cpp:77 | high | This is a source-level contract result and does not provide a compatibility layer for old callers. | None |
-| Do macOS views in one session share profile resources while ephemeral sessions use non-persistent storage? | pass | Views from one macOS session share the website data store and assigned process-pool identity, while ephemeral sessions use non-persistent storage. | src/platform/macos/WkWebViewSession.mm:10; tests/WkSessionTests.mm:31; ctest webview_macos_session_tests passed | high | profilePath is not a custom WebKit storage directory, and WKProcessPool does not add isolation on modern macOS. | None |
-| Are lifecycle, navigation, popup, and close semantics observable and enforced without stale callbacks? | pass | macOS exposes ordered lifecycle events, policy-controlled navigation and popups, stable navigation IDs, and idempotent close with stale callback suppression. | src/platform/macos/WkWebView.mm:69; tests/WkViewTests.mm:49; ctest webview_macos_view_tests passed | high | The real page suite needs a logged-in macOS WindowServer session. | None |
-| Can only a trusted current main frame exchange size-, version-, type-, and schema-validated bridge messages? | partial | Inbound bridge messages are restricted to the trusted current main frame and validated by size, version, type, and schema, but outbound payloads are still inserted into JavaScript source after JSON serialization. | src/platform/macos/WkWebView.mm:111; src/platform/macos/WkWebView.mm:435; tests/JsonMessageTests.cpp:10 | high | The approved no-source-interpolation guarantee is not met until FOLLOWUP-01 is complete. | Complete FOLLOWUP-01 and rerun the hostile-payload WKWebView integration test. |
-| Is the common contract implementable on WKWebView, WebView2, and WebKit2GTK without exposing native profile types? | pass | The common headers contain no native profile types and the architecture maps the contract to WKWebView, WebView2, and WebKit2GTK; only macOS is implemented. | src/webview/WebViewTypes.h:1; docs/ARCHITECTURE.md:54; docs/ARCHITECTURE.md:62 | moderate | Portability is a reviewed design claim, not production evidence for the two unimplemented backends. | Validate each mapping when its backend is implemented. |
+| Does the public API require explicit sessions and fully remove the superseded standalone and unrestricted bridge APIs? | pass | Yes. Public creation is session-only, and the former standalone factory plus unrestricted page bridge/popup APIs are absent from public C++, demo, tests, and documentation. | src/webview/WebViewFactory.h:10; src/webview/IWebViewSession.h:18; samples/demo/DemoWindow.cpp:77 | high | This is intentionally source-breaking; no compatibility shim is provided. | None |
+| Do macOS views in one session share profile resources while ephemeral sessions use non-persistent storage? | pass | Yes. Configurations from one macOS session share its website data store and process pool, receive distinct content controllers, and ephemeral sessions use a non-persistent store. | src/platform/macos/WkWebViewSession.mm:19; tests/WkSessionTests.mm:39 | high | profilePath is logical on macOS; arbitrary storage placement and stronger process isolation are not promised. | None |
+| Are lifecycle, navigation, popup, and close semantics observable and enforced without stale callbacks? | partial | Lifecycle IDs, failures, policy rejection, popup rejection, outbound generation checks, and idempotent close exist, but redirect policy context and session-bound callback lifetime are incomplete. | src/platform/macos/WkWebView.mm:236; tests/WkViewTests.mm:115 | high | Allowed popup inheritance, stop/reload, native capability callbacks, and overlapping callback races need stronger integration evidence. | Complete FOLLOWUP-04 through FOLLOWUP-06. |
+| Can only a trusted current main frame exchange size-, version-, type-, and schema-validated bridge messages? | partial | Origin, main-frame, envelope, size/version/type/schema, outbound argument binding, and hostile-payload behavior are enforced, but inbound same-origin stale documents are not tied to the active document token. | src/platform/macos/WkWebView.mm:148; src/platform/macos/WkWebView.mm:514; tests/WkViewTests.mm:149 | high | The hostile test proves outbound data-only delivery, not stale inbound document rejection. | Complete FOLLOWUP-03 and add the same-origin stale-token test. |
+| Is the common contract implementable on WKWebView, WebView2, and WebKit2GTK without exposing native profile types? | pass | At design-contract level, yes. Public headers expose portable Qt/C++ types and documentation maps the concepts to WKWebView, WebView2, and WebKit2GTK without native profile types. | src/webview/IWebViewSession.h:1; src/webview/WebViewTypes.h:1; docs/ARCHITECTURE.md:54 | moderate | Only macOS is implemented or production-tested. | Validate each future backend when implemented. |
 
 ## 决定整体状态的结果
 
-成功条件是 macOS 生产路径完整使用 session 和 policy 合同，并有足够证据支撑生命周期与 bridge 隔离。当前已经跑通加载、重定向、失败、popup 拒绝、iframe 拒绝、session 共享和无痕存储。整体仍是 `partial`：代码实现接近完成，但两项安全合同尚未满足，不能把它们合并成通过。
+主架构已经接通，两条上一轮安全缺口也已修复。现在决定整体状态的第一处失败，是入站 bridge 仍只比较 origin，没有比较文档 token；同源跳转时，旧文档排队中的消息还缺少可验证的代际边界。因此实现状态是“主体完成”，验证状态是“部分通过”，能力结论仍是 `partial`。
 
 ## 目前仍不能声称什么
 
@@ -37,17 +37,15 @@
 
 | spec 目标 | 状态 | 实际效果 | 备注 |
 |---|---|---|---|
-| Session 统一管理登录态与网站数据 | 完成 | 同一 session 的 tab 共享 WebKit 数据存储，无痕 session 使用非持久存储。 | macOS 的 profilePath 是逻辑标识。 |
-| 页面生命周期与关闭流程可观察 | 完成 | 宿主能收到稳定导航编号的加载事件，关闭后不会把旧回调算到新页面。 | 真实页面测试需要 WindowServer。 |
-| 导航、popup 与 bridge 集中受控 | 部分完成 | 入站消息和页面导航已经经过策略；权限、下载和出站消息还有两处缺口。 | 后续 issue 会在本轮继续修。 |
-| 三套后端共用一套业务接口 | 完成 | 公共头文件没有原生 profile 类型，并给出三套平台映射。 | 只实现了 macOS。 |
+| Session 管理登录态和网站数据 | 部分完成 | tab 已共享数据存储，无痕存储也可用。 | session 析构还要使外部持有的 view 失效。 |
+| 页面生命周期和导航策略 | 部分完成 | 加载事件、失败和 popup 已可控。 | redirect 上下文仍未交给 policy。 |
+| Bridge 只属于当前可信文档 | 部分完成 | origin、主框架、schema 和出站参数绑定已完成。 | 入站还缺文档 token。 |
+| 三套后端使用统一业务接口 | 完成 | 公共接口不暴露原生类型，并有三套映射。 | 只有 macOS 已实现。 |
 
 ## 施工细节
 
-页面创建路径已经变为 `创建 session -> session 创建 view -> host 持有 view -> tab 关闭时先 close`。macOS session 负责生成 configuration，同一 session 共享网站数据，单个页面仍有自己的 content controller 和 delegate。bridge 入站会核对主框架、当前 committed origin、消息版本、类型、大小和字段。
-
-本轮发现的薄弱点不在主结构，而在两个容易被“默认拒绝很安全”掩盖的细节：默认拒绝权限并不等于请求经过了 policy；JSON 安全序列化也不等于没有把数据放进 JavaScript 源码。这两项会继续修复并重新审查。
+上一轮的两个缺口已经有实质修复：native 发往页面的数据不再拼接到 JavaScript 源码，media、文件选择和下载入口也都先询问 policy。独立审查随后把注意力放到更细的生命周期边界，发现同源页面之间仍要用 token 区分，session 与 view 的寿命也必须真正绑定。
 
 ## 验证情况与下一步
 
-clean build、核心单测、session 集成测试均通过。真实 WKWebView 页面测试也通过，覆盖本地重定向、连接失败、popup 拒绝、iframe bridge 拒绝和重复关闭；该测试需要 macOS WindowServer，因此是在受限沙箱外运行。下一步是完成两条 follow-up，再运行第二轮愿景审查。
+clean build、核心测试、session 测试和真实 WKWebView 页面测试均通过，但最终证据还要补上 stop/reload、允许 popup 的 session 继承、native capability 回调和 race 场景，并把测试输出作为 mission 工件提交。下一步按 `FOLLOWUP-03..06` 继续，完成后进行第三轮审查。

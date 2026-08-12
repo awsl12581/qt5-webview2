@@ -16,3 +16,14 @@ The public API replacement, macOS session sharing, lifecycle mapping, navigation
 2. macOS media permission and download callbacks fail closed without consulting `WebViewPolicy`, contrary to the centralized decision rule.
 
 Both findings are actionable within the approved scope. They must become follow-up issues, not deferred findings.
+
+## REVIEW-02
+
+- Mode: reviewer-subagent
+- Independent: true
+- Requested model: gpt-5.6-sol
+- Observed model: unknown
+- Result: gaps_found
+- Coverage: 16/20
+
+The independent reviewer confirmed argument-bound outbound messages and centralized permission/download policy. It found four remaining current-scope items: document-token validation for inbound messages, redirect context in `NavigationRequest`, session-owned invalidation of retained views, and durable integration evidence for the remaining native paths.

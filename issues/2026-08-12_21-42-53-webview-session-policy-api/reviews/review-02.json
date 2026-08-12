@@ -1,0 +1,33 @@
+{
+  "review_agent_mode": "reviewer-subagent",
+  "review_independence": true,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "unknown",
+  "review_model_evidence": "unknown",
+  "result": "gaps_found",
+  "claim_coverage": "16/20",
+  "claim_coverage_status": "gaps",
+  "validation_limited": [
+    "No trusted host/session model identifier was exposed for the reviewer.",
+    "The real WKWebView page suite requires WindowServer and existing pass evidence was recorded in CSV notes without a durable raw test log."
+  ],
+  "summary": "The independent reviewer confirmed both prior security fixes, but found three implementation gaps and one evidence gap: inbound messages lack a document token, redirect requests never set isRedirect, session destruction does not invalidate retained views, and several native lifecycle/capability paths lack durable integration evidence.",
+  "gaps": [
+    {"id":"FOLLOWUP-03","title":"Bind inbound bridge messages to a document token","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:76","evidence_ref":"src/platform/macos/WkWebView.mm:148","why_it_matters":"A queued message from an old document can pass after a same-origin navigation commits because origin checks alone do not identify the sending document.","suggested_followup_issue":"Issue a new document token before each main-frame navigation, require it on inbound messages, and test a stale same-origin token."},
+    {"id":"FOLLOWUP-04","title":"Populate redirect context for navigation policy","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:58","evidence_ref":"src/platform/macos/WkWebView.mm:245","why_it_matters":"Every NavigationRequest currently reports isRedirect=false, so portable policy cannot distinguish redirects.","suggested_followup_issue":"Track active provisional navigation state, set isRedirect for subsequent non-user main-frame requests, and verify it with the loopback redirect."},
+    {"id":"FOLLOWUP-05","title":"Invalidate session-created views on session destruction","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:110","evidence_ref":"src/platform/macos/WkWebViewSession.mm:19","why_it_matters":"Retained views own the policy independently and can continue callbacks after their session is destroyed.","suggested_followup_issue":"Register views with shared session state, close all registered views when the session dies, and test a retained view."},
+    {"id":"FOLLOWUP-06","title":"Retain complete macOS integration evidence","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:121","evidence_ref":"tests/WkViewTests.mm:52","why_it_matters":"Stop, reload, permitted popup inheritance, native capability callbacks, and callback races lack matching durable integration evidence.","suggested_followup_issue":"Add the missing real WKWebView scenarios and commit a final clean test report with the mission artifacts."}
+  ],
+  "assumptions": ["profilePath remains a logical macOS profile identifier.", "Only macOS is implemented in this mission."],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": [],
+  "outcome_answers": [
+    {"question_id":"OUTCOME-001","verdict":"pass","answer":"Yes. Public creation is session-only, and the former standalone factory plus unrestricted page bridge/popup APIs are absent from public C++, demo, tests, and documentation.","evidence_refs":["src/webview/WebViewFactory.h:10","src/webview/IWebViewSession.h:18","samples/demo/DemoWindow.cpp:77"],"confidence":"high","boundary":"This is intentionally source-breaking; no compatibility shim is provided.","next_action":"None"},
+    {"question_id":"OUTCOME-002","verdict":"pass","answer":"Yes. Configurations from one macOS session share its website data store and process pool, receive distinct content controllers, and ephemeral sessions use a non-persistent store.","evidence_refs":["src/platform/macos/WkWebViewSession.mm:19","tests/WkSessionTests.mm:39"],"confidence":"high","boundary":"profilePath is logical on macOS; arbitrary storage placement and stronger process isolation are not promised.","next_action":"None"},
+    {"question_id":"OUTCOME-003","verdict":"partial","answer":"Lifecycle IDs, failures, policy rejection, popup rejection, outbound generation checks, and idempotent close exist, but redirect policy context and session-bound callback lifetime are incomplete.","evidence_refs":["src/platform/macos/WkWebView.mm:236","tests/WkViewTests.mm:115"],"confidence":"high","boundary":"Allowed popup inheritance, stop/reload, native capability callbacks, and overlapping callback races need stronger integration evidence.","next_action":"Complete FOLLOWUP-04 through FOLLOWUP-06."},
+    {"question_id":"OUTCOME-004","verdict":"partial","answer":"Origin, main-frame, envelope, size/version/type/schema, outbound argument binding, and hostile-payload behavior are enforced, but inbound same-origin stale documents are not tied to the active document token.","evidence_refs":["src/platform/macos/WkWebView.mm:148","src/platform/macos/WkWebView.mm:514","tests/WkViewTests.mm:149"],"confidence":"high","boundary":"The hostile test proves outbound data-only delivery, not stale inbound document rejection.","next_action":"Complete FOLLOWUP-03 and add the same-origin stale-token test."},
+    {"question_id":"OUTCOME-005","verdict":"pass","answer":"At design-contract level, yes. Public headers expose portable Qt/C++ types and documentation maps the concepts to WKWebView, WebView2, and WebKit2GTK without native profile types.","evidence_refs":["src/webview/IWebViewSession.h:1","src/webview/WebViewTypes.h:1","docs/ARCHITECTURE.md:54"],"confidence":"moderate","boundary":"Only macOS is implemented or production-tested.","next_action":"Validate each future backend when implemented."}
+  ],
+  "handoff_markdown": "Independent review found four current-scope follow-ups; see the mission handoff."
+}
