@@ -4,6 +4,7 @@
 #include "webview/DocumentLifetime.h"
 
 #include <QEvent>
+#include <QJsonDocument>
 #include <QResizeEvent>
 #include <QString>
 #include <QTimer>
@@ -28,6 +29,13 @@ QString originForUrl(const QUrl& url)
         origin.setPort(url.port());
     }
     return origin.toString(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::StripTrailingSlash);
+}
+
+id foundationObject(const QJsonObject& object)
+{
+    const auto json = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    NSData* data = [NSData dataWithBytes:json.constData() length:json.size()];
+    return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
 
 class NativeViewHost final : public QWidget
@@ -430,11 +438,9 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
         { QStringLiteral("type"), message.type },
         { QStringLiteral("payload"), message.payload },
     };
-    const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(jsonForJavaScriptArgument(envelope));
     const auto generation = impl_->state->lifetime.token();
     const std::weak_ptr<NativeState> weakState = impl_->state;
-    [impl_->view evaluateJavaScript:toNSString(script)
-                     completionHandler:^(id, NSError* error) {
+    const auto completionHandler = ^(id, NSError* error) {
                          if (!completion) {
                              return;
                          }
@@ -453,7 +459,17 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
                          } else {
                              completion({ });
                          }
-                     }];
+                     };
+    if (@available(macOS 11.0, *)) {
+        [impl_->view callAsyncJavaScript:@"window.__systemWebViewReceive(message);"
+                              arguments:@{ @"message" : foundationObject(envelope) }
+                                inFrame:nil
+                         inContentWorld:[WKContentWorld pageWorld]
+                       completionHandler:completionHandler];
+    } else if (completion) {
+        completion({ MessageError::Unsupported,
+            QStringLiteral("Native JavaScript argument binding requires macOS 11 or later.") });
+    }
 }
 
 void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)

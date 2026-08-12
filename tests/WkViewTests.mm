@@ -63,6 +63,9 @@ int main(int argc, char** argv)
     std::vector<webview::LoadEvent> events;
     int messageCount = 0;
     int popupCount = 0;
+    bool hostileReturned = false;
+    bool hostileExecuted = false;
+    QString hostileReturnedPayload;
     QEventLoop loop;
     QTimer timeout;
     timeout.setSingleShot(true);
@@ -78,7 +81,14 @@ int main(int argc, char** argv)
     callbacks.message = [&](const webview::BridgeMessage& message) {
         ++messageCount;
         assert(message.type == QStringLiteral("hello"));
-        assert(message.payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
+        if (message.payload.contains(QStringLiteral("executed"))) {
+            hostileReturned = true;
+            hostileExecuted = message.payload.value(QStringLiteral("executed")).toBool();
+            hostileReturnedPayload = message.payload.value(QStringLiteral("message")).toString();
+            loop.quit();
+        } else {
+            assert(message.payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
+        }
     };
     callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
     view->setHostCallbacks(std::move(callbacks));
@@ -88,6 +98,17 @@ int main(int argc, char** argv)
 <iframe srcdoc="<script>window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'frame'}})</script>"></iframe>
 <script>
 window.addEventListener('DOMContentLoaded', () => {
+  window.addEventListener('system-webview-message', event => {
+    document.body.dataset.nativeMessage = event.detail.payload.message;
+    window.webkit.messageHandlers.systemWebView.postMessage({
+      version: 1,
+      type: 'hello',
+      payload: {
+        message: event.detail.payload.message,
+        executed: window.__payloadExecuted === true
+      }
+    });
+  });
   window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'main'}});
   window.open('https://trusted.example/popup');
 });
@@ -124,6 +145,23 @@ window.addEventListener('DOMContentLoaded', () => {
         rejected = result.error == webview::MessageError::Rejected;
     });
     assert(rejected);
+
+    const QString hostilePayload = QStringLiteral("</script><script>window.__payloadExecuted=true</script>");
+    bool hostileDelivered = false;
+    view->sendMessage({ 1, QStringLiteral("hello"), { { QStringLiteral("message"), hostilePayload } } },
+        [&](const webview::MessageResult& result) {
+            assert(result.error == webview::MessageError::None);
+            hostileDelivered = true;
+            if (hostileReturned) {
+                loop.quit();
+            }
+        });
+    timeout.start(10000);
+    loop.exec();
+    assert(hostileDelivered);
+    assert(hostileReturned);
+    assert(hostileReturnedPayload == hostilePayload);
+    assert(!hostileExecuted);
 
     QTcpServer server;
     assert(server.listen(QHostAddress::LocalHost, 0));
