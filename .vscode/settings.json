@@ -1,0 +1,25 @@
+{
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+    "C_Cpp.formatting": "disabled",
+    "clangd.path": "/opt/homebrew/opt/llvm/bin/clangd",
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=iwyu",
+        "--header-insertion-decorators"
+    ],
+    "cmake.useCMakePresets": "always",
+    "cmake.buildBeforeRun": true,
+    "cmake.configureOnOpen": true,
+    "cmake.debugConfig": {
+        "cwd": "${workspaceFolder}/build/debug"
+    },
+    "lldb.launch.expressions": "native",
+    "files.associations": {
+        "*.mm": "objective-cpp",
+        "*.html": "html"
+    }
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System WebView</title>
+<style>
+  html, body { min-height: 100%; margin: 0; }
+  body { box-sizing: border-box; font: 16px -apple-system, sans-serif; padding: 3rem; }
+  button { padding: .6rem 1rem; }
+</style>
+<h1>System WebView</h1>
+<p id="status">Ready</p>
+<button id="send">Send JSON to native</button>
+<button id="new-tab">Open a new tab</button>
+<script>
+  document.querySelector('#send').onclick = () => {
+    window.webkit.messageHandlers.systemWebView.postMessage({ type: 'hello', message: 'Hello from WKWebView' });
+  };
+  document.querySelector('#new-tab').onclick = () => {
+    window.open('https://example.com/', '_blank');
+  };
+  window.addEventListener('system-webview-message', event => {
+    document.querySelector('#status').textContent = event.detail.message;
+  });
+</script>
+</html>

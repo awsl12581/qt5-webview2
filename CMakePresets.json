@@ -1,0 +1,62 @@
+{
+  "version": 6,
+    "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt@5"
+      }
+    },
+        {
+            "name": "brew-llvm-base",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+                "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
+                "CMAKE_OBJC_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+                "CMAKE_OBJCXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++"
+            }
+        },
+        {
+            "name": "default-debug",
+      "displayName": "Apple Clang Debug",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+        {
+            "name": "default-release",
+      "displayName": "Apple Clang Release",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        },
+        {
+            "name": "brew-llvm-debug",
+            "displayName": "Homebrew LLVM Debug",
+            "inherits": "brew-llvm-base",
+            "binaryDir": "${sourceDir}/build/brew-llvm-debug",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "brew-llvm-release",
+            "displayName": "Homebrew LLVM Release",
+            "inherits": "brew-llvm-base",
+            "binaryDir": "${sourceDir}/build/brew-llvm-release",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+        }
+  ],
+    "buildPresets": [
+        { "name": "default-debug", "configurePreset": "default-debug" },
+        { "name": "default-release", "configurePreset": "default-release" },
+        { "name": "brew-llvm-debug", "configurePreset": "brew-llvm-debug" },
+        { "name": "brew-llvm-release", "configurePreset": "brew-llvm-release" }
+  ],
+  "testPresets": [
+    { "name": "default-debug", "configurePreset": "default-debug" }
+  ]
+}
