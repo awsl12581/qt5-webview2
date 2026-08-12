@@ -1,0 +1,35 @@
+{
+  "source": "docs/specs/2026-08-12-webview-session-policy-api.md",
+  "execution_scope": "approved specification in full",
+  "artifact_role": {
+    "kind": "design",
+    "producer": "approved mission specification",
+    "consumers": ["mission review", "human handoff", "backend implementers"],
+    "authority": "Defines the portable public contract and required macOS implementation behavior.",
+    "not_authority": "Does not prove unimplemented WebView2 or WebKit2GTK backends or platform capabilities unavailable at runtime."
+  },
+  "desired_effects": [
+    {"id":"EFFECT-001","statement":"Applications create explicit persistent or ephemeral sessions and create every page from a session.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:26"},
+    {"id":"EFFECT-002","statement":"Hosts observe page lifecycle, control navigation and popups, and close pages without stale callbacks.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:35"},
+    {"id":"EFFECT-003","statement":"Only the current trusted main-frame origin can exchange validated bridge messages.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:74"},
+    {"id":"EFFECT-004","statement":"The public API can be mapped to WKWebView, WebView2, and WebKit2GTK without native types leaking to callers.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:84"}
+  ],
+  "reader_questions": [
+    {"id":"OUTCOME-001","question":"Does the public API require explicit sessions and fully remove the superseded standalone and unrestricted bridge APIs?","why_it_matters":"The source-breaking boundary prevents callers from bypassing profile and security policy.","evidence_required":"integration","scope":"Public headers, demo, tests, and documentation","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:100","status":"pending"},
+    {"id":"OUTCOME-002","question":"Do macOS views in one session share profile resources while ephemeral sessions use non-persistent storage?","why_it_matters":"Multiple tabs need deterministic login and cache sharing without weakening private sessions.","evidence_required":"integration","scope":"macOS WKWebView backend","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:116","status":"pending"},
+    {"id":"OUTCOME-003","question":"Are lifecycle, navigation, popup, and close semantics observable and enforced without stale callbacks?","why_it_matters":"Hosts must manage tabs and security decisions from defined events rather than backend guesses.","evidence_required":"integration","scope":"Portable contract and macOS implementation","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:117","status":"pending"},
+    {"id":"OUTCOME-004","question":"Can only a trusted current main frame exchange size-, version-, type-, and schema-validated bridge messages?","why_it_matters":"The bridge is the highest-privilege attack surface in the library.","evidence_required":"integration","scope":"Policy core and macOS message transport","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:119","status":"pending"},
+    {"id":"OUTCOME-005","question":"Is the common contract implementable on WKWebView, WebView2, and WebKit2GTK without exposing native profile types?","why_it_matters":"The redesign must remain a system-WebView abstraction instead of becoming a macOS-only wrapper.","evidence_required":"human_review","scope":"Public API and documented backend mappings; only macOS is implemented","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:10","status":"pending"}
+  ],
+  "decisive_result": {
+    "question": "Does the macOS production path use the portable session and policy contract with tested lifecycle and bridge isolation?",
+    "success_condition": "The project builds and tests pass with the demo wired through explicit sessions; security and lifecycle integration evidence supports the specified macOS behavior.",
+    "failure_condition": "Any legacy bypass remains, session sharing is not wired, untrusted frames can reach the bridge, close permits callbacks, or required behavior lacks honest evidence.",
+    "source_refs": ["docs/specs/2026-08-12-webview-session-policy-api.md:114", "docs/specs/2026-08-12-webview-session-policy-api.md:123"]
+  },
+  "blocked_claims": [
+    {"claim":"WebView2 and WebKit2GTK backends are implemented or production-tested.","reason":"They are explicit non-goals of this mission.","release_condition":"Implement each backend and run its platform integration suite.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:106"},
+    {"claim":"The library provides a universal download manager.","reason":"The mission defines policy semantics but excludes a universal download manager.","release_condition":"Approve and implement a separate download API mission.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:106"},
+    {"claim":"Profiles have stronger process isolation than each native backend provides.","reason":"The specification explicitly limits this guarantee to platform capabilities.","release_condition":"Document and implement backend-specific isolation capabilities where supported.","source_ref":"docs/specs/2026-08-12-webview-session-policy-api.md:106"}
+  ]
+}

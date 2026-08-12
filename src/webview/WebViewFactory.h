@@ -1,8 +1,12 @@
 #pragma once
 
-#include "webview/IWebView.h"
+#include "webview/IWebViewSession.h"
+#include "webview/WebViewPolicy.h"
+
+#include <QString>
 
 namespace webview
 {
-WebViewPtr createWebView(QWidget* parent = nullptr);
+WebViewSessionPtr createPersistentSession(const QString& profilePath, WebViewPolicyPtr policy = { });
+WebViewSessionPtr createEphemeralSession(WebViewPolicyPtr policy = { });
 } // namespace webview

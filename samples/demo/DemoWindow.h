@@ -3,6 +3,7 @@
 #include <QMainWindow>
 
 #include "webview/IWebView.h"
+#include "webview/IWebViewSession.h"
 
 class QLabel;
 class QTabWidget;
@@ -19,5 +20,6 @@ private:
 
     QTabWidget* tabs_ = nullptr;
     QLabel* status_ = nullptr;
+    webview::WebViewSessionPtr session_;
 };
 } // namespace samples::demo

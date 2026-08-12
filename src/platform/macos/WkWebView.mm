@@ -58,8 +58,7 @@ private:
 
 namespace webview {
 struct BridgeState {
-    IWebView::MessageHandler handler;
-    IWebView::NewWindowHandler newWindowHandler;
+    WebViewHostCallbacks callbacks;
     std::function<void*(void*)> createWebView;
 };
 
@@ -69,7 +68,10 @@ public:
     NativeViewHost* container = nullptr;
     WKWebView* view = nil;
     BridgeState bridge;
-    id delegate = nil;
+    WebViewPolicyPtr policy;
+    id messageDelegate = nil;
+    id uiDelegate = nil;
+    bool closed = false;
 };
 } // namespace webview
 
@@ -84,7 +86,7 @@ public:
 @implementation SystemWebViewMessageDelegate
 - (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message
 {
-    if (![message.name isEqualToString:@(kBridgeName)] || !self.bridge || !self.bridge->handler) {
+    if (![message.name isEqualToString:@(kBridgeName)] || !self.bridge || !self.bridge->callbacks.message) {
         return;
     }
     NSError* error = nil;
@@ -94,7 +96,11 @@ public:
     }
     QJsonObject object;
     if (webview::parseMessage(QString::fromUtf8(static_cast<const char*>(data.bytes), data.length), &object)) {
-        self.bridge->handler(object);
+        webview::BridgeMessage bridgeMessage;
+        bridgeMessage.version = object.value(QStringLiteral("version")).toInt(1);
+        bridgeMessage.type = object.value(QStringLiteral("type")).toString();
+        bridgeMessage.payload = object.value(QStringLiteral("payload")).toObject();
+        self.bridge->callbacks.message(bridgeMessage);
     }
 }
 @end
@@ -113,27 +119,28 @@ public:
 @end
 
 namespace webview {
-WkWebView::WkWebView(QWidget* parent)
+WkWebView::WkWebView(QWidget* parent, WebViewPolicyPtr policy)
     : impl_(std::make_unique<Impl>())
 {
-    initialize(nullptr);
+    initialize(nullptr, std::move(policy));
     impl_->container->setParent(parent);
 }
 
-WkWebView::WkWebView(QWidget* parent, void* configuration)
+WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy)
     : impl_(std::make_unique<Impl>())
 {
-    initialize(configuration);
+    initialize(configuration, std::move(policy));
     impl_->container->setParent(parent);
 }
 
-void WkWebView::initialize(void* configuration)
+void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
 {
+    impl_->policy = std::move(policy);
     impl_->container = new NativeViewHost(nullptr);
     auto* content = [[WKUserContentController alloc] init];
-    impl_->delegate = [[SystemWebViewMessageDelegate alloc] init];
-    static_cast<SystemWebViewMessageDelegate*>(impl_->delegate).bridge = &impl_->bridge;
-    [content addScriptMessageHandler:impl_->delegate name:@(kBridgeName)];
+    impl_->messageDelegate = [[SystemWebViewMessageDelegate alloc] init];
+    static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).bridge = &impl_->bridge;
+    [content addScriptMessageHandler:impl_->messageDelegate name:@(kBridgeName)];
 
     NSString* scriptSource = @"window.__systemWebViewReceive = function(message) { window.dispatchEvent(new "
                              @"CustomEvent('system-webview-message', { detail: message })); };";
@@ -149,14 +156,14 @@ void WkWebView::initialize(void* configuration)
     nativeConfiguration.userContentController = content;
     auto* uiDelegate = [[SystemWebViewUIDelegate alloc] init];
     uiDelegate.bridge = &impl_->bridge;
-    impl_->delegate = uiDelegate;
+    impl_->uiDelegate = uiDelegate;
     impl_->bridge.createWebView = [this](void* childConfiguration) -> void* {
-        if (!impl_->bridge.newWindowHandler) {
+        if (!impl_->bridge.callbacks.newWindow) {
             return nullptr;
         }
-        auto child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, childConfiguration));
+        auto child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, childConfiguration, impl_->policy));
         auto* nativeView = child->impl_->view;
-        impl_->bridge.newWindowHandler(std::move(child));
+        impl_->bridge.callbacks.newWindow(NewWindowRequest { }, std::move(child));
         return nativeView;
     };
     impl_->view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1, 1) configuration:nativeConfiguration];
@@ -171,32 +178,91 @@ void WkWebView::initialize(void* configuration)
     impl_->container->syncNativeView();
 }
 
-WkWebView::~WkWebView()
-{
-    [impl_->view.configuration.userContentController removeScriptMessageHandlerForName:@(kBridgeName)];
-    [impl_->view removeFromSuperview];
-    impl_->delegate = nil;
-}
+WkWebView::~WkWebView() { close(); }
 
 QWidget* WkWebView::widget() { return impl_->container; }
 
 void WkWebView::load(const QUrl& url)
 {
+    if (impl_->closed) {
+        return;
+    }
     [impl_->view loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:toNSString(url.toString())]]];
 }
 
 void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
 {
+    if (impl_->closed) {
+        return;
+    }
     [impl_->view loadHTMLString:toNSString(html) baseURL:[NSURL URLWithString:toNSString(baseUrl.toString())]];
 }
 
-void WkWebView::postMessage(const QJsonObject& message)
+void WkWebView::stop()
 {
-    const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(jsonForJavaScriptArgument(message));
-    [impl_->view evaluateJavaScript:toNSString(script) completionHandler:nil];
+    if (!impl_->closed) {
+        [impl_->view stopLoading];
+    }
 }
 
-void WkWebView::setMessageHandler(MessageHandler handler) { impl_->bridge.handler = std::move(handler); }
+void WkWebView::reload()
+{
+    if (!impl_->closed) {
+        [impl_->view reload];
+    }
+}
 
-void WkWebView::setNewWindowHandler(NewWindowHandler handler) { impl_->bridge.newWindowHandler = std::move(handler); }
+void WkWebView::close()
+{
+    if (impl_->closed) {
+        return;
+    }
+    impl_->closed = true;
+    impl_->bridge.callbacks = { };
+    [impl_->view stopLoading];
+    impl_->view.navigationDelegate = nil;
+    impl_->view.UIDelegate = nil;
+    [impl_->view.configuration.userContentController removeScriptMessageHandlerForName:@(kBridgeName)];
+    [impl_->view removeFromSuperview];
+    impl_->container->syncNativeView = { };
+    impl_->messageDelegate = nil;
+    impl_->uiDelegate = nil;
+    impl_->view = nil;
+}
+
+bool WkWebView::isClosed() const { return impl_->closed; }
+
+void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion completion)
+{
+    if (impl_->closed) {
+        if (completion) {
+            completion({ MessageError::Closed, QStringLiteral("The web view is closed.") });
+        }
+        return;
+    }
+    const QJsonObject envelope {
+        { QStringLiteral("version"), message.version },
+        { QStringLiteral("type"), message.type },
+        { QStringLiteral("payload"), message.payload },
+    };
+    const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(jsonForJavaScriptArgument(envelope));
+    [impl_->view evaluateJavaScript:toNSString(script)
+                     completionHandler:^(id, NSError* error) {
+                         if (!completion) {
+                             return;
+                         }
+                         if (error) {
+                             completion({ MessageError::Rejected, QString::fromUtf8(error.localizedDescription.UTF8String) });
+                         } else {
+                             completion({ });
+                         }
+                     }];
+}
+
+void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
+{
+    if (!impl_->closed) {
+        impl_->bridge.callbacks = std::move(callbacks);
+    }
+}
 } // namespace webview

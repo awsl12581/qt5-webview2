@@ -1,31 +1,28 @@
 #pragma once
 
-#include <QJsonObject>
-#include <QUrl>
+#include "webview/WebViewTypes.h"
 
 #include <functional>
-#include <memory>
 
 class QWidget;
 
 namespace webview
 {
-class IWebView;
-using WebViewPtr = std::unique_ptr<IWebView>;
-
 class IWebView
 {
 public:
-    using MessageHandler = std::function<void(const QJsonObject&)>;
-    using NewWindowHandler = std::function<void(WebViewPtr)>;
+    using MessageCompletion = std::function<void(const MessageResult&)>;
 
     virtual ~IWebView() = default;
     virtual QWidget* widget() = 0;
     virtual void load(const QUrl& url) = 0;
     virtual void setHtml(const QString& html, const QUrl& baseUrl = { }) = 0;
-    virtual void postMessage(const QJsonObject& message) = 0;
-    virtual void setMessageHandler(MessageHandler handler) = 0;
-    virtual void setNewWindowHandler(NewWindowHandler handler) = 0;
+    virtual void stop() = 0;
+    virtual void reload() = 0;
+    virtual void close() = 0;
+    virtual bool isClosed() const = 0;
+    virtual void sendMessage(const BridgeMessage& message, MessageCompletion completion = { }) = 0;
+    virtual void setHostCallbacks(WebViewHostCallbacks callbacks) = 0;
 };
 
 } // namespace webview

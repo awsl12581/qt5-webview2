@@ -46,7 +46,8 @@ DemoWindow::DemoWindow()
     status_ = new QLabel(QStringLiteral("Waiting for page message"), this);
     statusBar()->addWidget(status_);
 
-    auto webView = webview::createWebView();
+    session_ = webview::createEphemeralSession();
+    auto webView = session_->createWebView();
     std::ifstream input(std::string(SYSTEM_WEBVIEW_RESOURCE_DIR) + "/demo.html");
     std::stringstream buffer;
     buffer << input.rdbuf();
@@ -58,11 +59,14 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
 {
     auto* tab = new WebViewTab(std::move(webView), tabs_);
     auto* page = tab->webView();
-    page->setMessageHandler([this, page](const QJsonObject& message) {
-        status_->setText(QStringLiteral("Page: %1").arg(message.value("message").toString()));
-        page->postMessage(QJsonObject { { "type", "ack" }, { "message", "Native received your message." } });
-    });
-    page->setNewWindowHandler([this](webview::WebViewPtr child) { addTab(std::move(child), QStringLiteral("New tab")); });
+    webview::WebViewHostCallbacks callbacks;
+    callbacks.message = [this, page](const webview::BridgeMessage& message) {
+        status_->setText(QStringLiteral("Page: %1").arg(message.payload.value("message").toString()));
+        page->sendMessage({ 1, QStringLiteral("ack"), QJsonObject { { "message", "Native received your message." } } });
+    };
+    callbacks.newWindow =
+        [this](const webview::NewWindowRequest&, webview::WebViewPtr child) { addTab(std::move(child), QStringLiteral("New tab")); };
+    page->setHostCallbacks(std::move(callbacks));
     const int index = tabs_->addTab(tab, title);
     tabs_->setCurrentIndex(index);
 }

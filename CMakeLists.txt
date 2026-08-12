@@ -22,6 +22,7 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
 
 add_library(system_webview STATIC
     src/webview/JsonMessage.cpp
+    src/webview/WebViewPolicy.cpp
     src/webview/WebViewFactory.cpp
 )
 add_library(system_webview::system_webview ALIAS system_webview)
@@ -32,7 +33,9 @@ if(APPLE)
     find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
     find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
 
-    target_sources(system_webview PRIVATE src/platform/macos/WkWebView.mm)
+    target_sources(system_webview PRIVATE
+        src/platform/macos/WkWebView.mm
+        src/platform/macos/WkWebViewSession.mm)
     target_link_libraries(system_webview PRIVATE
         "${WEBKIT_FRAMEWORK}" "${COCOA_FRAMEWORK}")
 else()

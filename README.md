@@ -13,4 +13,4 @@ ctest --preset default-debug
 
 The `system_webview` static library is the product. Its public boundary is `src/webview/IWebView.h`; platform-native views are isolated below `src/platform`. Runnable examples live below `samples/`, starting with `samples/demo`.
 
-The demo maps webpage `window.open()` calls to `QTabWidget` tabs. Applications install `setNewWindowHandler` to choose their own popup policy.
+The demo creates every page from an explicit session and maps permitted webpage popup requests to `QTabWidget` tabs through `WebViewHostCallbacks`.
