@@ -24,12 +24,15 @@ public:
 
     webview::NavigationDecision decideNavigation(const webview::NavigationRequest& request) const override
     {
+        navigationRequests.push_back(request);
         if (request.url.scheme() == QStringLiteral("http")
             && request.url.host() == QStringLiteral("127.0.0.1")) {
             return webview::NavigationDecision::Allow;
         }
         return WebViewPolicy::decideNavigation(request);
     }
+
+    mutable std::vector<webview::NavigationRequest> navigationRequests;
 };
 
 void serveConnection(QTcpSocket* socket, quint16 port)
@@ -60,7 +63,8 @@ int main(int argc, char** argv)
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
     config.bridgeSchemas.insert(
         QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
-    auto session = webview::createEphemeralSession(std::make_shared<TestPolicy>(std::move(config)));
+    auto policy = std::make_shared<TestPolicy>(std::move(config));
+    auto session = webview::createEphemeralSession(policy);
     auto view = session->createWebView();
 
     std::vector<webview::LoadEvent> events;
@@ -195,6 +199,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
     events.clear();
+    policy->navigationRequests.clear();
     view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort())));
     timeout.start(10000);
     loop.exec();
@@ -208,6 +213,19 @@ window.addEventListener('DOMContentLoaded', () => {
         redirected = redirected || event.state == webview::LoadState::Redirected;
     }
     assert(redirected);
+    bool sawInitialRequest = false;
+    bool sawRedirectRequest = false;
+    for (const auto& request : policy->navigationRequests) {
+        if (request.url.path() == QStringLiteral("/redirect")) {
+            sawInitialRequest = true;
+            assert(!request.isRedirect);
+        } else if (request.url.path() == QStringLiteral("/final")) {
+            sawRedirectRequest = true;
+            assert(request.isRedirect);
+        }
+    }
+    assert(sawInitialRequest);
+    assert(sawRedirectRequest);
 
     const auto closedPort = server.serverPort();
     server.close();

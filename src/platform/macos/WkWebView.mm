@@ -107,6 +107,8 @@ struct NativeState {
     QUrl committedUrl;
     QString documentToken;
     bool documentTransportPrepared = false;
+    bool provisionalMainFrameNavigation = false;
+    bool explicitMainFrameNavigationPending = false;
     quint64 navigationId = 0;
     DocumentLifetime lifetime;
     std::unordered_map<void*, quint64> navigationIds;
@@ -286,10 +288,16 @@ public:
     const bool isMainFrame = navigationAction.targetFrame == nil || navigationAction.targetFrame.mainFrame;
     const bool isUserInitiated = navigationAction.navigationType == WKNavigationTypeLinkActivated
         || navigationAction.navigationType == WKNavigationTypeFormSubmitted;
-    const webview::NavigationRequest request { url, isMainFrame, isUserInitiated, false };
+    const bool isRedirect = isMainFrame && self.state->provisionalMainFrameNavigation
+        && !isUserInitiated && !self.state->explicitMainFrameNavigationPending;
+    const webview::NavigationRequest request { url, isMainFrame, isUserInitiated, isRedirect };
     if (@available(macOS 11.3, *)) {
         if (navigationAction.shouldPerformDownload) {
             const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
+            if (isMainFrame) {
+                self.state->explicitMainFrameNavigationPending = false;
+                self.state->provisionalMainFrameNavigation = false;
+            }
             decisionHandler(webview::mapDownloadDecision(self.state->policy->decideDownload(download))
                     == webview::NativeDownloadDecision::Download
                 ? WKNavigationActionPolicyDownload
@@ -300,14 +308,18 @@ public:
     const auto decision = self.state->policy->decideNavigation(request);
     if (decision == webview::NavigationDecision::Allow) {
         if (isMainFrame) {
-            self.state->lifetime.invalidate();
-            self.state->committedUrl = QUrl();
-            if (self.state->documentTransportPrepared) {
-                self.state->documentTransportPrepared = false;
-            } else {
-                webview::installDocumentTransport(
-                    *self.state, webView.configuration.userContentController);
-                self.state->documentTransportPrepared = false;
+            self.state->explicitMainFrameNavigationPending = false;
+            if (!isRedirect) {
+                self.state->provisionalMainFrameNavigation = false;
+                self.state->lifetime.invalidate();
+                self.state->committedUrl = QUrl();
+                if (self.state->documentTransportPrepared) {
+                    self.state->documentTransportPrepared = false;
+                } else {
+                    webview::installDocumentTransport(
+                        *self.state, webView.configuration.userContentController);
+                    self.state->documentTransportPrepared = false;
+                }
             }
         }
         decisionHandler(WKNavigationActionPolicyAllow);
@@ -315,6 +327,10 @@ public:
     }
     if (decision == webview::NavigationDecision::OpenExternally && self.state->callbacks.openExternal) {
         self.state->callbacks.openExternal(url);
+    }
+    if (isMainFrame) {
+        self.state->explicitMainFrameNavigationPending = false;
+        self.state->provisionalMainFrameNavigation = false;
     }
     decisionHandler(WKNavigationActionPolicyCancel);
 }
@@ -350,6 +366,7 @@ public:
         return;
     }
     ++self.state->navigationId;
+    self.state->provisionalMainFrameNavigation = true;
     self.state->navigationIds[static_cast<void*>(navigation)] = self.state->navigationId;
     self.state->emitLoad(webview::LoadState::Started, self.state->navigationId,
         QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
@@ -381,6 +398,7 @@ public:
         self.state->emitLoad(webview::LoadState::Finished, navigationId,
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
         self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.state->provisionalMainFrameNavigation = false;
     }
 }
 
@@ -396,6 +414,7 @@ public:
                                        : "")),
             QString::fromUtf8(error.localizedDescription.UTF8String));
         self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.state->provisionalMainFrameNavigation = false;
     }
 }
 
@@ -407,6 +426,7 @@ public:
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)),
             QString::fromUtf8(error.localizedDescription.UTF8String));
         self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.state->provisionalMainFrameNavigation = false;
     }
 }
 @end
@@ -479,6 +499,8 @@ void WkWebView::load(const QUrl& url)
     if (impl_->state->lifetime.isClosed()) {
         return;
     }
+    impl_->state->provisionalMainFrameNavigation = false;
+    impl_->state->explicitMainFrameNavigationPending = true;
     [impl_->view loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:toNSString(url.toString())]]];
 }
 
@@ -493,6 +515,8 @@ void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
     }
     impl_->state->lifetime.invalidate();
     impl_->state->committedUrl = QUrl();
+    impl_->state->provisionalMainFrameNavigation = false;
+    impl_->state->explicitMainFrameNavigationPending = true;
     installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
     [impl_->view loadHTMLString:toNSString(html) baseURL:[NSURL URLWithString:toNSString(baseUrl.toString())]];
 }
@@ -509,6 +533,8 @@ void WkWebView::reload()
     if (!impl_->state->lifetime.isClosed()) {
         impl_->state->lifetime.invalidate();
         impl_->state->committedUrl = QUrl();
+        impl_->state->provisionalMainFrameNavigation = false;
+        impl_->state->explicitMainFrameNavigationPending = true;
         installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
         [impl_->view reload];
     }
@@ -524,6 +550,8 @@ void WkWebView::close()
     impl_->state->createWebView = { };
     impl_->state->documentToken.clear();
     impl_->state->documentTransportPrepared = false;
+    impl_->state->provisionalMainFrameNavigation = false;
+    impl_->state->explicitMainFrameNavigationPending = false;
     impl_->state->navigationIds.clear();
     [impl_->view stopLoading];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = nullptr;
