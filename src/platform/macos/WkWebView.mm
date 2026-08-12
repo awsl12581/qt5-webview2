@@ -1,12 +1,15 @@
 #include "platform/macos/WkWebView.h"
 
 #include "webview/JsonMessage.h"
+#include "webview/DocumentLifetime.h"
 
 #include <QEvent>
 #include <QResizeEvent>
 #include <QString>
 #include <QTimer>
 #include <QWidget>
+
+#include <unordered_map>
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
@@ -74,14 +77,20 @@ struct NativeState {
     std::function<void*(void*, const NewWindowRequest&)> createWebView;
     QUrl committedUrl;
     quint64 navigationId = 0;
-    quint64 documentGeneration = 0;
-    bool closed = false;
+    DocumentLifetime lifetime;
+    std::unordered_map<void*, quint64> navigationIds;
 
-    void emitLoad(LoadState loadState, const QUrl& url = { }, const QString& error = { })
+    void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { }, const QString& error = { })
     {
-        if (!closed && callbacks.load) {
-            callbacks.load({ loadState, url, error, navigationId, true });
+        if (!lifetime.isClosed() && callbacks.load) {
+            callbacks.load({ loadState, url, error, eventNavigationId, true });
         }
+    }
+
+    quint64 idForNavigation(void* navigation) const
+    {
+        const auto found = navigationIds.find(navigation);
+        return found == navigationIds.end() ? navigationId : found->second;
     }
 };
 
@@ -113,7 +122,7 @@ public:
 - (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message
 {
     const QUrl frameUrl(QString::fromUtf8(message.frameInfo.request.URL.absoluteString.UTF8String));
-    if (![message.name isEqualToString:@(kBridgeName)] || !self.state || self.state->closed
+    if (![message.name isEqualToString:@(kBridgeName)] || !self.state || self.state->lifetime.isClosed()
         || !self.state->callbacks.message || !message.frameInfo.mainFrame
         || !self.state->policy->allowsBridge(self.state->committedUrl)
         || originForUrl(frameUrl) != originForUrl(self.state->committedUrl)) {
@@ -144,7 +153,7 @@ public:
                forNavigationAction:(WKNavigationAction*)navigationAction
                     windowFeatures:(WKWindowFeatures*)windowFeatures
 {
-    if (!self.state || self.state->closed || !self.state->createWebView || !self.state->callbacks.newWindow) {
+    if (!self.state || self.state->lifetime.isClosed() || !self.state->createWebView || !self.state->callbacks.newWindow) {
         return nil;
     }
     const QUrl url(QString::fromUtf8(navigationAction.request.URL.absoluteString.UTF8String));
@@ -170,7 +179,7 @@ public:
     decidePolicyForNavigationAction:(WKNavigationAction*)navigationAction
                     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
 {
-    if (!self.state || self.state->closed) {
+    if (!self.state || self.state->lifetime.isClosed()) {
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
@@ -182,7 +191,7 @@ public:
     const auto decision = self.state->policy->decideNavigation(request);
     if (decision == webview::NavigationDecision::Allow) {
         if (isMainFrame) {
-            ++self.state->documentGeneration;
+            self.state->lifetime.invalidate();
             self.state->committedUrl = QUrl();
         }
         decisionHandler(WKNavigationActionPolicyAllow);
@@ -204,11 +213,12 @@ public:
 
 - (void)webView:(WKWebView*)webView didStartProvisionalNavigation:(WKNavigation*)navigation
 {
-    if (!self.state || self.state->closed) {
+    if (!self.state || self.state->lifetime.isClosed()) {
         return;
     }
     ++self.state->navigationId;
-    self.state->emitLoad(webview::LoadState::Started,
+    self.state->navigationIds[static_cast<void*>(navigation)] = self.state->navigationId;
+    self.state->emitLoad(webview::LoadState::Started, self.state->navigationId,
         QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
 }
 
@@ -216,24 +226,28 @@ public:
 {
     if (self.state) {
         self.state->emitLoad(webview::LoadState::Redirected,
+            self.state->idForNavigation(static_cast<void*>(navigation)),
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
     }
 }
 
 - (void)webView:(WKWebView*)webView didCommitNavigation:(WKNavigation*)navigation
 {
-    if (!self.state || self.state->closed) {
+    if (!self.state || self.state->lifetime.isClosed()) {
         return;
     }
     self.state->committedUrl = QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String));
-    self.state->emitLoad(webview::LoadState::Committed, self.state->committedUrl);
+    self.state->emitLoad(webview::LoadState::Committed,
+        self.state->idForNavigation(static_cast<void*>(navigation)), self.state->committedUrl);
 }
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation
 {
     if (self.state) {
-        self.state->emitLoad(webview::LoadState::Finished,
+        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        self.state->emitLoad(webview::LoadState::Finished, navigationId,
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
+        self.state->navigationIds.erase(static_cast<void*>(navigation));
     }
 }
 
@@ -242,20 +256,24 @@ public:
                        withError:(NSError*)error
 {
     if (self.state) {
-        self.state->emitLoad(webview::LoadState::Failed,
+        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        self.state->emitLoad(webview::LoadState::Failed, navigationId,
             QUrl(QString::fromUtf8(error.userInfo[NSURLErrorFailingURLErrorKey]
                                        ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
                                        : "")),
             QString::fromUtf8(error.localizedDescription.UTF8String));
+        self.state->navigationIds.erase(static_cast<void*>(navigation));
     }
 }
 
 - (void)webView:(WKWebView*)webView didFailNavigation:(WKNavigation*)navigation withError:(NSError*)error
 {
     if (self.state) {
-        self.state->emitLoad(webview::LoadState::Failed,
+        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        self.state->emitLoad(webview::LoadState::Failed, navigationId,
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)),
             QString::fromUtf8(error.localizedDescription.UTF8String));
+        self.state->navigationIds.erase(static_cast<void*>(navigation));
     }
 }
 @end
@@ -304,7 +322,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
     navigationDelegate.state = impl_->state.get();
     impl_->navigationDelegate = navigationDelegate;
     impl_->state->createWebView = [this](void* childConfiguration, const NewWindowRequest& request) -> void* {
-        if (impl_->state->closed || !impl_->state->callbacks.newWindow) {
+        if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.newWindow) {
             return nullptr;
         }
         auto child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, childConfiguration, impl_->state->policy));
@@ -331,7 +349,7 @@ QWidget* WkWebView::widget() { return impl_->container; }
 
 void WkWebView::load(const QUrl& url)
 {
-    if (impl_->state->closed) {
+    if (impl_->state->lifetime.isClosed()) {
         return;
     }
     [impl_->view loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:toNSString(url.toString())]]];
@@ -339,7 +357,7 @@ void WkWebView::load(const QUrl& url)
 
 void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
 {
-    if (impl_->state->closed) {
+    if (impl_->state->lifetime.isClosed()) {
         return;
     }
     const NavigationRequest request { baseUrl, true, false, false };
@@ -351,27 +369,27 @@ void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
 
 void WkWebView::stop()
 {
-    if (!impl_->state->closed) {
+    if (!impl_->state->lifetime.isClosed()) {
         [impl_->view stopLoading];
     }
 }
 
 void WkWebView::reload()
 {
-    if (!impl_->state->closed) {
+    if (!impl_->state->lifetime.isClosed()) {
         [impl_->view reload];
     }
 }
 
 void WkWebView::close()
 {
-    if (impl_->state->closed) {
+    if (impl_->state->lifetime.isClosed()) {
         return;
     }
-    impl_->state->closed = true;
-    ++impl_->state->documentGeneration;
+    impl_->state->lifetime.close();
     impl_->state->callbacks = { };
     impl_->state->createWebView = { };
+    impl_->state->navigationIds.clear();
     [impl_->view stopLoading];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = nullptr;
     static_cast<SystemWebViewUIDelegate*>(impl_->uiDelegate).state = nullptr;
@@ -387,11 +405,11 @@ void WkWebView::close()
     impl_->view = nil;
 }
 
-bool WkWebView::isClosed() const { return impl_->state->closed; }
+bool WkWebView::isClosed() const { return impl_->state->lifetime.isClosed(); }
 
 void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion completion)
 {
-    if (impl_->state->closed) {
+    if (impl_->state->lifetime.isClosed()) {
         if (completion) {
             completion({ MessageError::Closed, QStringLiteral("The web view is closed.") });
         }
@@ -413,7 +431,7 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
         { QStringLiteral("payload"), message.payload },
     };
     const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(jsonForJavaScriptArgument(envelope));
-    const auto generation = impl_->state->documentGeneration;
+    const auto generation = impl_->state->lifetime.token();
     const std::weak_ptr<NativeState> weakState = impl_->state;
     [impl_->view evaluateJavaScript:toNSString(script)
                      completionHandler:^(id, NSError* error) {
@@ -421,11 +439,11 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
                              return;
                          }
                          const auto state = weakState.lock();
-                         if (!state || state->closed) {
+                         if (!state || state->lifetime.resultFor(generation) == MessageError::Closed) {
                              completion({ MessageError::Closed, QStringLiteral("The web view is closed.") });
                              return;
                          }
-                         if (state->documentGeneration != generation) {
+                         if (state->lifetime.resultFor(generation) == MessageError::NavigationChanged) {
                              completion({ MessageError::NavigationChanged,
                                  QStringLiteral("The document changed before message delivery completed.") });
                              return;
@@ -440,7 +458,7 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
 
 void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
 {
-    if (!impl_->state->closed) {
+    if (!impl_->state->lifetime.isClosed()) {
         impl_->state->callbacks = std::move(callbacks);
     }
 }

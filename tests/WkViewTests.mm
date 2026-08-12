@@ -3,10 +3,51 @@
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTimer>
 
 #include <cassert>
 #include <vector>
+
+namespace {
+class TestPolicy final : public webview::WebViewPolicy
+{
+public:
+    explicit TestPolicy(webview::WebViewPolicyConfig config)
+        : WebViewPolicy(std::move(config))
+    {
+    }
+
+    webview::NavigationDecision decideNavigation(const webview::NavigationRequest& request) const override
+    {
+        if (request.url.scheme() == QStringLiteral("http")
+            && request.url.host() == QStringLiteral("127.0.0.1")) {
+            return webview::NavigationDecision::Allow;
+        }
+        return WebViewPolicy::decideNavigation(request);
+    }
+};
+
+void serveConnection(QTcpSocket* socket, quint16 port)
+{
+    QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, port] {
+        const auto request = socket->readAll();
+        QByteArray response;
+        if (request.startsWith("GET /redirect ")) {
+            response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(port)
+                + "/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        } else {
+            const QByteArray body = "<!doctype html><title>final</title>done";
+            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
+                + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+        }
+        socket->write(response);
+        socket->disconnectFromHost();
+    });
+    QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+}
+}
 
 int main(int argc, char** argv)
 {
@@ -16,7 +57,7 @@ int main(int argc, char** argv)
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
     config.bridgeSchemas.insert(
         QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
-    auto session = webview::createEphemeralSession(webview::createDefaultWebViewPolicy(std::move(config)));
+    auto session = webview::createEphemeralSession(std::make_shared<TestPolicy>(std::move(config)));
     auto view = session->createWebView();
 
     std::vector<webview::LoadEvent> events;
@@ -83,6 +124,39 @@ window.addEventListener('DOMContentLoaded', () => {
         rejected = result.error == webview::MessageError::Rejected;
     });
     assert(rejected);
+
+    QTcpServer server;
+    assert(server.listen(QHostAddress::LocalHost, 0));
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+        while (server.hasPendingConnections()) {
+            serveConnection(server.nextPendingConnection(), server.serverPort());
+        }
+    });
+    events.clear();
+    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort())));
+    timeout.start(10000);
+    loop.exec();
+    assert(!events.empty());
+    assert(events.front().state == webview::LoadState::Started);
+    assert(events.back().state == webview::LoadState::Finished);
+    const auto redirectNavigationId = events.front().navigationId;
+    bool redirected = false;
+    for (const auto& event : events) {
+        assert(event.navigationId == redirectNavigationId);
+        redirected = redirected || event.state == webview::LoadState::Redirected;
+    }
+    assert(redirected);
+
+    const auto closedPort = server.serverPort();
+    server.close();
+    events.clear();
+    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(closedPort)));
+    timeout.start(10000);
+    loop.exec();
+    assert(!events.empty());
+    assert(events.front().state == webview::LoadState::Started);
+    assert(events.back().state == webview::LoadState::Failed);
+    assert(!events.back().error.isEmpty());
 
     view->close();
     view->close();

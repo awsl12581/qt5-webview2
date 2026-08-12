@@ -1,3 +1,4 @@
+#include "webview/DocumentLifetime.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
 
@@ -66,4 +67,16 @@ int main()
         { 1, validMessage.type, QJsonObject { { QStringLiteral("sequence"), QString(200, QLatin1Char('x')) } } },
         &validationError));
     assert(validationError.contains(QStringLiteral("size")));
+
+    webview::DocumentLifetime lifetime;
+    const auto firstDocument = lifetime.token();
+    assert(lifetime.resultFor(firstDocument) == webview::MessageError::None);
+    lifetime.invalidate();
+    assert(lifetime.resultFor(firstDocument) == webview::MessageError::NavigationChanged);
+    const auto secondDocument = lifetime.token();
+    assert(lifetime.resultFor(secondDocument) == webview::MessageError::None);
+    lifetime.close();
+    assert(lifetime.resultFor(secondDocument) == webview::MessageError::Closed);
+    lifetime.close();
+    assert(lifetime.resultFor(lifetime.token()) == webview::MessageError::Closed);
 }

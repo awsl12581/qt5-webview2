@@ -18,7 +18,7 @@ elseif(NOT IS_SYMLINK "${COMPILE_COMMANDS_LINK}")
     message(WARNING "Not updating ${COMPILE_COMMANDS_LINK}: it is not a symbolic link.")
 endif()
 
-find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
+find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 
 add_library(system_webview STATIC
     src/webview/JsonMessage.cpp
@@ -59,7 +59,7 @@ if(BUILD_TESTING)
         add_test(NAME webview_macos_session_tests COMMAND webview_macos_session_tests)
 
         add_executable(webview_macos_view_tests tests/WkViewTests.mm)
-        target_link_libraries(webview_macos_view_tests PRIVATE system_webview)
+        target_link_libraries(webview_macos_view_tests PRIVATE system_webview Qt5::Network)
         add_test(NAME webview_macos_view_tests COMMAND webview_macos_view_tests)
     endif()
 endif()
