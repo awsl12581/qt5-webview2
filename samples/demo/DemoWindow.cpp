@@ -98,5 +98,6 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     page->setHostCallbacks(std::move(callbacks));
     const int index = tabs_->addTab(tab, title);
     tabs_->setCurrentIndex(index);
+    tabs_->widget(index)->layout()->activate();
 }
 } // namespace samples::demo

@@ -1,0 +1,18 @@
+{
+  "source_doc": "docs/specs/2026-08-13-popup-native-view-attachment.md",
+  "csv": "2026-08-13_20-15-01-popup-native-view-attachment.csv",
+  "execution_scope": "approved spec全文",
+  "claim_coverage": { "covered": 10, "total": 10, "status": "pending" },
+  "claims": [
+    { "claim_id": "CLAIM-001", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:17", "promise": "Popup WKWebView continues to use the configuration supplied by WebKit.", "covered_by": ["BACKEND-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-002", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:18", "promise": "The demo attaches a popup only after inserting it into QTabWidget and completing layout.", "covered_by": ["DEMO-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-003", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:23", "promise": "Construction does not create a native handle for an unparented NativeViewHost or add its WKWebView as a subview.", "covered_by": ["BACKEND-01", "TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-004", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:25", "promise": "Native attachment uses the host's final nonzero bounds for the WKWebView frame.", "covered_by": ["BACKEND-01", "TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-005", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:27", "promise": "An unattached or attached view closes idempotently and retains existing cleanup semantics.", "covered_by": ["BACKEND-01", "TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-006", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:31", "promise": "WKUIDelegate returns a popup WKWebView constructed with WebKit's configuration.", "covered_by": ["BACKEND-01", "TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-007", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:32", "promise": "The host newWindow callback runs before the synchronous popup return completes.", "covered_by": ["BACKEND-01", "TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-008", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:35", "promise": "New tabs avoid the initial 1x1 or unparented native-host resize flash.", "covered_by": ["DEMO-01", "TEST-01"], "evidence_required": "limited_allowed", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-009", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:36", "promise": "Initial tab, popup tab, tab close, and session destruction preserve lifecycle and callback behavior.", "covered_by": ["TEST-01"], "evidence_required": "integration", "production_path_required": true, "status": "pending" },
+    { "claim_id": "CLAIM-010", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:37", "promise": "The demo and macOS test targets build, and WKWebView tests pass in a WindowServer session.", "covered_by": ["TEST-01"], "evidence_required": "limited_allowed", "production_path_required": true, "status": "pending" }
+  ]
+}

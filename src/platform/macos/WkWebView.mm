@@ -10,7 +10,7 @@
 #include <QJsonDocument>
 #include <QResizeEvent>
 #include <QString>
-#include <QTimer>
+#include <QSize>
 #include <QUuid>
 #include <QWidget>
 
@@ -57,7 +57,6 @@ public:
         : QWidget(parent)
     {
         setAttribute(Qt::WA_NativeWindow);
-        winId();
     }
 
     ResizeHandler syncNativeView;
@@ -82,7 +81,7 @@ private:
     void scheduleNativeViewSync()
     {
         if (syncNativeView) {
-            QTimer::singleShot(0, this, [this] { syncNativeView(); });
+            syncNativeView();
         }
     }
 };
@@ -476,13 +475,20 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     impl_->view.UIDelegate = uiDelegate;
     impl_->view.navigationDelegate = navigationDelegate;
     impl_->view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    auto* hostView = reinterpret_cast<NSView*>(impl_->container->winId());
-    impl_->container->syncNativeView = [hostView, view = impl_->view] {
+    impl_->container->syncNativeView = [container = impl_->container, view = impl_->view] {
+        if (!container->parentWidget() || !container->isVisible() || container->size().isEmpty()) {
+            return;
+        }
+        auto* hostView = reinterpret_cast<NSView*>(container->winId());
         [hostView layoutSubtreeIfNeeded];
+        if (NSIsEmptyRect(hostView.bounds)) {
+            return;
+        }
         view.frame = hostView.bounds;
+        if (view.superview != hostView) {
+            [hostView addSubview:view];
+        }
     };
-    [hostView addSubview:impl_->view];
-    impl_->container->syncNativeView();
     if (impl_->sessionState && impl_->sessionState->valid) {
         impl_->sessionState->views.insert(this);
     } else {
@@ -644,4 +650,11 @@ void* WkWebView::nativeConfigurationForTesting() const
 }
 
 QString WkWebView::documentTokenForTesting() const { return impl_->state->documentToken; }
+
+bool WkWebView::isNativeViewAttachedForTesting() const { return impl_->view.superview != nil; }
+
+QSize WkWebView::nativeViewSizeForTesting() const
+{
+    return { static_cast<int>(impl_->view.frame.size.width), static_cast<int>(impl_->view.frame.size.height) };
+}
 } // namespace webview

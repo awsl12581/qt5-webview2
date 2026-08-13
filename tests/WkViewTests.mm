@@ -7,9 +7,11 @@
 #include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QVBoxLayout>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
+#include <QWidget>
 
 #import <WebKit/WebKit.h>
 
@@ -369,10 +371,17 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     assert(failureEvents.back().state == webview::LoadState::Failed);
     assert(!failureEvents.back().error.isEmpty());
 
+    QWidget popupHost;
+    popupHost.resize(640, 480);
+    popupHost.show();
     webview::WebViewPtr popup;
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
     popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
+        auto* layout = new QVBoxLayout(&popupHost);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(child->widget());
+        popupHost.layout()->activate();
         popup = std::move(child);
         loop.quit();
     };
@@ -385,6 +394,9 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     loop.exec();
     assert(popup);
     assert(!popup->isClosed());
+    auto* popupView = static_cast<webview::WkWebView*>(popup.get());
+    assert(popupView->isNativeViewAttachedForTesting());
+    assert(popupView->nativeViewSizeForTesting() == QSize(640, 480));
     auto* rootConfiguration = static_cast<WKWebViewConfiguration*>(
         static_cast<webview::WkWebView*>(view.get())->nativeConfigurationForTesting());
     auto* popupConfiguration = static_cast<WKWebViewConfiguration*>(

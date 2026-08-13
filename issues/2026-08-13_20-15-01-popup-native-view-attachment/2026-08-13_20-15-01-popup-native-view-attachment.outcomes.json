@@ -1,0 +1,29 @@
+{
+  "source": "docs/specs/2026-08-13-popup-native-view-attachment.md",
+  "execution_scope": "approved spec全文",
+  "artifact_role": {
+    "kind": "task",
+    "producer": "approved mission spec",
+    "consumers": ["mission review", "handoff"],
+    "authority": "Defines the popup native-view attachment change and its acceptance evidence.",
+    "not_authority": "Does not prove that a visual flicker is absent without WindowServer verification."
+  },
+  "desired_effects": [
+    { "id": "EFFECT-001", "statement": "A permitted popup tab is first rendered at the tab content area's final size instead of a temporary native-host size.", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:12" },
+    { "id": "EFFECT-002", "statement": "Popup creation remains compatible with WKUIDelegate's synchronous configuration contract.", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:17" }
+  ],
+  "reader_questions": [
+    { "id": "OUTCOME-001", "question": "Does a permitted popup enter QTabWidget before its WKWebView is attached to a native Qt host?", "why_it_matters": "This ordering removes the unparented-host reattachment that causes the visible resize flash.", "evidence_required": "integration", "scope": "macOS WkWebView popup path", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:23", "status": "pending" },
+    { "id": "OUTCOME-002", "question": "Does first native attachment use a nonzero tab-host bounds while retaining WebKit's popup configuration and existing lifecycle behavior?", "why_it_matters": "A delayed attach is only valid if popup loading and cleanup still work.", "evidence_required": "integration", "scope": "macOS WkWebView root and popup paths", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:25", "status": "pending" },
+    { "id": "OUTCOME-003", "question": "Has the user-visible resize flash been checked in a WindowServer session?", "why_it_matters": "Source and geometry tests cannot directly establish the rendered visual result.", "evidence_required": "human_review", "scope": "system_webview_demo on macOS", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:19", "status": "pending" }
+  ],
+  "decisive_result": {
+    "question": "Does popup creation attach its native view only after the tab has final geometry, without regressing WebKit popup loading or cleanup?",
+    "success_condition": "Integration evidence confirms callback ordering, final nonzero frame attachment, and existing lifecycle tests; manual WindowServer review reports no resize flash.",
+    "failure_condition": "Any popup requires attachment before tab layout, attaches at a temporary frame, fails to load, or loses cleanup behavior.",
+    "source_refs": ["docs/specs/2026-08-13-popup-native-view-attachment.md:23", "docs/specs/2026-08-13-popup-native-view-attachment.md:37"]
+  },
+  "blocked_claims": [
+    { "claim": "The visual resize flash is absent in every macOS environment.", "reason": "It requires a real WindowServer session and is not established by headless or source-only checks.", "release_condition": "Manually open the demo popup in a logged-in WindowServer session and inspect its first render.", "source_ref": "docs/specs/2026-08-13-popup-native-view-attachment.md:19" }
+  ]
+}
