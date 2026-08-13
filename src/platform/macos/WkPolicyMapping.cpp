@@ -1,5 +1,7 @@
 #include "platform/macos/WkPolicyMapping.h"
 
+#include "webview/WebViewPolicy.h"
+
 namespace webview
 {
 NativePermissionDecision mapPermissionDecision(PermissionDecision decision)
@@ -13,6 +15,12 @@ NativePermissionDecision mapPermissionDecision(PermissionDecision decision)
         return NativePermissionDecision::Deny;
     }
     return NativePermissionDecision::Deny;
+}
+
+NativePermissionDecision decideNativePermission(
+    const WebViewPolicy& policy, const PermissionRequest& request)
+{
+    return mapPermissionDecision(policy.decidePermission(request));
 }
 
 NativeDownloadDecision mapDownloadDecision(DownloadDecision decision)

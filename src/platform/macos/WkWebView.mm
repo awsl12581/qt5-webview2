@@ -48,18 +48,6 @@ webview::PermissionKind permissionKind(WKMediaCaptureType type)
                                                  : webview::PermissionKind::Camera;
 }
 
-WKPermissionDecision nativePermission(webview::PermissionDecision decision)
-{
-    switch (webview::mapPermissionDecision(decision)) {
-    case webview::NativePermissionDecision::Grant:
-        return WKPermissionDecisionGrant;
-    case webview::NativePermissionDecision::Prompt:
-        return WKPermissionDecisionPrompt;
-    case webview::NativePermissionDecision::Deny:
-        return WKPermissionDecisionDeny;
-    }
-}
-
 class NativeViewHost final : public QWidget
 {
 public:
@@ -249,8 +237,13 @@ public:
                              .arg(QString::fromUtf8(origin.protocol.UTF8String),
                                  QString::fromUtf8(origin.host.UTF8String))
                              .arg(origin.port));
-    decisionHandler(nativePermission(
-        self.state->policy->decidePermission({ permissionKind(type), originUrl })));
+    const auto decision = webview::decideNativePermission(
+        *self.state->policy, { permissionKind(type), originUrl });
+    decisionHandler(decision == webview::NativePermissionDecision::Grant
+            ? WKPermissionDecisionGrant
+            : decision == webview::NativePermissionDecision::Prompt
+            ? WKPermissionDecisionPrompt
+            : WKPermissionDecisionDeny);
 }
 
 - (void)webView:(WKWebView*)webView
@@ -259,10 +252,10 @@ public:
             completionHandler:(void (^)(NSArray<NSURL*>* URLs))completionHandler
 {
     if (!self.state || self.state->lifetime.isClosed() || !frame.mainFrame
-        || self.state->policy->decidePermission(
+        || webview::decideNativePermission(*self.state->policy,
                { webview::PermissionKind::FilePicker,
                    QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)) })
-            != webview::PermissionDecision::Allow) {
+            != webview::NativePermissionDecision::Grant) {
         completionHandler(nil);
         return;
     }

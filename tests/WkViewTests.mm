@@ -1,6 +1,7 @@
 #include "webview/IWebView.h"
 #include "webview/WebViewFactory.h"
 #include "platform/macos/WkWebView.h"
+#include "platform/macos/WkPolicyMapping.h"
 
 #include <QApplication>
 #include <QEventLoop>
@@ -13,6 +14,7 @@
 #import <WebKit/WebKit.h>
 
 #include <cassert>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -39,19 +41,57 @@ public:
         return allowPopups ? webview::NewWindowDecision::Allow : webview::NewWindowDecision::Cancel;
     }
 
+    webview::PermissionDecision decidePermission(const webview::PermissionRequest& request) const override
+    {
+        permissionRequests.push_back(request);
+        return webview::PermissionDecision::Deny;
+    }
+
+    webview::DownloadDecision decideDownload(const webview::DownloadRequest& request) const override
+    {
+        downloadRequests.push_back(request);
+        return webview::DownloadDecision::Cancel;
+    }
+
     mutable std::vector<webview::NavigationRequest> navigationRequests;
+    mutable std::vector<webview::PermissionRequest> permissionRequests;
+    mutable std::vector<webview::DownloadRequest> downloadRequests;
     bool allowPopups = false;
 };
 
-void serveConnection(QTcpSocket* socket, quint16 port)
+struct ServerStats {
+    int reloadRequests = 0;
+    int slowRequests = 0;
+};
+
+void serveConnection(QTcpSocket* socket, quint16 port, ServerStats* stats)
 {
-    QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, port] {
+    QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, port, stats] {
         const auto request = socket->readAll();
         QByteArray response;
         if (request.startsWith("GET /redirect ")) {
             response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(port)
                 + "/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        } else if (request.startsWith("GET /download ")) {
+            const QByteArray body = "download-data";
+            response = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
+                       "Content-Disposition: attachment; filename=test.bin\r\nContent-Length: "
+                + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+        } else if (request.startsWith("GET /slow ")) {
+            ++stats->slowRequests;
+            QTimer::singleShot(500, socket, [socket] {
+                if (socket->state() == QAbstractSocket::ConnectedState) {
+                    const QByteArray body = "<!doctype html><title>slow</title>done";
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                    socket->disconnectFromHost();
+                }
+            });
+            return;
         } else {
+            if (request.startsWith("GET /reload ")) {
+                ++stats->reloadRequests;
+            }
             const QByteArray body = "<!doctype html><title>final</title>done";
             response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
                 + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
@@ -201,9 +241,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     QTcpServer server;
     assert(server.listen(QHostAddress::LocalHost, 0));
+    ServerStats serverStats;
     QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
         while (server.hasPendingConnections()) {
-            serveConnection(server.nextPendingConnection(), server.serverPort());
+            serveConnection(server.nextPendingConnection(), server.serverPort(), &serverStats);
         }
     });
     events.clear();
@@ -235,16 +276,98 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(sawInitialRequest);
     assert(sawRedirectRequest);
 
-    const auto closedPort = server.serverPort();
-    server.close();
     events.clear();
-    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(closedPort)));
+    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/reload").arg(server.serverPort())));
     timeout.start(10000);
     loop.exec();
+    assert(events.back().state == webview::LoadState::Finished);
+    assert(serverStats.reloadRequests == 1);
+    events.clear();
+    view->reload();
+    timeout.start(10000);
+    loop.exec();
+    assert(events.back().state == webview::LoadState::Finished);
+    assert(serverStats.reloadRequests == 2);
+
+    events.clear();
+    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort())));
+    QEventLoop startedLoop;
+    QTimer::singleShot(100, &startedLoop, &QEventLoop::quit);
+    startedLoop.exec();
     assert(!events.empty());
     assert(events.front().state == webview::LoadState::Started);
-    assert(events.back().state == webview::LoadState::Failed);
-    assert(!events.back().error.isEmpty());
+    view->stop();
+    const auto stoppedEventCount = events.size();
+    QEventLoop stoppedLoop;
+    QTimer::singleShot(700, &stoppedLoop, &QEventLoop::quit);
+    stoppedLoop.exec();
+    assert(events.size() >= stoppedEventCount);
+    assert(events.empty() || events.back().state != webview::LoadState::Finished);
+
+    policy->permissionRequests.clear();
+    events.clear();
+    view->setHtml(QStringLiteral(R"HTML(
+<!doctype html><input id="file" type="file"><script>
+window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
+</script>)HTML"), QUrl(QStringLiteral("https://trusted.example/file-input.html")));
+    timeout.start(10000);
+    loop.exec();
+    QEventLoop permissionLoop;
+    QTimer::singleShot(100, &permissionLoop, &QEventLoop::quit);
+    permissionLoop.exec();
+    assert(policy->permissionRequests.empty());
+    assert(webview::decideNativePermission(*policy,
+               { webview::PermissionKind::FilePicker,
+                   QUrl(QStringLiteral("https://trusted.example/file-input.html")) })
+        == webview::NativePermissionDecision::Deny);
+    assert(policy->permissionRequests.size() == 1);
+    assert(policy->permissionRequests.back().kind == webview::PermissionKind::FilePicker);
+
+    policy->downloadRequests.clear();
+    events.clear();
+    view->load(QUrl(QStringLiteral("http://127.0.0.1:%1/download").arg(server.serverPort())));
+    QEventLoop downloadLoop;
+    QTimer::singleShot(500, &downloadLoop, &QEventLoop::quit);
+    downloadLoop.exec();
+    assert(!policy->downloadRequests.empty());
+    assert(policy->downloadRequests.back().url.path() == QStringLiteral("/download"));
+
+    auto raceView = session->createWebView();
+    int raceCallbacks = 0;
+    webview::WebViewHostCallbacks raceCallbacksConfig;
+    raceCallbacksConfig.load = [&](const webview::LoadEvent&) { ++raceCallbacks; };
+    raceView->setHostCallbacks(std::move(raceCallbacksConfig));
+    raceView->load(QUrl(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort())));
+    raceView->close();
+    const auto callbacksAtClose = raceCallbacks;
+    QEventLoop raceLoop;
+    QTimer::singleShot(700, &raceLoop, &QEventLoop::quit);
+    raceLoop.exec();
+    assert(raceView->isClosed());
+    assert(raceCallbacks == callbacksAtClose);
+
+    server.close();
+    QTcpServer unavailableServer;
+    assert(unavailableServer.listen(QHostAddress::LocalHost, 0));
+    const auto unavailablePort = unavailableServer.serverPort();
+    unavailableServer.close();
+    auto failureView = session->createWebView();
+    std::vector<webview::LoadEvent> failureEvents;
+    webview::WebViewHostCallbacks failureCallbacks;
+    failureCallbacks.load = [&](const webview::LoadEvent& event) {
+        failureEvents.push_back(event);
+        if (event.state == webview::LoadState::Finished || event.state == webview::LoadState::Failed) {
+            loop.quit();
+        }
+    };
+    failureView->setHostCallbacks(std::move(failureCallbacks));
+    failureView->load(QUrl(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(unavailablePort)));
+    timeout.start(10000);
+    loop.exec();
+    assert(!failureEvents.empty());
+    assert(failureEvents.front().state == webview::LoadState::Started);
+    assert(failureEvents.back().state == webview::LoadState::Failed);
+    assert(!failureEvents.back().error.isEmpty());
 
     webview::WebViewPtr popup;
     policy->allowPopups = true;
