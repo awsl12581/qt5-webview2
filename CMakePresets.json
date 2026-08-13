@@ -1,62 +1,98 @@
 {
   "version": 6,
-    "configurePresets": [
+  "configurePresets": [
     {
-      "name": "base",
+      "name": "macos-appleclang-base",
       "hidden": true,
       "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qt@5"
       }
     },
-        {
-            "name": "brew-llvm-base",
-            "hidden": true,
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
-                "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
-                "CMAKE_OBJC_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
-                "CMAKE_OBJCXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++"
-            }
-        },
-        {
-            "name": "default-debug",
-      "displayName": "Apple Clang Debug",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/build/debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    {
+      "name": "macos-appleclang-debug",
+      "displayName": "Apple Clang Debug (Ninja)",
+      "inherits": "macos-appleclang-base",
+      "binaryDir": "${sourceDir}/build/macos-appleclang-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
-        {
-            "name": "default-release",
-      "displayName": "Apple Clang Release",
-      "inherits": "base",
-      "binaryDir": "${sourceDir}/build/release",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-        },
-        {
-            "name": "brew-llvm-debug",
-            "displayName": "Homebrew LLVM Debug",
-            "inherits": "brew-llvm-base",
-            "binaryDir": "${sourceDir}/build/brew-llvm-debug",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-        },
-        {
-            "name": "brew-llvm-release",
-            "displayName": "Homebrew LLVM Release",
-            "inherits": "brew-llvm-base",
-            "binaryDir": "${sourceDir}/build/brew-llvm-release",
-            "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-        }
+    {
+      "name": "macos-appleclang-release",
+      "displayName": "Apple Clang Release (Ninja)",
+      "inherits": "macos-appleclang-base",
+      "binaryDir": "${sourceDir}/build/macos-appleclang-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-msvc-arm64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/../vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "arm64-windows"
+      }
+    },
+    {
+      "name": "windows-msvc-arm64-debug",
+      "displayName": "MSVC ARM64 Debug (Ninja)",
+      "inherits": "windows-msvc-arm64-base",
+      "binaryDir": "${sourceDir}/build/windows-msvc-arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-msvc-arm64-release",
+      "displayName": "MSVC ARM64 Release (Ninja)",
+      "inherits": "windows-msvc-arm64-base",
+      "binaryDir": "${sourceDir}/build/windows-msvc-arm64-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
   ],
-    "buildPresets": [
-        { "name": "default-debug", "configurePreset": "default-debug" },
-        { "name": "default-release", "configurePreset": "default-release" },
-        { "name": "brew-llvm-debug", "configurePreset": "brew-llvm-debug" },
-        { "name": "brew-llvm-release", "configurePreset": "brew-llvm-release" }
+  "buildPresets": [
+    {
+      "name": "macos-appleclang-debug",
+      "configurePreset": "macos-appleclang-debug"
+    },
+    {
+      "name": "macos-appleclang-release",
+      "configurePreset": "macos-appleclang-release"
+    },
+    {
+      "name": "windows-msvc-arm64-debug",
+      "configurePreset": "windows-msvc-arm64-debug"
+    },
+    {
+      "name": "windows-msvc-arm64-release",
+      "configurePreset": "windows-msvc-arm64-release"
+    }
   ],
   "testPresets": [
-    { "name": "default-debug", "configurePreset": "default-debug" }
+    {
+      "name": "macos-appleclang-debug",
+      "configurePreset": "macos-appleclang-debug"
+    },
+    {
+      "name": "windows-msvc-arm64-debug",
+      "configurePreset": "windows-msvc-arm64-debug"
+    }
   ]
 }

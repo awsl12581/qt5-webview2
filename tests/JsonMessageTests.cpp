@@ -1,7 +1,10 @@
 #include "webview/DocumentLifetime.h"
-#include "platform/macos/WkPolicyMapping.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
+
+#if defined(__APPLE__)
+#include "platform/macos/WkPolicyMapping.h"
+#endif
 
 #include <QDir>
 #include <QFile>
@@ -81,6 +84,7 @@ int main()
     lifetime.close();
     assert(lifetime.resultFor(lifetime.token()) == webview::MessageError::Closed);
 
+#if defined(__APPLE__)
     assert(webview::mapPermissionDecision(webview::PermissionDecision::Allow)
         == webview::NativePermissionDecision::Grant);
     assert(webview::mapPermissionDecision(webview::PermissionDecision::Deny)
@@ -91,4 +95,5 @@ int main()
         == webview::NativeDownloadDecision::Download);
     assert(webview::mapDownloadDecision(webview::DownloadDecision::Cancel)
         == webview::NativeDownloadDecision::Cancel);
+#endif
 }

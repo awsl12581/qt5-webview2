@@ -1,0 +1,2 @@
+add_executable(system_webview_windows_widget_demo main.cpp)
+target_link_libraries(system_webview_windows_widget_demo PRIVATE Qt5::Widgets)
