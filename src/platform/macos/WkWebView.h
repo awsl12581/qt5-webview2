@@ -29,6 +29,7 @@ public:
     QString documentTokenForTesting() const;
     bool isNativeViewAttachedForTesting() const;
     QSize nativeViewSizeForTesting() const;
+    void attachNativeView();
 
 private:
     friend class WkWebViewSession;

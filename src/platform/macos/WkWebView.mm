@@ -158,6 +158,7 @@ public:
     id messageDelegate = nil;
     id uiDelegate = nil;
     id navigationDelegate = nil;
+    bool nativeViewAttachmentRequested = false;
 };
 } // namespace webview
 
@@ -475,8 +476,10 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     impl_->view.UIDelegate = uiDelegate;
     impl_->view.navigationDelegate = navigationDelegate;
     impl_->view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    impl_->container->syncNativeView = [container = impl_->container, view = impl_->view] {
-        if (!container->parentWidget() || !container->isVisible() || container->size().isEmpty()) {
+    impl_->container->syncNativeView = [container = impl_->container, view = impl_->view,
+                                            attachmentRequested = &impl_->nativeViewAttachmentRequested] {
+        if (!*attachmentRequested || !container->parentWidget() || !container->isVisible()
+            || container->size().isEmpty()) {
             return;
         }
         auto* hostView = reinterpret_cast<NSView*>(container->winId());
@@ -499,6 +502,15 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
 WkWebView::~WkWebView() { close(); }
 
 QWidget* WkWebView::widget() { return impl_->container; }
+
+void WkWebView::attachNativeView()
+{
+    if (impl_->state->lifetime.isClosed()) {
+        return;
+    }
+    impl_->nativeViewAttachmentRequested = true;
+    impl_->container->syncNativeView();
+}
 
 void WkWebView::load(const QUrl& url)
 {
@@ -572,6 +584,7 @@ void WkWebView::close()
     [impl_->view.configuration.userContentController removeScriptMessageHandlerForName:@(kBridgeName)];
     [impl_->view removeFromSuperview];
     impl_->container->syncNativeView = { };
+    impl_->nativeViewAttachmentRequested = false;
     impl_->messageDelegate = nil;
     impl_->uiDelegate = nil;
     impl_->navigationDelegate = nil;
