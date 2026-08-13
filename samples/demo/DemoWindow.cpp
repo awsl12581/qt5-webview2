@@ -31,7 +31,7 @@ public:
 
     webview::NewWindowDecision decideNewWindow(const webview::NewWindowRequest& request) const override
     {
-        return request.isUserInitiated && request.url.scheme() == QStringLiteral("https")
+        return request.url == QUrl(QStringLiteral("https://example.com/"))
             ? webview::NewWindowDecision::Allow
             : webview::NewWindowDecision::Cancel;
     }

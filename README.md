@@ -23,4 +23,4 @@ auto session = webview::createEphemeralSession(std::move(policy));
 auto view = session->createWebView(parent);
 ```
 
-The demo retains one session for all tabs, trusts only `app://demo` for its native bridge, and maps permitted user popups to `QTabWidget` tabs. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.
+The demo retains one session for all tabs, trusts only `app://demo` for its native bridge, and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.
