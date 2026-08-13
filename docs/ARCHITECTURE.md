@@ -13,6 +13,8 @@ The library separates four responsibilities:
 3. `WebViewPolicy` decides navigation, popups, bridge access, permissions, downloads, and message schemas. Defaults fail closed except for ordinary HTTPS navigation.
 4. The application host owns `WebViewPtr` instances in tabs or windows. It calls `close()` before releasing a view or destroying its surface.
 
+Destroying a session closes every root or popup view it created, even when the host still retains the `WebViewPtr`. Those objects remain safe to destroy or query with `isClosed()`, but are otherwise inert and no longer retain the session policy.
+
 There is no standalone view factory or implicit default session. Applications choose a persistent or ephemeral session explicitly:
 
 ```cpp

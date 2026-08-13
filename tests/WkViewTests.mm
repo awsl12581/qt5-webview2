@@ -10,6 +10,8 @@
 #include <QTcpSocket>
 #include <QTimer>
 
+#import <WebKit/WebKit.h>
+
 #include <cassert>
 #include <vector>
 
@@ -32,7 +34,13 @@ public:
         return WebViewPolicy::decideNavigation(request);
     }
 
+    webview::NewWindowDecision decideNewWindow(const webview::NewWindowRequest&) const override
+    {
+        return allowPopups ? webview::NewWindowDecision::Allow : webview::NewWindowDecision::Cancel;
+    }
+
     mutable std::vector<webview::NavigationRequest> navigationRequests;
+    bool allowPopups = false;
 };
 
 void serveConnection(QTcpSocket* socket, quint16 port)
@@ -237,6 +245,44 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(events.front().state == webview::LoadState::Started);
     assert(events.back().state == webview::LoadState::Failed);
     assert(!events.back().error.isEmpty());
+
+    webview::WebViewPtr popup;
+    policy->allowPopups = true;
+    webview::WebViewHostCallbacks popupCallbacks;
+    popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
+        popup = std::move(child);
+        loop.quit();
+    };
+    view->setHostCallbacks(std::move(popupCallbacks));
+    view->setHtml(QStringLiteral(R"HTML(
+<!doctype html><script>
+window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
+</script>)HTML"), QUrl(QStringLiteral("https://trusted.example/popup-opener.html")));
+    timeout.start(10000);
+    loop.exec();
+    assert(popup);
+    assert(!popup->isClosed());
+    auto* rootConfiguration = static_cast<WKWebViewConfiguration*>(
+        static_cast<webview::WkWebView*>(view.get())->nativeConfigurationForTesting());
+    auto* popupConfiguration = static_cast<WKWebViewConfiguration*>(
+        static_cast<webview::WkWebView*>(popup.get())->nativeConfigurationForTesting());
+    assert(rootConfiguration.websiteDataStore == popupConfiguration.websiteDataStore);
+    assert(rootConfiguration.userContentController != popupConfiguration.userContentController);
+
+    session.reset();
+    assert(view->isClosed());
+    assert(popup->isClosed());
+    const auto navigationRequestCount = policy->navigationRequests.size();
+    view->load(QUrl(QStringLiteral("https://trusted.example/after-session")));
+    assert(policy->navigationRequests.size() == navigationRequestCount);
+    bool rootClosed = false;
+    bool popupClosed = false;
+    view->sendMessage({ 1, QStringLiteral("hello"), { } },
+        [&](const webview::MessageResult& result) { rootClosed = result.error == webview::MessageError::Closed; });
+    popup->sendMessage({ 1, QStringLiteral("hello"), { } },
+        [&](const webview::MessageResult& result) { popupClosed = result.error == webview::MessageError::Closed; });
+    assert(rootClosed);
+    assert(popupClosed);
 
     view->close();
     view->close();

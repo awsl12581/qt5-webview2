@@ -8,11 +8,11 @@
 namespace webview
 {
 class WkWebViewSession;
+struct WkSessionState;
 
 class WkWebView final : public IWebView
 {
 public:
-    WkWebView(QWidget* parent, WebViewPolicyPtr policy);
     ~WkWebView() override;
 
     QWidget* widget() override;
@@ -30,8 +30,10 @@ public:
 
 private:
     friend class WkWebViewSession;
-    WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy);
-    void initialize(void* configuration, WebViewPolicyPtr policy);
+    WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy,
+        std::shared_ptr<WkSessionState> sessionState);
+    void initialize(void* configuration, WebViewPolicyPtr policy,
+        std::shared_ptr<WkSessionState> sessionState);
 
     class Impl;
     std::unique_ptr<Impl> impl_;

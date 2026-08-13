@@ -1,6 +1,7 @@
 #include "platform/macos/WkWebViewSession.h"
 
 #include "platform/macos/WkWebView.h"
+#include "platform/macos/WkSessionState.h"
 
 #import <WebKit/WebKit.h>
 
@@ -14,6 +15,7 @@ public:
     WebViewPolicyPtr policy;
     WKWebsiteDataStore* dataStore = nil;
     WKProcessPool* processPool = nil;
+    std::shared_ptr<WkSessionState> state = std::make_shared<WkSessionState>();
 };
 
 WkWebViewSession::WkWebViewSession(QString profilePath, bool ephemeral, WebViewPolicyPtr policy)
@@ -26,12 +28,21 @@ WkWebViewSession::WkWebViewSession(QString profilePath, bool ephemeral, WebViewP
     impl_->processPool = [[WKProcessPool alloc] init];
 }
 
-WkWebViewSession::~WkWebViewSession() = default;
+WkWebViewSession::~WkWebViewSession()
+{
+    impl_->state->valid = false;
+    const auto views = impl_->state->views;
+    for (auto* view : views) {
+        view->close();
+    }
+    impl_->state->views.clear();
+    impl_->policy.reset();
+}
 
 WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
 {
     auto* configuration = static_cast<WKWebViewConfiguration*>(nativeConfigurationForTesting());
-    return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy));
+    return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
 }
 
 void* WkWebViewSession::nativeConfigurationForTesting() const

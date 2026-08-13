@@ -1,5 +1,6 @@
 #include "platform/macos/WkWebView.h"
 #include "platform/macos/WkPolicyMapping.h"
+#include "platform/macos/WkSessionState.h"
 
 #include "webview/JsonMessage.h"
 #include "webview/DocumentLifetime.h"
@@ -166,6 +167,7 @@ public:
     NativeViewHost* container = nullptr;
     WKWebView* view = nil;
     std::shared_ptr<NativeState> state;
+    std::shared_ptr<WkSessionState> sessionState;
     id messageDelegate = nil;
     id uiDelegate = nil;
     id navigationDelegate = nil;
@@ -432,24 +434,20 @@ public:
 @end
 
 namespace webview {
-WkWebView::WkWebView(QWidget* parent, WebViewPolicyPtr policy)
+WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy,
+    std::shared_ptr<WkSessionState> sessionState)
     : impl_(std::make_unique<Impl>())
 {
-    initialize(nullptr, std::move(policy));
+    initialize(configuration, std::move(policy), std::move(sessionState));
     impl_->container->setParent(parent);
 }
 
-WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy)
-    : impl_(std::make_unique<Impl>())
-{
-    initialize(configuration, std::move(policy));
-    impl_->container->setParent(parent);
-}
-
-void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
+void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
+    std::shared_ptr<WkSessionState> sessionState)
 {
     impl_->state = std::make_shared<NativeState>();
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
+    impl_->sessionState = std::move(sessionState);
     impl_->container = new NativeViewHost(nullptr);
     auto* content = [[WKUserContentController alloc] init];
     impl_->messageDelegate = [[SystemWebViewMessageDelegate alloc] init];
@@ -472,7 +470,11 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
         if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.newWindow) {
             return nullptr;
         }
-        auto child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, childConfiguration, impl_->state->policy));
+        if (!impl_->sessionState || !impl_->sessionState->valid) {
+            return nullptr;
+        }
+        auto child = std::unique_ptr<WkWebView>(new WkWebView(
+            nullptr, childConfiguration, impl_->state->policy, impl_->sessionState));
         auto* nativeView = child->impl_->view;
         impl_->state->callbacks.newWindow(request, std::move(child));
         return nativeView;
@@ -488,6 +490,11 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy)
     };
     [hostView addSubview:impl_->view];
     impl_->container->syncNativeView();
+    if (impl_->sessionState && impl_->sessionState->valid) {
+        impl_->sessionState->views.insert(this);
+    } else {
+        close();
+    }
 }
 
 WkWebView::~WkWebView() { close(); }
@@ -553,6 +560,10 @@ void WkWebView::close()
     impl_->state->provisionalMainFrameNavigation = false;
     impl_->state->explicitMainFrameNavigationPending = false;
     impl_->state->navigationIds.clear();
+    impl_->state->policy.reset();
+    if (impl_->sessionState) {
+        impl_->sessionState->views.erase(this);
+    }
     [impl_->view stopLoading];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = nullptr;
     static_cast<SystemWebViewUIDelegate*>(impl_->uiDelegate).state = nullptr;
