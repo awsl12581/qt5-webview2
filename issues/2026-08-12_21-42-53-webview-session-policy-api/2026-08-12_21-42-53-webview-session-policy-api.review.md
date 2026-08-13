@@ -27,3 +27,27 @@ Both findings are actionable within the approved scope. They must become follow-
 - Coverage: 16/20
 
 The independent reviewer confirmed argument-bound outbound messages and centralized permission/download policy. It found four remaining current-scope items: document-token validation for inbound messages, redirect context in `NavigationRequest`, session-owned invalidation of retained views, and durable integration evidence for the remaining native paths.
+
+## REVIEW-03
+
+- Source doc: `docs/specs/2026-08-12-webview-session-policy-api.md`
+- Review agent: reviewer-subagent
+- Review independence: true
+- Review requested model: gpt-5.6-sol
+- Review observed model: unknown
+- Review model evidence: unknown
+- Scope checked: explicit sessions, superseded API removal, macOS session/profile ownership, lifecycle/navigation/popup/close semantics, bridge isolation, native capabilities, demo migration, and three-backend contract mapping
+- Evidence checked: commits through `a84e183`, all 20 claims, clean validation report, core/session tests, real WindowServer page suite, public headers, native delegates, demo, and architecture documentation
+- Claim coverage: complete (20/20)
+- Claim/evidence alignment: matched
+- Limited validation honestly reported: yes
+- Handoff humanized: true
+- Result: vision_met
+- Gaps: none
+- Follow-up issues added: none
+- Assumptions: macOS `profilePath` is logical; `WKProcessPool` is not a modern process-isolation guarantee
+- Decision debt: none
+- Deferred findings: none
+- Human-required blockers: none
+
+The independent reviewer found no falsifiable current-scope gap. All five Outcome Contract questions are `pass`, with explicit boundaries for OS file-panel interaction, download destination handling, privacy prompts, and the two unimplemented backends.

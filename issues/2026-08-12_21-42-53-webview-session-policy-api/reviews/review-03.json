@@ -1,0 +1,74 @@
+{
+  "review_agent_mode": "reviewer-subagent",
+  "review_independence": true,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "unknown",
+  "review_model_evidence": "unknown",
+  "result": "vision_met",
+  "claim_coverage": "20/20",
+  "claim_coverage_status": "complete",
+  "validation_limited": [
+    "The real WKWebView page suite requires a logged-in WindowServer session. The committed validation report records the clean command, timestamp, host details, and 1/1 passing result; the identical native test cannot create a screen in the restricted process.",
+    "An allowed OS file panel and user selection are not automated because WebKit rejects the script-generated file-input click as lacking user activation. The shared production permission-decision path is tested directly and the native delegate calls it.",
+    "Actual download destination selection and file writing are not automated. The real non-displayable response callback reaches policy and is cancelled; a universal download manager is outside this mission.",
+    "Camera and microphone capability discovery and policy mapping are tested, but macOS privacy prompts and physical-device capture are not automated.",
+    "WebView2 and WebKit2GTK are documented contract mappings only and remain intentionally unimplemented."
+  ],
+  "summary": "All 20 approved claims are supported at their required evidence level within the stated mission boundary. The final implementation requires explicit sessions, removes legacy bypass APIs, shares and invalidates macOS session resources correctly, supplies stable lifecycle and redirect context, binds inbound bridge messages to rotating document tokens, passes outbound envelopes as data, routes native permission and download decisions through policy, closes retained root and popup views with their session, and retains clean native-path validation evidence. No falsifiable current-scope gap remains.",
+  "gaps": [],
+  "assumptions": [
+    "On macOS, profilePath is a logical application profile identifier because public WKWebsiteDataStore APIs cannot place persistent data at an arbitrary caller-supplied directory.",
+    "WKProcessPool is retained for older-system/configuration identity and is not treated as a modern process-isolation guarantee."
+  ],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": [],
+  "outcome_answers": [
+    {
+      "question_id": "OUTCOME-001",
+      "verdict": "pass",
+      "answer": "Yes. Applications create persistent or ephemeral sessions and create pages from those sessions. The standalone view factory and direct page message, popup, and unrestricted postMessage APIs have no public compatibility wrappers or production references.",
+      "evidence_refs": ["src/webview/WebViewFactory.h:10", "src/webview/IWebViewSession.h:18", "src/webview/IWebView.h:16", "samples/demo/DemoWindow.cpp:77", "docs/ARCHITECTURE.md:18"],
+      "confidence": "high",
+      "boundary": "This is intentionally source-breaking; no implicit default session or migration shim is retained.",
+      "next_action": "No action is required within this mission."
+    },
+    {
+      "question_id": "OUTCOME-002",
+      "verdict": "pass",
+      "answer": "Yes. Views and permitted popups in one macOS session share WKWebsiteDataStore and WKProcessPool identity while receiving separate content controllers. Ephemeral sessions use nonPersistentDataStore.",
+      "evidence_refs": ["src/platform/macos/WkWebViewSession.mm:21", "src/platform/macos/WkWebViewSession.mm:42", "tests/WkSessionTests.mm:39", "tests/WkViewTests.mm:372", "2026-08-12_21-42-53-webview-session-policy-api.validation.md:25"],
+      "confidence": "high",
+      "boundary": "profilePath is logical on macOS, and the API does not promise process isolation beyond native platform capabilities.",
+      "next_action": "Keep the documented platform limit when implementing additional backends."
+    },
+    {
+      "question_id": "OUTCOME-003",
+      "verdict": "pass",
+      "answer": "Yes. The macOS backend emits ordered lifecycle events with stable navigation IDs, exposes redirect context to policy, supports stop and reload, rejects disallowed navigation and missing popup handlers, gives allowed popups session ownership, and suppresses callbacks after close or session destruction.",
+      "evidence_refs": ["src/platform/macos/WkWebView.mm:273", "src/platform/macos/WkWebView.mm:358", "src/platform/macos/WkWebView.mm:524", "src/platform/macos/WkWebView.mm:543", "src/platform/macos/WkWebViewSession.mm:31", "tests/WkViewTests.mm:242", "tests/WkViewTests.mm:279", "tests/WkViewTests.mm:335", "tests/WkViewTests.mm:372", "2026-08-12_21-42-53-webview-session-policy-api.validation.md:25"],
+      "confidence": "high",
+      "boundary": "The file-panel user gesture, download destination UI, and privacy prompts remain explicitly unautomated; those limits do not weaken the lifecycle or callback guarantees.",
+      "next_action": "No action is required within this mission."
+    },
+    {
+      "question_id": "OUTCOME-004",
+      "verdict": "pass",
+      "answer": "Yes. Native code requires the current main frame, matching committed trusted origin, and the current rotating document token before validating the bounded versioned envelope. Stale same-origin tokens and iframe raw-handler calls are rejected, while outbound data uses WebKit argument binding rather than source interpolation.",
+      "evidence_refs": ["src/platform/macos/WkWebView.mm:119", "src/platform/macos/WkWebView.mm:177", "src/platform/macos/WkWebView.mm:577", "src/webview/WebViewPolicy.cpp:64", "tests/WkViewTests.mm:151", "tests/WkViewTests.mm:204", "tests/WkViewTests.mm:221", "2026-08-12_21-42-53-webview-session-policy-api.validation.md:25"],
+      "confidence": "high",
+      "boundary": "Native argument binding requires macOS 11 or later; older systems return the typed Unsupported result.",
+      "next_action": "Apply equivalent frame, origin, generation, and data-binding checks in future WebView2 and WebKit2GTK backends."
+    },
+    {
+      "question_id": "OUTCOME-005",
+      "verdict": "pass",
+      "answer": "Yes at the approved contract-design level. Public headers contain portable Qt/C++ interfaces and capability discovery, while the architecture documentation maps sessions, lifecycle, popups, and bridge validation to all three native designs without exposing their profile objects.",
+      "evidence_refs": ["src/webview/IWebViewSession.h:12", "src/webview/IWebView.h:11", "src/webview/WebViewTypes.h:15", "src/webview/WebViewPolicy.h:26", "docs/ARCHITECTURE.md:58"],
+      "confidence": "moderate",
+      "boundary": "Only WKWebView is implemented and production-tested. This answer does not claim that WebView2 or WebKit2GTK backends exist or pass integration tests.",
+      "next_action": "Validate the mapping with platform integration suites when each future backend is implemented."
+    }
+  ],
+  "handoff_markdown": "The reviewer supplied a complete handoff draft; the humanized Chinese rendering is stored in the sibling .handoff.md artifact."
+}
