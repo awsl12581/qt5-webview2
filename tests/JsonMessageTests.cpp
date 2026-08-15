@@ -1,5 +1,6 @@
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
+#include "webview/ResourceMapping.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
 #include "webview/WebViewState.h"
@@ -11,6 +12,7 @@
 #include <cassert>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QFileInfo>
 
 int main()
 {
@@ -171,5 +173,45 @@ int main()
     const auto directory = webview::normalizeFileSelectionResult(singleFileRequest,
         { webview::FileSelectionStatus::Selected, { selectedRoot.path() }, { } });
     assert(directory.status == webview::FileSelectionStatus::InvalidResult);
+
+    QVector<webview::WebResourceMapping> mappings {
+        { QUrl(QStringLiteral("app://demo")), selectedRoot.path() }
+    };
+    QString mappingError;
+    assert(webview::validateResourceMappings(&mappings, &mappingError));
+    assert(mappings.front().localDirectory == QFileInfo(selectedRoot.path()).canonicalFilePath());
+    const auto* mapping = webview::findResourceMapping(
+        mappings, QUrl(QStringLiteral("app://demo/selected.txt")));
+    assert(mapping);
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/selected.txt")), &mappingError)
+        == QFileInfo(selectedFile).canonicalFilePath());
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/%2e%2e/secret")), &mappingError)
+        .isEmpty());
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/missing.txt")), &mappingError)
+        .isEmpty());
+    QTemporaryDir outsideRoot;
+    assert(outsideRoot.isValid());
+    const auto outsideFile = outsideRoot.filePath(QStringLiteral("secret.txt"));
+    QFile secret(outsideFile);
+    assert(secret.open(QIODevice::WriteOnly));
+    secret.close();
+    const auto linkedFile = selectedRoot.filePath(QStringLiteral("linked.txt"));
+    assert(QFile::link(outsideFile, linkedFile));
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError)
+        .isEmpty());
+
+    QVector<webview::WebResourceMapping> duplicateMappings {
+        { QUrl(QStringLiteral("app://demo")), selectedRoot.path() },
+        { QUrl(QStringLiteral("APP://DEMO")), selectedRoot.path() }
+    };
+    assert(!webview::validateResourceMappings(&duplicateMappings, &mappingError));
+    QVector<webview::WebResourceMapping> invalidMappings {
+        { QUrl(QStringLiteral("https://demo/path")), selectedRoot.path() }
+    };
+    assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
 }

@@ -38,6 +38,17 @@ int main(int argc, char** argv)
     persistentOptions.profilePath = profile.path();
     auto session = webview::createWebViewSession(std::move(persistentOptions));
     auto ephemeral = webview::createWebViewSession({ });
+    webview::WebViewSessionOptions invalidMappingOptions;
+    invalidMappingOptions.resourceMappings.push_back(
+        { QUrl(QStringLiteral("app://demo/path")), profile.path() });
+    auto invalidMappingSession = webview::createWebViewSession(std::move(invalidMappingOptions));
+    assert(invalidMappingSession->initializationState() == webview::InitializationState::Failed);
+    bool mappingFailureReported = false;
+    invalidMappingSession->whenInitialized([&](const webview::InitializationResult& result) {
+        mappingFailureReported = result.state == webview::InitializationState::Failed
+            && result.error.contains(QStringLiteral("origin"));
+    });
+    assert(mappingFailureReported);
     assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile)
         == webview::CapabilitySupport::Supported);
     assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile)

@@ -3,7 +3,62 @@
 #include "platform/macos/WkWebView.h"
 #include "platform/macos/WkSessionState.h"
 
+#include "webview/ResourceMapping.h"
+
+#include <QFile>
+#include <QMimeDatabase>
+
 #import <WebKit/WebKit.h>
+
+@interface SystemWebViewSchemeHandler : NSObject <WKURLSchemeHandler> {
+@public
+    std::shared_ptr<webview::WkSessionState> state;
+}
+@end
+
+@implementation SystemWebViewSchemeHandler
+- (void)webView:(WKWebView*)webView
+    startURLSchemeTask:(id<WKURLSchemeTask>)task
+{
+    if (!state || !state->valid) {
+        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
+                                                   code:NSURLErrorCancelled
+                                               userInfo:nil]];
+        return;
+    }
+    const QUrl url(QString::fromUtf8(task.request.URL.absoluteString.UTF8String));
+    const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
+    QString errorText;
+    const auto path = mapping ? webview::resolveMappedResource(*mapping, url, &errorText) : QString();
+    if (path.isEmpty()) {
+        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
+                                                   code:NSURLErrorFileDoesNotExist
+                                               userInfo:@{ NSLocalizedDescriptionKey :
+                                                   [NSString stringWithUTF8String:errorText.toUtf8().constData()] }]];
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
+                                                   code:NSURLErrorNoPermissionsToReadFile
+                                               userInfo:nil]];
+        return;
+    }
+    const auto bytes = file.readAll();
+    const auto mimeType = QMimeDatabase().mimeTypeForFile(path).name();
+    auto* response = [[NSURLResponse alloc] initWithURL:task.request.URL
+                                              MIMEType:[NSString stringWithUTF8String:mimeType.toUtf8().constData()]
+                                 expectedContentLength:bytes.size()
+                                      textEncodingName:nil];
+    [task didReceiveResponse:response];
+    [task didReceiveData:[NSData dataWithBytes:bytes.constData() length:bytes.size()]];
+    [task didFinish];
+}
+
+- (void)webView:(WKWebView*)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task
+{
+}
+@end
 
 namespace webview
 {
@@ -14,6 +69,7 @@ public:
     WebViewPolicyPtr policy;
     WKWebsiteDataStore* dataStore = nil;
     WKProcessPool* processPool = nil;
+    id schemeHandler = nil;
     std::shared_ptr<WkSessionState> state = std::make_shared<WkSessionState>();
 };
 
@@ -22,11 +78,20 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
 {
     impl_->options = std::move(options);
     impl_->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
+    QString mappingError;
+    if (!validateResourceMappings(&impl_->options.resourceMappings, &mappingError)) {
+        impl_->state->valid = false;
+        impl_->state->initialization.fail(std::move(mappingError));
+        return;
+    }
     impl_->dataStore = impl_->options.mode == SessionMode::Ephemeral
         ? [WKWebsiteDataStore nonPersistentDataStore]
         : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
     impl_->state->resourceMappings = impl_->options.resourceMappings;
+    auto* schemeHandler = [[SystemWebViewSchemeHandler alloc] init];
+    schemeHandler->state = impl_->state;
+    impl_->schemeHandler = schemeHandler;
     impl_->state->initialization.markReady();
 }
 
@@ -59,6 +124,9 @@ WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
     auto* configuration = [[WKWebViewConfiguration alloc] init];
     configuration.websiteDataStore = impl_->dataStore;
     configuration.processPool = impl_->processPool;
+    if (impl_->schemeHandler) {
+        [configuration setURLSchemeHandler:impl_->schemeHandler forURLScheme:@"app"];
+    }
     return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
 }
 
