@@ -19,7 +19,7 @@ The library requires explicit profile ownership:
 webview::WebViewPolicyConfig config;
 config.allowedAppHosts.insert(QStringLiteral("my-app"));
 auto policy = webview::createDefaultWebViewPolicy(std::move(config));
-auto session = webview::createEphemeralSession(std::move(policy));
+auto session = webview::createWebViewSession({ }, std::move(policy));
 auto view = session->createWebView(parent);
 ```
 

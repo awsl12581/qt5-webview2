@@ -1,0 +1,143 @@
+{
+  "source_doc": "docs/specs/2026-08-15-portable-webview-contract.md",
+  "csv": "20260815_10-21-21-portable-webview-contract.csv",
+  "execution_scope": "approved spec全文：公共契约抽离、macOS回填、测试与文档；不实现Windows WebView2 backend",
+  "claim_coverage": { "covered": 15, "total": 15, "status": "pending" },
+  "claims": [
+    {
+      "claim_id": "CLAIM-001",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:12",
+      "promise": "应用代码只依赖公共webview接口，WkWebView可完整替代IWebView且不需要类型转换。",
+      "covered_by": ["HOST-01", "TEST-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-002",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:14",
+      "promise": "backend只由预处理宏和CMake平台分支在编译期选择，不引入动态插件、运行时registry或动态加载。",
+      "covered_by": ["BUILD-01"],
+      "evidence_required": "static",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-003",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:39",
+      "promise": "IWebView提供显式attach/detach生命周期，host在最终Qt布局后控制首次原生挂载。",
+      "covered_by": ["HOST-01", "VALIDATE-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-004",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:41",
+      "promise": "backend不根据可见性、parent、默认尺寸或事件循环时序自行决定首次挂载。",
+      "covered_by": ["HOST-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-005",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:47",
+      "promise": "公共接口表达Initializing、Ready、Failed、Closed及初始化完成或失败结果。",
+      "covered_by": ["CONTRACT-01", "STATE-01"],
+      "evidence_required": "unit",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-006",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:49",
+      "promise": "初始化期间的操作由公共层排队至Ready，失败时明确结束，不运行嵌套事件循环或静默丢弃。",
+      "covered_by": ["STATE-01", "VALIDATE-01"],
+      "evidence_required": "unit",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-007",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:51",
+      "promise": "session capability覆盖profile/private mode、文件选择、下载和资源映射，Unsupported不静默降级。",
+      "covered_by": ["CONTRACT-01", "HOST-02", "RESOURCE-01"],
+      "evidence_required": "unit",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-008",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:55",
+      "promise": "closed guard、navigation generation、committed URL、navigation ID和bridge授权状态从macOS-only NativeState抽到公共层。",
+      "covered_by": ["STATE-01"],
+      "evidence_required": "unit",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-009",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:65",
+      "promise": "bridge在调用host前验证主frame、已提交origin、当前document token、大小和schema。",
+      "covered_by": ["STATE-01", "VALIDATE-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-010",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:69",
+      "promise": "popup经policy允许后创建同session child，由host接管、布局并显式attach；未接管时取消。",
+      "covered_by": ["POPUP-01", "VALIDATE-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-011",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:75",
+      "promise": "文件选择由公共host协议决定，macOS backend不直接创建NSOpenPanel。",
+      "covered_by": ["HOST-02"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-012",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:77",
+      "promise": "下载resolver明确返回取消、浏览器默认或目标路径；缺少允许结果时取消。",
+      "covered_by": ["HOST-02"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-013",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:81",
+      "promise": "session显式提供资源映射，setHtml只使用通过policy且backend可表示的base URL，backend不猜测资源来源。",
+      "covered_by": ["RESOURCE-01", "DOC-01"],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-014",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:87",
+      "promise": "删除WkWebView和WkWebViewSession对外测试API，测试改用公共可观察行为。",
+      "covered_by": ["TEST-01"],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-015",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:102",
+      "promise": "macOS core、session、view测试通过，GUI集成继续验证popup首次挂载和bridge行为。",
+      "covered_by": ["VALIDATE-01"],
+      "evidence_required": "real_e2e",
+      "production_path_required": true,
+      "status": "pending"
+    }
+  ]
+}

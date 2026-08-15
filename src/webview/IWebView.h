@@ -12,9 +12,14 @@ class IWebView
 {
 public:
     using MessageCompletion = std::function<void(const MessageResult&)>;
+    using InitializationCompletion = std::function<void(const InitializationResult&)>;
 
     virtual ~IWebView() = default;
     virtual QWidget* widget() = 0;
+    virtual InitializationState initializationState() const = 0;
+    virtual void whenInitialized(InitializationCompletion completion) = 0;
+    virtual void attachNativeView() = 0;
+    virtual void detachNativeView() = 0;
     virtual void load(const QUrl& url) = 0;
     virtual void setHtml(const QString& html, const QUrl& baseUrl = { }) = 0;
     virtual void stop() = 0;

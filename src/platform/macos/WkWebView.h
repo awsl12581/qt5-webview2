@@ -16,6 +16,10 @@ public:
     ~WkWebView() override;
 
     QWidget* widget() override;
+    InitializationState initializationState() const override;
+    void whenInitialized(InitializationCompletion completion) override;
+    void attachNativeView() override;
+    void detachNativeView() override;
     void load(const QUrl& url) override;
     void setHtml(const QString& html, const QUrl& baseUrl) override;
     void stop() override;
@@ -29,8 +33,6 @@ public:
     QString documentTokenForTesting() const;
     bool isNativeViewAttachedForTesting() const;
     QSize nativeViewSizeForTesting() const;
-    void attachNativeView();
-
 private:
     friend class WkWebViewSession;
     WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy,

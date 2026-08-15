@@ -36,7 +36,10 @@ int main(int argc, char** argv)
     QTemporaryDir profile;
     assert(profile.isValid());
 
-    auto session = webview::createPersistentSession(profile.path());
+    webview::WebViewSessionOptions persistentOptions;
+    persistentOptions.mode = webview::SessionMode::Persistent;
+    persistentOptions.profilePath = profile.path();
+    auto session = webview::createWebViewSession(std::move(persistentOptions));
     auto* nativeSession = static_cast<webview::WkWebViewSession*>(session.get());
     auto* firstConfiguration = static_cast<WKWebViewConfiguration*>(nativeSession->nativeConfigurationForTesting());
     auto* secondConfiguration = static_cast<WKWebViewConfiguration*>(nativeSession->nativeConfigurationForTesting());
@@ -45,27 +48,28 @@ int main(int argc, char** argv)
     assert(firstConfiguration.userContentController != secondConfiguration.userContentController);
     assert(firstConfiguration.websiteDataStore == [WKWebsiteDataStore defaultDataStore]);
 
-    auto ephemeral = webview::createEphemeralSession();
+    auto ephemeral = webview::createWebViewSession({ });
     auto* privateConfiguration = static_cast<WKWebViewConfiguration*>(
         static_cast<webview::WkWebViewSession*>(ephemeral.get())->nativeConfigurationForTesting());
     assert(!privateConfiguration.websiteDataStore.persistent);
     assert(privateConfiguration.websiteDataStore != [WKWebsiteDataStore defaultDataStore]);
-    assert(session->permissionSupport(webview::PermissionKind::FilePicker)
+    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
         == webview::CapabilitySupport::Supported);
-    assert(session->permissionSupport(webview::PermissionKind::Location)
+    assert(session->capabilitySupport(webview::WebViewCapability::Location)
         == webview::CapabilitySupport::Unsupported);
-    assert(session->permissionSupport(webview::PermissionKind::Notifications)
+    assert(session->capabilitySupport(webview::WebViewCapability::Notifications)
         == webview::CapabilitySupport::Unsupported);
-    assert(session->permissionSupport(webview::PermissionKind::Clipboard)
+    assert(session->capabilitySupport(webview::WebViewCapability::Clipboard)
         == webview::CapabilitySupport::Unsupported);
     if (@available(macOS 12.0, *)) {
-        assert(session->permissionSupport(webview::PermissionKind::Camera)
+        assert(session->capabilitySupport(webview::WebViewCapability::Camera)
             == webview::CapabilitySupport::Supported);
-        assert(session->permissionSupport(webview::PermissionKind::Microphone)
+        assert(session->capabilitySupport(webview::WebViewCapability::Microphone)
             == webview::CapabilitySupport::Supported);
     }
     if (@available(macOS 11.3, *)) {
-        assert(session->downloadSupport() == webview::CapabilitySupport::Supported);
+        assert(session->capabilitySupport(webview::WebViewCapability::DownloadDefault)
+            == webview::CapabilitySupport::Supported);
     }
 
     assert(waitForClear([&](auto completion) { session->clearCache(std::move(completion)); }));

@@ -18,7 +18,10 @@ Destroying a session closes every root or popup view it created, even when the h
 There is no standalone view factory or implicit default session. Applications choose a persistent or ephemeral session explicitly:
 
 ```cpp
-auto session = webview::createPersistentSession(profilePath, policy);
+webview::WebViewSessionOptions options;
+options.mode = webview::SessionMode::Persistent;
+options.profilePath = profilePath;
+auto session = webview::createWebViewSession(std::move(options), policy);
 auto view = session->createWebView(parent);
 ```
 

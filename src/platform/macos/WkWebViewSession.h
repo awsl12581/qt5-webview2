@@ -10,15 +10,16 @@ namespace webview
 class WkWebViewSession final : public IWebViewSession
 {
 public:
-    WkWebViewSession(QString profilePath, bool ephemeral, WebViewPolicyPtr policy);
+    WkWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy);
     ~WkWebViewSession() override;
 
+    InitializationState initializationState() const override;
+    void whenInitialized(InitializationCompletion completion) override;
     WebViewPtr createWebView(QWidget* parent) override;
     void clearCache(ClearCompletion completion) override;
     void clearCookies(ClearCompletion completion) override;
     void clearWebsiteData(ClearCompletion completion) override;
-    CapabilitySupport permissionSupport(PermissionKind kind) const override;
-    CapabilitySupport downloadSupport() const override;
+    CapabilitySupport capabilitySupport(WebViewCapability capability) const override;
 
     void* nativeConfigurationForTesting() const;
 

@@ -10,22 +10,34 @@ namespace webview
 class WkWebViewSession::Impl
 {
 public:
-    QString profilePath;
-    bool ephemeral = false;
+    WebViewSessionOptions options;
     WebViewPolicyPtr policy;
     WKWebsiteDataStore* dataStore = nil;
     WKProcessPool* processPool = nil;
     std::shared_ptr<WkSessionState> state = std::make_shared<WkSessionState>();
 };
 
-WkWebViewSession::WkWebViewSession(QString profilePath, bool ephemeral, WebViewPolicyPtr policy)
+WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy)
     : impl_(std::make_unique<Impl>())
 {
-    impl_->profilePath = std::move(profilePath);
-    impl_->ephemeral = ephemeral;
+    impl_->options = std::move(options);
     impl_->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
-    impl_->dataStore = ephemeral ? [WKWebsiteDataStore nonPersistentDataStore] : [WKWebsiteDataStore defaultDataStore];
+    impl_->dataStore = impl_->options.mode == SessionMode::Ephemeral
+        ? [WKWebsiteDataStore nonPersistentDataStore]
+        : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
+}
+
+InitializationState WkWebViewSession::initializationState() const
+{
+    return impl_->state->valid ? InitializationState::Ready : InitializationState::Closed;
+}
+
+void WkWebViewSession::whenInitialized(InitializationCompletion completion)
+{
+    if (completion) {
+        completion({ initializationState(), { } });
+    }
 }
 
 WkWebViewSession::~WkWebViewSession()
@@ -83,29 +95,30 @@ void WkWebViewSession::clearWebsiteData(ClearCompletion completion)
     clearData(impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes], std::move(completion));
 }
 
-CapabilitySupport WkWebViewSession::permissionSupport(PermissionKind kind) const
+CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capability) const
 {
-    switch (kind) {
-    case PermissionKind::Camera:
-    case PermissionKind::Microphone:
+    switch (capability) {
+    case WebViewCapability::PersistentProfile:
+    case WebViewCapability::PrivateProfile:
+    case WebViewCapability::FileSelection:
+    case WebViewCapability::ResourceMapping:
+        return CapabilitySupport::Supported;
+    case WebViewCapability::DownloadDefault:
+    case WebViewCapability::DownloadTarget:
+        if (@available(macOS 11.3, *)) {
+            return CapabilitySupport::Supported;
+        }
+        return CapabilitySupport::Unsupported;
+    case WebViewCapability::Camera:
+    case WebViewCapability::Microphone:
         if (@available(macOS 12.0, *)) {
             return CapabilitySupport::Supported;
         }
         return CapabilitySupport::Unsupported;
-    case PermissionKind::FilePicker:
-        return CapabilitySupport::Supported;
-    case PermissionKind::Location:
-    case PermissionKind::Notifications:
-    case PermissionKind::Clipboard:
+    case WebViewCapability::Location:
+    case WebViewCapability::Notifications:
+    case WebViewCapability::Clipboard:
         return CapabilitySupport::Unsupported;
-    }
-    return CapabilitySupport::Unsupported;
-}
-
-CapabilitySupport WkWebViewSession::downloadSupport() const
-{
-    if (@available(macOS 11.3, *)) {
-        return CapabilitySupport::Supported;
     }
     return CapabilitySupport::Unsupported;
 }

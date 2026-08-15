@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     config.bridgeSchemas.insert(
         QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
     auto policy = std::make_shared<TestPolicy>(std::move(config));
-    auto session = webview::createEphemeralSession(policy);
+    auto session = webview::createWebViewSession({ }, policy);
     auto view = session->createWebView();
 
     std::vector<webview::LoadEvent> events;

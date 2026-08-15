@@ -6,19 +6,10 @@
 
 namespace webview
 {
-WebViewSessionPtr createPersistentSession(const QString& profilePath, WebViewPolicyPtr policy)
+WebViewSessionPtr createWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy)
 {
 #if defined(__APPLE__)
-    return std::make_unique<WkWebViewSession>(profilePath, false, std::move(policy));
-#else
-    static_assert(false, "No system WebView backend is configured for this platform.");
-#endif
-}
-
-WebViewSessionPtr createEphemeralSession(WebViewPolicyPtr policy)
-{
-#if defined(__APPLE__)
-    return std::make_unique<WkWebViewSession>(QString(), true, std::move(policy));
+    return std::make_unique<WkWebViewSession>(std::move(options), std::move(policy));
 #else
     static_assert(false, "No system WebView backend is configured for this platform.");
 #endif

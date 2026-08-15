@@ -1,0 +1,89 @@
+{
+  "source": "docs/specs/2026-08-15-portable-webview-contract.md",
+  "execution_scope": "approved spec全文：公共契约抽离、macOS回填、测试与文档；不实现Windows WebView2 backend",
+  "artifact_role": {
+    "kind": "design",
+    "producer": "approved mission spec",
+    "consumers": ["mission review", "handoff"],
+    "authority": "控制portable webview公共契约、macOS回填、测试迁移和编译期平台选择的本轮交付范围",
+    "not_authority": "不能证明Windows WebView2 backend、vcpkg接入或Runtime发布已经实现"
+  },
+  "desired_effects": [
+    {
+      "id": "EFFECT-001",
+      "statement": "应用、demo和跨平台测试只依赖公共webview契约，不再转型到macOS具体类。",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:12"
+    },
+    {
+      "id": "EFFECT-002",
+      "statement": "macOS行为由可供后续WebView2实现的公共生命周期、host协议和安全状态机表达。",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:18"
+    },
+    {
+      "id": "EFFECT-003",
+      "statement": "平台backend仍在编译期静态选择，不引入动态插件或运行时backend发现。",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:35"
+    }
+  ],
+  "reader_questions": [
+    {
+      "id": "OUTCOME-001",
+      "question": "应用、demo和跨平台测试是否已经完全摆脱WkWebView/WkWebViewSession具体类型？",
+      "why_it_matters": "具体类型依赖会阻止Windows backend满足上位替代原则。",
+      "evidence_required": "integration",
+      "scope": "public headers, demo, cross-platform tests",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:93",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-002",
+      "question": "公共接口和状态机是否完整表达attach、初始化、navigation、bridge、popup及host-owned边界？",
+      "why_it_matters": "Windows实现不应自行推断macOS代码中未写入契约的行为。",
+      "evidence_required": "integration",
+      "scope": "src/webview contract and macOS backend consumption",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:94",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-003",
+      "question": "macOS现有navigation、popup、bridge、session和关闭语义是否在抽离后保持通过？",
+      "why_it_matters": "公共化不能以现有生产行为回归为代价。",
+      "evidence_required": "real_e2e",
+      "scope": "macOS core/session/view test suites and GUI integration",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:102",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-004",
+      "question": "构建是否仍只通过CMake和平台宏静态选择backend？",
+      "why_it_matters": "动态插件或运行时registry违反已批准的平台选择约束。",
+      "evidence_required": "static",
+      "scope": "CMake and WebViewFactory platform selection",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:103",
+      "status": "pending"
+    }
+  ],
+  "decisive_result": {
+    "question": "公共契约能否完整承载现有macOS行为，同时让业务代码不再依赖macOS具体类？",
+    "success_condition": "公共接口扫描无具体类依赖，macOS backend只消费公共状态与host协议，全部可运行测试通过且GUI受限项被如实记录。",
+    "failure_condition": "仍需具体类转型、backend继续决定host-owned行为、公共状态语义缺失，或现有macOS行为回归。",
+    "source_refs": [
+      "docs/specs/2026-08-15-portable-webview-contract.md:12",
+      "docs/specs/2026-08-15-portable-webview-contract.md:91"
+    ]
+  },
+  "blocked_claims": [
+    {
+      "claim": "Windows WebView2 backend、vcpkg接入或Runtime发布已经完成。",
+      "reason": "这些内容是批准规范的明确Non-goal。",
+      "release_condition": "单独批准并执行Windows WebView2 backend任务，取得Windows集成证据。",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:26"
+    },
+    {
+      "claim": "所有平台底层API行为完全相同。",
+      "reason": "本任务统一公共可观察语义，不承诺原生API或Runtime能力完全一致。",
+      "release_condition": "各平台实现完成后逐项验证capability与行为映射。",
+      "source_ref": "docs/specs/2026-08-15-portable-webview-contract.md:51"
+    }
+  ]
+}

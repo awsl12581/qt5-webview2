@@ -503,6 +503,18 @@ WkWebView::~WkWebView() { close(); }
 
 QWidget* WkWebView::widget() { return impl_->container; }
 
+InitializationState WkWebView::initializationState() const
+{
+    return impl_->state->lifetime.isClosed() ? InitializationState::Closed : InitializationState::Ready;
+}
+
+void WkWebView::whenInitialized(InitializationCompletion completion)
+{
+    if (completion) {
+        completion({ initializationState(), { } });
+    }
+}
+
 void WkWebView::attachNativeView()
 {
     if (impl_->state->lifetime.isClosed()) {
@@ -510,6 +522,15 @@ void WkWebView::attachNativeView()
     }
     impl_->nativeViewAttachmentRequested = true;
     impl_->container->syncNativeView();
+}
+
+void WkWebView::detachNativeView()
+{
+    if (impl_->state->lifetime.isClosed()) {
+        return;
+    }
+    impl_->nativeViewAttachmentRequested = false;
+    [impl_->view removeFromSuperview];
 }
 
 void WkWebView::load(const QUrl& url)
