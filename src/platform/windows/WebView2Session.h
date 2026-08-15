@@ -5,6 +5,8 @@
 
 #include <memory>
 
+struct ICoreWebView2Environment;
+
 namespace webview
 {
 class WebView2View;

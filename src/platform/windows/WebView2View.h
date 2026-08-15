@@ -5,11 +5,14 @@
 
 #include <memory>
 
+struct ICoreWebView2Environment;
+
 class QWidget;
 
 namespace webview
 {
 class WebView2Session;
+class WebViewState;
 
 class WebView2View final : public IWebView
 {
@@ -32,7 +35,9 @@ public:
 
 private:
     friend class WebView2Session;
-    WebView2View(QWidget* parent, WebViewPolicyPtr policy);
+    WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
+        std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
+        QVector<WebResourceMapping> resourceMappings);
 
     class Impl;
     std::unique_ptr<Impl> impl_;
