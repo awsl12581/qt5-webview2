@@ -1,0 +1,124 @@
+# Windows WebView2 Backend -- 施工交工单
+
+> 独立性: true | mode=codex-exec-independent | requested_model=gpt-5.6-sol
+> 日期: 2026-08-15
+
+## 先看结论
+
+Windows ARM64 的构建边界和 WebView2 environment 初始化已经搭起来，但还不能交付为可稳定运行的 Windows WebView backend。决定性阻塞发生在创建实际页面之后：controller GUI probe 会挂起，生产代码中的 profile、承载、navigation、bridge、app://、popup 和 download 仍有明确缺口。最重要的结论是：目前只能说 session environment 能初始化，不能说公共接口已经能稳定创建并运行页面。
+
+## 这份交工单告诉你什么
+
+这份交工单把批准的设计、当前生产代码、测试源码、构建产物、持久化测试日志和 Git 提交串在一起，供 spec 作者和 Windows backend 维护者判断现在能用什么、还缺什么。它不负责安装 WebView2 Runtime，也不把编译成功、静态扫描或 session-only probe 当成 GUI 页面能力已经成立。
+
+## 你现在可以确定什么
+
+| 你关心的问题 | 判定 | 直接答案 | 关键证据 | 可信度 | 结论边界 | 下一步 |
+|---|---|---|---|---|---|---|
+| Windows ARM64 构建和 WebView2 Runtime 初始化是否已经可以通过公共 session 接口稳定创建页面？ | fail | ARM64 Debug/Release 已生成产物，公共 session 的 WebView2 environment probe 据记录可到 Ready，但公共接口尚不能稳定创建页面：controller GUI probe 在创建阶段挂起后被移除，ephemeral session 也被无条件判失败。 | CMakePresets.json:37; tests/WebView2RuntimeProbe.cpp:18; src/platform/windows/WebView2Session.cpp:32; commit b9de933 | high | 现有证据只到 environment 初始化，不能证明 controller、页面承载或完整 profile 生命周期成功。 | 修复 controller/profile 生命周期，并在交互桌面运行可终止的 ARM64 Debug/Release session+view 集成测试。 |
+| Windows 页面承载、navigation、bridge、popup 和异步 completion 是否遵守公共生命周期与 host-owned 语义？ | fail | 页面承载、navigation、bridge、popup 和异步 completion 尚未遵守完整公共语义；代码中存在 attach-before-ready 丢失、重复 navigation ID、空 committedUrl、缺少 document token/main-frame 校验以及裸 owner 回调。 | src/platform/windows/WebView2View.cpp:48; src/platform/windows/WebView2View.cpp:177; src/platform/windows/WebView2View.cpp:220; src/platform/windows/WebView2View.cpp:296 | high | 编译成功只能证明 API 形状可编译，不能抵消这些可从生产代码直接确认的行为差距。 | 完成 owner guard、显式 hosting、navigation/bridge/popup 接线，并覆盖 close、worker-thread 和重复 completion 的 Runtime 集成测试。 |
+| app:// resource mapping 和 download 是否提供真实内容/目标结果，并拒绝越界访问和过期 completion？ | fail | app:// 和 download 尚不能提供获证的真实结果：environment 未注册 custom scheme，setHtml 忽略 HTML，download resolver 没有 deferral 且把异步 completion 当同步回调处理。 | src/platform/windows/WebView2Session.cpp:45; src/platform/windows/WebView2View.cpp:71; src/platform/windows/WebView2View.cpp:153; src/platform/windows/WebView2View.cpp:326 | high | 公共 mapping resolver 的静态路径测试证明了部分 traversal 防护，但不能证明 WebView2 请求、fetch 或下载目标在生产 Runtime 中走通。 | 实现 custom scheme registration 和 guarded download deferral，再运行真实 HTML/资源/fetch 与三种下载结果的 GUI E2E。 |
+| 能力差异和 FileSelection Unsupported 是否被明确报告，同时仍保持编译期 backend 选择？ | partial | FileSelection 明确返回 Unsupported，TODO 标记、编译期 Windows factory 和公共 native-type 扫描均已落地；但 PrivateProfile 与 ResourceMapping capability 被固定为 Unsupported，没有按 Runtime/interface 实际能力报告。 | src/platform/windows/WebView2Session.cpp:103; src/webview/WebViewFactory.cpp:1; scripts/check_windows_static_contracts.py:8; cmake/platform/windows.cmake:1 | high | 该证据支持 FileSelection 和静态选择边界，不支持所有 capability 已按 Runtime 动态探测。 | 保留 FileSelection Unsupported，同时按查询到的 WebView2 interfaces 报告 PrivateProfile、ResourceMapping 和其他能力。 |
+
+## 决定整体状态的结果
+
+最后确认正常的阶段是 Windows ARM64 Debug/Release configure/build，以及 persistent session 的 WebView2 environment 初始化。第一处决定性的失败发生在 controller 页面创建：原 probe 等待 view 初始化时超时，随后提交 `b9de933` 把 probe 缩回 session-only。
+
+实现状态：Windows 平台文件和主要 COM event handler 已加入生产库，但多个 handler 仍只是可编译的初版接线。
+
+验证状态：静态边界和 session environment 有证据；controller、页面、navigation、bridge、popup、download 和 app:// 没有成功的 GUI 全链路记录。
+
+能力结论：当前 backend 不能按批准的 portable contract 交付为可运行页面实现。
+
+## 目前仍不能声称什么
+
+| 不能声称的结论 | 原因 | 解除条件 |
+|---|---|---|
+| WebView2 Runtime 已随 vcpkg SDK 一起安装、发布或自动部署。 | vcpkg package supplies SDK/loader, while Runtime deployment is explicitly outside this mission. | 另行批准并执行 Runtime deployment mission。 |
+| Windows FileSelection 已实现 host-owned HTML file chooser。 | SDK 1.0.3800.47 lacks a public chooser interception event; this mission explicitly reports Unsupported and leaves a TODO marker. | WebView2 exposes a supported chooser event and a separate approved mission implements and tests it. |
+
+## spec 目标逐条对账
+
+| spec 目标 | 状态 | 实际效果 | 备注 |
+|-----------|------|----------|------|
+| 接入 vcpkg WebView2 target 和 ARM64 Windows preset | 完成 | Windows Debug/Release 能生成 ARM64 库、测试和 demo 产物 | 已确认 CMake target、preset 和构建产物 |
+| 实现 session/profile、environment/controller 异步初始化 | 部分完成 | Persistent session 可启动 environment；页面 controller 尚不能稳定完成 | Ephemeral 被固定失败，controller probe 超时 |
+| Qt Widget 显式承载 attach/detach/resize | 部分完成 | attach/detach 会调用 controller API | attach-before-ready 和 resize 同步未完成，controller 创建过早绑定 HWND |
+| 复用 scheduler、weak state 和 completion guard | 部分完成 | 初始化调用进入公共 scheduler | 异步 COM 回调仍捕获裸 owner，download 未使用 guard |
+| navigation 和 bridge 映射到公共契约 | 部分完成 | NavigationStarting、NavigationCompleted 和 WebMessageReceived 已接线 | 缺 SourceChanged、ContentLoading、committed origin、main-frame 和 document token |
+| app:// 资源保持原 URL 并安全映射 | 部分完成 | 公共 resolver 能拒绝部分越界路径，handler 能构造 response | environment 未注册 custom scheme，setHtml 忽略 HTML，真实 fetch 未验证 |
+| popup deferral 和按值 child ownership | 部分完成 | Allow 路径会创建 child 并向 host 转移 WebViewPtr | session close、callback 消失和 child 丢弃没有完整 owner guard 与运行测试 |
+| download 支持 Cancel、BrowserDefault、TargetPath | 未开始 | 当前同步返回时可映射 Cancel 或 TargetPath | 没有 deferral，真正异步 completion 不安全，BrowserDefault 与上下文字段未完整验证 |
+| FileSelection 明确 Unsupported | 完成 | host 查询会得到 Unsupported，且保留 TODO | 未发现 JS shim 或 IFileDialog |
+| Windows unit、integration 和 GUI 验证 | 部分完成 | 静态契约、公共 resolver 和 session environment 有测试入口 | GUI probe 被缩回，持久化 CTest 日志仍记录失败 |
+
+## 施工细节
+
+### 构建与 session
+
+改之前：仓库没有 Windows backend → Windows factory 无法创建 session
+
+改之后：Windows preset → vcpkg WebView2 target → `_WIN32` factory → `WebView2Session` → environment probe 可到 Ready
+
+但默认 `SessionMode::Ephemeral` 当前直接失败；Persistent 模式之外还没有完整 profile 实现。三个 clear 方法也没有清理浏览数据，只把初始化是否 Ready 转换成 success。
+
+### 页面与事件链
+
+```mermaid
+flowchart LR
+    A[公共 createWebView] --> B[WebView2View]
+    B --> C[CreateCoreWebView2Controller]
+    C -.当前首个运行证据缺口.-> D[Qt attach 与页面 Ready]
+    D --> E[navigation / bridge / popup / download]
+```
+
+controller 完成回调仍引用 view 的裸 `this`。attach 在 controller Ready 前调用时不会在 Ready 后补应用；窗口 resize 也没有把新 bounds 送给 controller。close 会先清空 COM 指针，析构阶段因 webview 已为空而无法逐项注销 token。
+
+NavigationStarting 使用 Runtime ID，但 `load()` 还会自行增加 ID 并发出另一个 Started。NavigationCompleted 把 committedUrl 清空，导致后续 bridge、permission 和 download 没有可靠的当前文档上下文。bridge 只验证 JSON 和 source policy，没有 document token 或 main-frame 检查。
+
+### 资源、弹窗和下载
+
+```mermaid
+flowchart LR
+    A[Environment options = null] -.缺少 custom scheme 注册.-> B[app:// filter]
+    B --> C[公共安全 resolver]
+    C --> D[WebResourceResponse]
+    E[DownloadStarting] -.缺少 deferral 与 guard.-> F[host resolver]
+```
+
+资源 resolver 的 canonical path 检查可以复用，但 WebView2 environment 没有注册 app scheme，因此现有 handler 不能证明真实请求会到达。`setHtml` 也没有使用传入 HTML，而是直接导航到 baseUrl。
+
+Popup 已有 deferral 和 child 转移骨架，但 pending 期间没有用 session close 状态约束回调。DownloadStarting 的 completion 引用栈变量，host 一旦异步完成就会越过变量生命周期；这与异步 resolver 的核心要求相冲突。
+
+## 验证情况
+
+现有证据包括 ARM64 Debug/Release 构建产物、静态边界脚本、公共 resolver 测试和 session environment probe。CSV 记录 Runtime 151.0.4129.78 下 session 可到 Ready。
+
+没有成功的 controller/view GUI E2E。`build/windows-msvc-arm64-debug/Testing/Temporary/LastTest.log` 记录 core 和 Windows contract 两项失败；另有“直接运行返回 0”的文字记录，但没有保存对应输出。controller probe 因超时被缩回 session-only。
+
+## 后续可操作
+
+**还剩什么**
+
+先完成 profile/data cleanup、COM owner、hosting、navigation、bridge、custom scheme、popup 和 download 九项修复，再重新判定 Windows backend。`static-execution.md` 也需要按最终代码重建，目前其中“仍是失败 scaffold”的描述已经过时。
+
+**阻塞/配置**
+
+没有需要凭证或产品决策的人类阻塞。需要的是可交互 Windows ARM64 桌面、已安装的 Evergreen WebView2 Runtime 和一个能在超时后可靠退出的 GUI 测试 harness。
+
+**怎么复现**
+
+```powershell
+cmake --preset windows-msvc-arm64-debug
+cmake --build --preset windows-msvc-arm64-debug
+ctest --preset windows-msvc-arm64-debug --output-on-failure
+
+cmake --preset windows-msvc-arm64-release
+cmake --build --preset windows-msvc-arm64-release
+```
+
+修复后，GUI harness 应依次创建 Persistent 和 Ephemeral session，等待 controller Ready，执行 attach/resize、HTTP redirect、bridge token rotation、app:// HTML/fetch、popup retain/drop、三种 download completion 和 close race。每一步都应有超时、最终状态和 Runtime 版本输出。
+
+**去哪看**
+
+构建证据位于 `build/windows-msvc-arm64-debug` 和 `build/windows-msvc-arm64-release`；最近一次持久化 CTest 输出位于 `build/windows-msvc-arm64-debug/Testing/Temporary/LastTest.log`。生产实现集中在 `src/platform/windows/WebView2Session.cpp` 与 `src/platform/windows/WebView2View.cpp`。

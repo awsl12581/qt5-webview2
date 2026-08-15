@@ -3,9 +3,11 @@
 #include "webview/IWebView.h"
 #include "webview/WebViewPolicy.h"
 
+#include <functional>
 #include <memory>
 
 struct ICoreWebView2Environment;
+struct ICoreWebView2;
 
 class QWidget;
 
@@ -37,7 +39,8 @@ private:
     friend class WebView2Session;
     WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
         std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
-        QVector<WebResourceMapping> resourceMappings);
+        QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
+        std::function<QString(ICoreWebView2*)> registerProfile);
 
     class Impl;
     std::shared_ptr<Impl> impl_;
