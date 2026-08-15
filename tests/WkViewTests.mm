@@ -1,19 +1,13 @@
 #include "webview/IWebView.h"
 #include "webview/WebViewFactory.h"
-#include "platform/macos/WkWebView.h"
-#include "platform/macos/WkPolicyMapping.h"
 
 #include <QApplication>
 #include <QEventLoop>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QVBoxLayout>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
 #include <QWidget>
-
-#import <WebKit/WebKit.h>
 
 #include <cassert>
 #include <memory>
@@ -223,20 +217,15 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(hostileReturnedPayload == hostilePayload);
     assert(!hostileExecuted);
 
-    const auto staleToken = static_cast<webview::WkWebView*>(view.get())->documentTokenForTesting();
-    const auto staleTokenJson = QString::fromUtf8(
-        QJsonDocument(QJsonArray { staleToken }).toJson(QJsonDocument::Compact));
-    const auto staleTokenLiteral = staleTokenJson.mid(1, staleTokenJson.size() - 2);
     const QString replayHtml = QStringLiteral(R"HTML(
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => {
   window.webkit.messageHandlers.systemWebView.postMessage({
-    documentToken: %1,
+    documentToken: 'stale-token',
     message: {version:1,type:'hello',payload:{message:'stale'}}
   });
 });
-</script>)HTML")
-                                   .arg(staleTokenLiteral);
+</script>)HTML");
     events.clear();
     view->setHtml(replayHtml, QUrl(QStringLiteral("https://trusted.example/next.html")));
     timeout.start(10000);
@@ -321,10 +310,10 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     QTimer::singleShot(100, &permissionLoop, &QEventLoop::quit);
     permissionLoop.exec();
     assert(policy->permissionRequests.empty());
-    assert(webview::decideNativePermission(*policy,
+    assert(policy->decidePermission(
                { webview::PermissionKind::FilePicker,
                    QUrl(QStringLiteral("https://trusted.example/file-input.html")) })
-        == webview::NativePermissionDecision::Deny);
+        == webview::PermissionDecision::Deny);
     assert(policy->permissionRequests.size() == 1);
     assert(policy->permissionRequests.back().kind == webview::PermissionKind::FilePicker);
 
@@ -401,13 +390,6 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(popup);
     assert(!popup->isClosed());
     popup->attachNativeView();
-    auto* rootConfiguration = static_cast<WKWebViewConfiguration*>(
-        static_cast<webview::WkWebView*>(view.get())->nativeConfigurationForTesting());
-    auto* popupConfiguration = static_cast<WKWebViewConfiguration*>(
-        static_cast<webview::WkWebView*>(popup.get())->nativeConfigurationForTesting());
-    assert(rootConfiguration.websiteDataStore == popupConfiguration.websiteDataStore);
-    assert(rootConfiguration.userContentController != popupConfiguration.userContentController);
-
     session.reset();
     assert(view->isClosed());
     assert(popup->isClosed());

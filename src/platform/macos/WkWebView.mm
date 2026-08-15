@@ -701,17 +701,4 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
     return nativeView;
 }
 
-void* WkWebView::nativeConfigurationForTesting() const
-{
-    return impl_->view ? static_cast<void*>(impl_->view.configuration) : nullptr;
-}
-
-QString WkWebView::documentTokenForTesting() const { return impl_->state->documentToken; }
-
-bool WkWebView::isNativeViewAttachedForTesting() const { return impl_->view.superview != nil; }
-
-QSize WkWebView::nativeViewSizeForTesting() const
-{
-    return { static_cast<int>(impl_->view.frame.size.width), static_cast<int>(impl_->view.frame.size.height) };
-}
 } // namespace webview

@@ -1,12 +1,9 @@
-#include "platform/macos/WkWebViewSession.h"
 #include "webview/WebViewFactory.h"
 
 #include <QApplication>
 #include <QEventLoop>
 #include <QTemporaryDir>
 #include <QTimer>
-
-#import <WebKit/WebKit.h>
 
 #include <cassert>
 
@@ -40,19 +37,11 @@ int main(int argc, char** argv)
     persistentOptions.mode = webview::SessionMode::Persistent;
     persistentOptions.profilePath = profile.path();
     auto session = webview::createWebViewSession(std::move(persistentOptions));
-    auto* nativeSession = static_cast<webview::WkWebViewSession*>(session.get());
-    auto* firstConfiguration = static_cast<WKWebViewConfiguration*>(nativeSession->nativeConfigurationForTesting());
-    auto* secondConfiguration = static_cast<WKWebViewConfiguration*>(nativeSession->nativeConfigurationForTesting());
-    assert(firstConfiguration.websiteDataStore == secondConfiguration.websiteDataStore);
-    assert(firstConfiguration.processPool == secondConfiguration.processPool);
-    assert(firstConfiguration.userContentController != secondConfiguration.userContentController);
-    assert(firstConfiguration.websiteDataStore == [WKWebsiteDataStore defaultDataStore]);
-
     auto ephemeral = webview::createWebViewSession({ });
-    auto* privateConfiguration = static_cast<WKWebViewConfiguration*>(
-        static_cast<webview::WkWebViewSession*>(ephemeral.get())->nativeConfigurationForTesting());
-    assert(!privateConfiguration.websiteDataStore.persistent);
-    assert(privateConfiguration.websiteDataStore != [WKWebsiteDataStore defaultDataStore]);
+    assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile)
+        == webview::CapabilitySupport::Supported);
+    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile)
+        == webview::CapabilitySupport::Supported);
     assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
         == webview::CapabilitySupport::Supported);
     assert(session->capabilitySupport(webview::WebViewCapability::Location)

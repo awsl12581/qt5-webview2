@@ -54,16 +54,10 @@ WkWebViewSession::~WkWebViewSession()
 
 WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
 {
-    auto* configuration = static_cast<WKWebViewConfiguration*>(nativeConfigurationForTesting());
-    return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
-}
-
-void* WkWebViewSession::nativeConfigurationForTesting() const
-{
     auto* configuration = [[WKWebViewConfiguration alloc] init];
     configuration.websiteDataStore = impl_->dataStore;
     configuration.processPool = impl_->processPool;
-    return static_cast<void*>(configuration);
+    return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
 }
 
 namespace {

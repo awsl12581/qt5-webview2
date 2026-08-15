@@ -21,8 +21,6 @@ public:
     void clearWebsiteData(ClearCompletion completion) override;
     CapabilitySupport capabilitySupport(WebViewCapability capability) const override;
 
-    void* nativeConfigurationForTesting() const;
-
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

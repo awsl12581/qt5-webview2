@@ -31,10 +31,6 @@ public:
 
     void* createPopup(void* configuration, const NewWindowRequest& request);
 
-    void* nativeConfigurationForTesting() const;
-    QString documentTokenForTesting() const;
-    bool isNativeViewAttachedForTesting() const;
-    QSize nativeViewSizeForTesting() const;
 private:
     friend class WkWebViewSession;
     WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy,

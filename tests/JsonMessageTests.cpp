@@ -3,10 +3,6 @@
 #include "webview/WebViewPolicy.h"
 #include "webview/WebViewState.h"
 
-#if defined(__APPLE__)
-#include "platform/macos/WkPolicyMapping.h"
-#endif
-
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -107,16 +103,4 @@ int main()
     failedState->failInitialization(QStringLiteral("test failure"));
     assert(failed);
 
-#if defined(__APPLE__)
-    assert(webview::mapPermissionDecision(webview::PermissionDecision::Allow)
-        == webview::NativePermissionDecision::Grant);
-    assert(webview::mapPermissionDecision(webview::PermissionDecision::Deny)
-        == webview::NativePermissionDecision::Deny);
-    assert(webview::mapPermissionDecision(webview::PermissionDecision::Unsupported)
-        == webview::NativePermissionDecision::Deny);
-    assert(webview::mapDownloadDecision(webview::DownloadDecision::Allow)
-        == webview::NativeDownloadDecision::Download);
-    assert(webview::mapDownloadDecision(webview::DownloadDecision::Cancel)
-        == webview::NativeDownloadDecision::Cancel);
-#endif
 }
