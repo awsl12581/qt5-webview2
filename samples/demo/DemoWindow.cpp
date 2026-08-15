@@ -1,6 +1,5 @@
 #include "DemoWindow.h"
 
-#include "platform/macos/WkWebView.h"
 #include "webview/WebViewFactory.h"
 
 #include <QLabel>
@@ -51,7 +50,11 @@ public:
         layout->addWidget(webView_->widget());
     }
 
-    ~WebViewTab() override { webView_->close(); }
+    ~WebViewTab() override
+    {
+        webView_->detachNativeView();
+        webView_->close();
+    }
 
     webview::IWebView* webView() { return webView_.get(); }
 
@@ -100,6 +103,6 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     const int index = tabs_->addTab(tab, title);
     tabs_->setCurrentIndex(index);
     tabs_->widget(index)->layout()->activate();
-    static_cast<webview::WkWebView*>(page)->attachNativeView();
+    page->attachNativeView();
 }
 } // namespace samples::demo

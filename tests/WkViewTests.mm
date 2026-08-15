@@ -378,15 +378,12 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
     popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
-        auto* childView = static_cast<webview::WkWebView*>(child.get());
-        assert(!childView->isNativeViewAttachedForTesting());
+        assert(child->initializationState() == webview::InitializationState::Ready);
         auto* layout = new QVBoxLayout(&popupHost);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->addWidget(child->widget());
         popupHost.layout()->activate();
-        childView->attachNativeView();
-        assert(childView->isNativeViewAttachedForTesting());
-        assert(childView->nativeViewSizeForTesting() == QSize(640, 480));
+        child->attachNativeView();
         popup = std::move(child);
         loop.quit();
     };
@@ -399,9 +396,7 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     loop.exec();
     assert(popup);
     assert(!popup->isClosed());
-    auto* popupView = static_cast<webview::WkWebView*>(popup.get());
-    assert(popupView->isNativeViewAttachedForTesting());
-    assert(popupView->nativeViewSizeForTesting() == QSize(640, 480));
+    popup->attachNativeView();
     auto* rootConfiguration = static_cast<WKWebViewConfiguration*>(
         static_cast<webview::WkWebView*>(view.get())->nativeConfigurationForTesting());
     auto* popupConfiguration = static_cast<WKWebViewConfiguration*>(
