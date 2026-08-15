@@ -27,23 +27,25 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
         : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
     impl_->state->resourceMappings = impl_->options.resourceMappings;
+    impl_->state->initialization.markReady();
 }
 
 InitializationState WkWebViewSession::initializationState() const
 {
-    return impl_->state->valid ? InitializationState::Ready : InitializationState::Closed;
+    return impl_->state->initialization.state();
 }
 
 void WkWebViewSession::whenInitialized(InitializationCompletion completion)
 {
     if (completion) {
-        completion({ initializationState(), { } });
+        impl_->state->initialization.whenInitialized(std::move(completion));
     }
 }
 
 WkWebViewSession::~WkWebViewSession()
 {
     impl_->state->valid = false;
+    impl_->state->initialization.close();
     const auto views = impl_->state->views;
     for (auto* view : views) {
         view->close();
@@ -61,33 +63,45 @@ WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
 }
 
 namespace {
-void clearData(WKWebsiteDataStore* store, NSSet<NSString*>* types, IWebViewSession::ClearCompletion completion)
+void clearData(WkSessionState& state, WKWebsiteDataStore* store, NSSet<NSString*>* types,
+    IWebViewSession::ClearCompletion completion)
 {
-    [store removeDataOfTypes:types
-               modifiedSince:[NSDate distantPast]
-           completionHandler:^{
-               if (completion) {
-                   completion({ });
-               }
-           }];
+    state.initialization.runWhenReady(
+        [store, types, completion = std::move(completion)](const InitializationResult& result) {
+            if (result.state != InitializationState::Ready) {
+                if (completion) {
+                    completion({ false, result.error });
+                }
+                return;
+            }
+            [store removeDataOfTypes:types
+                       modifiedSince:[NSDate distantPast]
+                   completionHandler:^{
+                       if (completion) {
+                           completion({ });
+                       }
+                   }];
+        });
 }
 }
 
 void WkWebViewSession::clearCache(ClearCompletion completion)
 {
-    clearData(impl_->dataStore,
+    clearData(*impl_->state, impl_->dataStore,
         [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil],
         std::move(completion));
 }
 
 void WkWebViewSession::clearCookies(ClearCompletion completion)
 {
-    clearData(impl_->dataStore, [NSSet setWithObject:WKWebsiteDataTypeCookies], std::move(completion));
+    clearData(*impl_->state, impl_->dataStore, [NSSet setWithObject:WKWebsiteDataTypeCookies],
+        std::move(completion));
 }
 
 void WkWebViewSession::clearWebsiteData(ClearCompletion completion)
 {
-    clearData(impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes], std::move(completion));
+    clearData(*impl_->state, impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes],
+        std::move(completion));
 }
 
 CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capability) const

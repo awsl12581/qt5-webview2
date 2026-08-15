@@ -543,7 +543,13 @@ void WkWebView::attachNativeView()
         return;
     }
     impl_->nativeViewAttachmentRequested = true;
-    impl_->container->syncNativeView();
+    impl_->state->runWhenReady([this](const InitializationResult& result) {
+        if (result.state == InitializationState::Ready && impl_->nativeViewAttachmentRequested) {
+            impl_->container->syncNativeView();
+        } else if (result.state != InitializationState::Ready) {
+            impl_->nativeViewAttachmentRequested = false;
+        }
+    });
 }
 
 void WkWebView::detachNativeView()
@@ -557,37 +563,49 @@ void WkWebView::detachNativeView()
 
 void WkWebView::load(const QUrl& url)
 {
-    if (impl_->state->lifetime.isClosed()) {
-        return;
-    }
-    impl_->state->provisionalMainFrameNavigation = false;
-    impl_->state->explicitMainFrameNavigationPending = true;
-    [impl_->view loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:toNSString(url.toString())]]];
+    impl_->state->runWhenReady([this, url](const InitializationResult& result) {
+        if (result.state != InitializationState::Ready) {
+            if (impl_->state->callbacks.load) {
+                impl_->state->callbacks.load({ LoadState::Failed, url, result.error,
+                    ++impl_->state->navigationId, true });
+            }
+            return;
+        }
+        impl_->state->provisionalMainFrameNavigation = false;
+        impl_->state->explicitMainFrameNavigationPending = true;
+        [impl_->view loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:toNSString(url.toString())]]];
+    });
 }
 
 void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
 {
-    if (impl_->state->lifetime.isClosed()) {
-        return;
-    }
-    const NavigationRequest request { baseUrl, true, false, false };
-    if (impl_->state->policy->decideNavigation(request) != NavigationDecision::Allow) {
-        impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
-            QStringLiteral("The HTML base URL was rejected by policy."));
-        return;
-    }
-    if (baseUrl.scheme().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0
-        && (!impl_->sessionState || !hasResourceMapping(*impl_->sessionState, baseUrl))) {
-        impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
-            QStringLiteral("The app origin has no configured resource mapping."));
-        return;
-    }
-    impl_->state->lifetime.invalidate();
-    impl_->state->committedUrl = QUrl();
-    impl_->state->provisionalMainFrameNavigation = false;
-    impl_->state->explicitMainFrameNavigationPending = true;
-    installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
-    [impl_->view loadHTMLString:toNSString(html) baseURL:[NSURL URLWithString:toNSString(baseUrl.toString())]];
+    impl_->state->runWhenReady([this, html, baseUrl](const InitializationResult& result) {
+        if (result.state != InitializationState::Ready) {
+            if (impl_->state->callbacks.load) {
+                impl_->state->callbacks.load({ LoadState::Failed, baseUrl, result.error,
+                    ++impl_->state->navigationId, true });
+            }
+            return;
+        }
+        const NavigationRequest request { baseUrl, true, false, false };
+        if (impl_->state->policy->decideNavigation(request) != NavigationDecision::Allow) {
+            impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
+                QStringLiteral("The HTML base URL was rejected by policy."));
+            return;
+        }
+        if (baseUrl.scheme().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0
+            && (!impl_->sessionState || !hasResourceMapping(*impl_->sessionState, baseUrl))) {
+            impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
+                QStringLiteral("The app origin has no configured resource mapping."));
+            return;
+        }
+        impl_->state->lifetime.invalidate();
+        impl_->state->committedUrl = QUrl();
+        impl_->state->provisionalMainFrameNavigation = false;
+        impl_->state->explicitMainFrameNavigationPending = true;
+        installDocumentTransport(*impl_->state, impl_->view.configuration.userContentController);
+        [impl_->view loadHTMLString:toNSString(html) baseURL:[NSURL URLWithString:toNSString(baseUrl.toString())]];
+    });
 }
 
 void WkWebView::stop()

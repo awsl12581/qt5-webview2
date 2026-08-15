@@ -10,6 +10,29 @@
 
 namespace webview
 {
+class InitializationScheduler final
+{
+public:
+    using Completion = std::function<void(const InitializationResult&)>;
+
+    InitializationState state() const;
+    void markReady();
+    void fail(QString error);
+    void whenInitialized(Completion completion);
+    void runWhenReady(Completion operation);
+    void close();
+
+private:
+    void finishQueuedOperations(const InitializationResult& result);
+    void finishInitializationCompletions(const InitializationResult& result);
+
+    InitializationState state_ = InitializationState::Initializing;
+    QString error_;
+    std::vector<Completion> initializationCompletions_;
+    std::vector<Completion> readyOperations_;
+    bool drainingReadyOperations_ = false;
+};
+
 class WebViewState final : public std::enable_shared_from_this<WebViewState>
 {
 public:
@@ -33,9 +56,6 @@ public:
     void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { },
         const QString& error = { });
 private:
-    InitializationState initializationState_ = InitializationState::Initializing;
-    QString initializationError_;
-    std::vector<IWebView::InitializationCompletion> initializationCompletions_;
-    std::vector<std::function<void(const InitializationResult&)>> readyOperations_;
+    InitializationScheduler initialization_;
 };
 } // namespace webview

@@ -123,6 +123,23 @@ int main()
     closingState->close();
     assert(queuedClose);
 
+    webview::InitializationScheduler scheduler;
+    QStringList operationOrder;
+    scheduler.runWhenReady([&](const webview::InitializationResult& result) {
+        assert(result.state == webview::InitializationState::Ready);
+        operationOrder.push_back(QStringLiteral("first"));
+        scheduler.runWhenReady([&](const webview::InitializationResult& nestedResult) {
+            assert(nestedResult.state == webview::InitializationState::Ready);
+            operationOrder.push_back(QStringLiteral("nested"));
+        });
+    });
+    scheduler.runWhenReady([&](const webview::InitializationResult&) {
+        operationOrder.push_back(QStringLiteral("second"));
+    });
+    scheduler.markReady();
+    assert(operationOrder == QStringList({ QStringLiteral("first"), QStringLiteral("second"),
+                                QStringLiteral("nested") }));
+
     auto completionState = std::make_shared<webview::WebViewState>();
     webview::HostCompletionGuard completionGuard(completionState);
     assert(completionGuard.claim().claim == webview::HostCompletionClaim::Accepted);
