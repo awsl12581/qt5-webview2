@@ -127,6 +127,32 @@ public:
                                     }
                                     return S_OK;
                                 }).Get(), &newWindowToken);
+                        Microsoft::WRL::ComPtr<ICoreWebView2_4> webview4;
+                        if (SUCCEEDED(webview.As(&webview4)) && webview4) {
+                            webview4->add_DownloadStarting(
+                                Microsoft::WRL::Callback<ICoreWebView2DownloadStartingEventHandler>(
+                                    [state = state](ICoreWebView2*, ICoreWebView2DownloadStartingEventArgs* args) -> HRESULT {
+                                        Microsoft::WRL::ComPtr<ICoreWebView2DownloadOperation> operation;
+                                        if (FAILED(args->get_DownloadOperation(operation.GetAddressOf())) || !operation) {
+                                            args->put_Cancel(TRUE);
+                                            return S_OK;
+                                        }
+                                        LPWSTR rawUri = nullptr;
+                                        operation->get_Uri(&rawUri);
+                                        const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                        CoTaskMemFree(rawUri);
+                                        DownloadResolution resolution;
+                                        if (state->callbacks.resolveDownload) {
+                                            state->callbacks.resolveDownload({ url, {}, state->committedUrl, {} }, [&](DownloadResolution value) { resolution = std::move(value); });
+                                        }
+                                        if (resolution.status != DownloadResolutionStatus::Resolved || resolution.target.handling == DownloadHandling::Cancel) {
+                                            args->put_Cancel(TRUE);
+                                        } else if (resolution.target.handling == DownloadHandling::TargetPath) {
+                                            args->put_ResultFilePath(resolution.target.filePath.toStdWString().c_str());
+                                        }
+                                        return S_OK;
+                                    }).Get(), &downloadToken);
+                        }
                         webview->add_NavigationStarting(
                             Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
                                 [state = state](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -213,6 +239,7 @@ public:
     EventRegistrationToken webResourceToken{};
     EventRegistrationToken permissionToken{};
     EventRegistrationToken newWindowToken{};
+    EventRegistrationToken downloadToken{};
     WebViewPolicyPtr policy;
     QVector<WebResourceMapping> resourceMappings;
     bool attached = false;
@@ -226,6 +253,10 @@ public:
             webview->remove_WebResourceRequested(webResourceToken);
             webview->remove_PermissionRequested(permissionToken);
             webview->remove_NewWindowRequested(newWindowToken);
+            if (webview) {
+                Microsoft::WRL::ComPtr<ICoreWebView2_4> webview4;
+                if (SUCCEEDED(webview.As(&webview4)) && webview4) webview4->remove_DownloadStarting(downloadToken);
+            }
         }
     }
 };
