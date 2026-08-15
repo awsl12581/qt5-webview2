@@ -118,8 +118,6 @@ private:
             current.mode == webview::SessionMode::Ephemeral ? "ephemeral" : "persistent",
             clearName);
         std::fflush(stdout);
-        view->close();
-        view.reset();
         armTimeout(QStringLiteral("%1 clear completion").arg(QString::fromLatin1(clearName)));
         auto completion = [weak = weak_from_this(), clearName](const webview::WebsiteDataResult& result) {
             const auto owner = weak.lock();
@@ -146,6 +144,8 @@ private:
             current.mode == webview::SessionMode::Ephemeral ? "ephemeral" : "persistent",
             clearName);
         std::fflush(stdout);
+        if (view) view->close();
+        view.reset();
         session.reset();
         ++caseIndex;
         QTimer::singleShot(100, &application,
