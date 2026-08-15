@@ -10,7 +10,12 @@ bool isWithinRoot(const QString& filePath, const QString& rootPath)
 {
     const auto file = QFileInfo(filePath).canonicalFilePath();
     const auto root = QDir(rootPath).canonicalPath();
-    return !file.isEmpty() && !root.isEmpty() && (file == root || file.startsWith(root + QDir::separator()));
+    if (file.isEmpty() || root.isEmpty()) {
+        return false;
+    }
+    const auto relative = QDir(root).relativeFilePath(file);
+    return relative != QStringLiteral("..") && !relative.startsWith(QStringLiteral("../"))
+        && !relative.startsWith(QStringLiteral("..\\"));
 }
 }
 

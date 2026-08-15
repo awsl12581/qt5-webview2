@@ -24,11 +24,23 @@ validate_outcome_contract.py
 outcome_contract_ok
 ```
 
+## ARM64 构建证据
+
+本机使用 Visual Studio 18 Build Tools 的 ARM64 MSVC 19.51、Ninja 和现有 vcpkg
+`arm64-windows` 安装完成了 Debug/Release configure 与 build。链接阶段实际消费
+`unofficial::webview2::webview2` 和 `WebView2LoaderStatic.lib`。
+
+Debug 下直接运行 `webview_core_tests.exe` 与 `webview_windows_contract_tests.exe`，
+两者返回码均为 0。测试运行环境显式加入 vcpkg Debug/Release DLL 路径，并使用
+`QT_QPA_PLATFORM=offscreen`；这证明静态 build contract 和公共契约测试，不代表
+WebView2 GUI E2E 已完成。
+
 ## 尚未声称完成
 
 `WebView2Session` 和 `WebView2View` 当前是显式失败 scaffold。Environment、profile、controller、navigation、bridge、popup、download、permission 和 custom scheme 尚未接入真实 COM API。它们必须在 Windows ARM64 MSVC 和 WebView2 Runtime 环境中完成后才能关闭对应 CSV issue。
 
-当前 macOS 进程无法启用 Windows CMake preset，也没有 `cl`、`msbuild`、`powershell.exe` 或可运行的 WebView2 Runtime。因此没有把静态检查、源码存在或 scaffold 编译当作 Windows build、Runtime integration 或 GUI E2E 证据。
+当前 session/controller 仍是显式失败 scaffold，因此没有把成功构建和静态测试当作
+Runtime integration 或 GUI E2E 证据。
 
 ## 用户侧验证命令
 

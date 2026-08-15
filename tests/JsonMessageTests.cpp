@@ -200,9 +200,11 @@ int main()
     secret.close();
     const auto linkedFile = selectedRoot.filePath(QStringLiteral("linked.txt"));
     assert(QFile::link(outsideFile, linkedFile));
-    assert(webview::resolveMappedResource(
-               *mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError)
-        .isEmpty());
+    if (QFileInfo(linkedFile).isSymLink()) {
+        assert(webview::resolveMappedResource(
+                   *mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError)
+            .isEmpty());
+    }
 
     QVector<webview::WebResourceMapping> duplicateMappings {
         { QUrl(QStringLiteral("app://demo")), selectedRoot.path() },

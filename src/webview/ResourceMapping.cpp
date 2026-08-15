@@ -1,4 +1,5 @@
 #include "webview/ResourceMapping.h"
+#include "webview/PathSecurity.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -90,9 +91,12 @@ QString resolveMappedResource(const WebResourceMapping& mapping, const QUrl& url
     const auto candidatePath = QDir(mapping.localDirectory).filePath(segments.join(QLatin1Char('/')));
     const QFileInfo candidate(candidatePath);
     const auto canonicalPath = candidate.canonicalFilePath();
-    const auto rootPrefix = mapping.localDirectory + QDir::separator();
-    if (canonicalPath.isEmpty() || candidate.isDir()
-        || canonicalPath != mapping.localDirectory && !canonicalPath.startsWith(rootPrefix)) {
+    const auto relativePath = QDir(mapping.localDirectory).relativeFilePath(canonicalPath);
+    const bool outsideRoot = relativePath == QStringLiteral("..")
+        || relativePath.startsWith(QStringLiteral("../"))
+        || relativePath.startsWith(QStringLiteral("..\\"));
+    if (canonicalPath.isEmpty() || candidate.isDir() || outsideRoot
+        || hasExternalFileLink(canonicalPath)) {
         if (error) {
             *error = QStringLiteral("The mapped resource is unavailable or outside its root.");
         }

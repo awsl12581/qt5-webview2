@@ -21,13 +21,16 @@ target_include_directories(system_webview PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(system_webview PUBLIC Qt5::Widgets)
 
 if(APPLE)
+    target_sources(system_webview PRIVATE src/webview/PathSecurity.cpp)
     include(cmake/platform/macos.cmake)
 elseif(WIN32)
     target_sources(system_webview PRIVATE
+        src/platform/windows/PathSecurity.cpp
         src/platform/windows/WebView2Session.cpp
         src/platform/windows/WebView2View.cpp)
     include(cmake/platform/windows.cmake)
 else()
+    target_sources(system_webview PRIVATE src/webview/PathSecurity.cpp)
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
