@@ -35,6 +35,17 @@ QString originForUrl(const QUrl& url)
     return origin.toString(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::StripTrailingSlash);
 }
 
+bool hasResourceMapping(const webview::WkSessionState& sessionState, const QUrl& url)
+{
+    const auto origin = originForUrl(url);
+    for (const auto& mapping : sessionState.resourceMappings) {
+        if (originForUrl(mapping.origin) == origin && !mapping.localDirectory.isEmpty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 id foundationObject(const QJsonObject& object)
 {
     const auto json = QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -538,6 +549,14 @@ void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
     }
     const NavigationRequest request { baseUrl, true, false, false };
     if (impl_->state->policy->decideNavigation(request) != NavigationDecision::Allow) {
+        impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
+            QStringLiteral("The HTML base URL was rejected by policy."));
+        return;
+    }
+    if (baseUrl.scheme().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0
+        && (!impl_->sessionState || !hasResourceMapping(*impl_->sessionState, baseUrl))) {
+        impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
+            QStringLiteral("The app origin has no configured resource mapping."));
         return;
     }
     impl_->state->lifetime.invalidate();

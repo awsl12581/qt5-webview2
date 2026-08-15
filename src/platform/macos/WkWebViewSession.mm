@@ -26,6 +26,7 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
         ? [WKWebsiteDataStore nonPersistentDataStore]
         : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
+    impl_->state->resourceMappings = impl_->options.resourceMappings;
 }
 
 InitializationState WkWebViewSession::initializationState() const
@@ -99,10 +100,17 @@ CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capabili
 {
     switch (capability) {
     case WebViewCapability::PersistentProfile:
+        return impl_->options.mode == SessionMode::Persistent
+            ? CapabilitySupport::Supported : CapabilitySupport::Unsupported;
     case WebViewCapability::PrivateProfile:
+        return impl_->options.mode == SessionMode::Ephemeral
+            ? CapabilitySupport::Supported : CapabilitySupport::Unsupported;
     case WebViewCapability::FileSelection:
-    case WebViewCapability::ResourceMapping:
         return CapabilitySupport::Supported;
+    case WebViewCapability::ResourceMapping:
+        return impl_->options.resourceMappings.isEmpty()
+            ? CapabilitySupport::Unsupported
+            : CapabilitySupport::Supported;
     case WebViewCapability::DownloadDefault:
         if (@available(macOS 11.3, *)) {
             return CapabilitySupport::Supported;

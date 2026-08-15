@@ -78,7 +78,12 @@ DemoWindow::DemoWindow()
     status_ = new QLabel(QStringLiteral("Waiting for page message"), this);
     statusBar()->addWidget(status_);
 
-    session_ = webview::createWebViewSession({ }, std::make_shared<DemoPolicy>());
+    webview::WebViewSessionOptions options;
+    options.resourceMappings.push_back({
+        QUrl(QStringLiteral("app://demo")),
+        QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR)
+    });
+    session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
     auto webView = session_->createWebView();
     std::ifstream input(std::string(SYSTEM_WEBVIEW_RESOURCE_DIR) + "/demo.html");
     std::stringstream buffer;
