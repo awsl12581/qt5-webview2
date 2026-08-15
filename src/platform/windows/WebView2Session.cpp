@@ -25,15 +25,17 @@ public:
             state->failInitialization(QStringLiteral("WebView2 requires a COM STA UI thread (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(apartment), 16)));
             return;
         }
+        if (this->options.mode == SessionMode::Persistent && this->options.profilePath.isEmpty()) {
+            state->failInitialization(QStringLiteral("Persistent WebView2 sessions require a profilePath."));
+            return;
+        }
         if (this->options.mode == SessionMode::Ephemeral) {
             state->failInitialization(QStringLiteral("WebView2 ephemeral profile requires a Runtime controller-options interface."));
             return;
         }
-        if (this->options.profilePath.isEmpty()) {
-            state->failInitialization(QStringLiteral("Persistent WebView2 sessions require a profilePath."));
-            return;
-        }
-        const auto path = std::filesystem::path(this->options.profilePath.toStdWString());
+        const auto path = std::filesystem::path(this->options.profilePath.isEmpty()
+                ? (std::filesystem::temp_directory_path() / "system-webview2-ephemeral")
+                : std::filesystem::path(this->options.profilePath.toStdWString()));
         std::error_code error;
         std::filesystem::create_directories(path, error);
         if (error) {
