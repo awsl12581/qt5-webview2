@@ -1,0 +1,56 @@
+{
+  "review_agent_mode": "reviewer-subagent",
+  "review_independence": true,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "unknown",
+  "review_model_evidence": "unknown",
+  "result": "limited_review",
+  "claim_coverage": "16/16",
+  "claim_coverage_status": "complete",
+  "validation_limited": ["no WindowServer or screens; webview_macos_view_tests aborted before window creation"],
+  "summary": "The approved portable contract is implemented and all current-scope gaps are closed. Build, core, session, and static boundary checks pass; real WKWebView GUI behavior remains unobserved because the environment has no screens.",
+  "gaps": [],
+  "assumptions": ["Source wiring and non-GUI tests do not replace observation of WKWebView delegates in a logged-in GUI session."],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": ["Run webview_macos_view_tests in a logged-in macOS WindowServer session to observe file/download completion, popup, resource loading, bridge, and geometry behavior."],
+  "outcome_answers": [
+    {
+      "question_id": "OUTCOME-001",
+      "verdict": "partial",
+      "confidence": "moderate",
+      "answer": "Shared one-shot guards, weak ownership, QPointer dispatch, and structured outcomes are wired for file selection and downloads; duplicate, closed, and destroyed-owner behavior has unit coverage, but real WK delegate and worker-thread completion were not observed in this no-screen environment.",
+      "evidence_refs": ["src/webview/HostCompletion.cpp; src/platform/macos/WkWebView.mm; tests/JsonMessageTests.cpp; ctest core/session 2/2"],
+      "boundary": "Actual WKWebView delegate execution and Cocoa thread affinity remain GUI-limited.",
+      "next_action": "Run webview_macos_view_tests in a logged-in WindowServer session."
+    },
+    {
+      "question_id": "OUTCOME-002",
+      "verdict": "pass",
+      "confidence": "high",
+      "answer": "InitializationScheduler controls attach, load, setHtml, and session clear production paths; queued operations receive Ready, Failed, or Closed and the macOS synchronous-ready path uses the same entry point.",
+      "evidence_refs": ["src/webview/WebViewState.cpp; src/platform/macos/WkWebView.mm:588; src/platform/macos/WkWebViewSession.mm; webview_core_tests; webview_macos_session_tests"],
+      "boundary": "The current macOS backend initializes synchronously, so delayed initialization is proven by shared scheduler tests and production wiring rather than a delayed WK startup.",
+      "next_action": "Use the same scheduler contract when adding the asynchronous WebView2 backend."
+    },
+    {
+      "question_id": "OUTCOME-003",
+      "verdict": "partial",
+      "confidence": "moderate",
+      "answer": "Mapping validation, canonical-root checks, traversal and symlink rejection, MIME selection, and WKURLSchemeHandler registration are implemented; the real mapped page could not load because the view test aborted before window creation.",
+      "evidence_refs": ["src/webview/ResourceMapping.cpp; src/platform/macos/WkWebView.mm; src/platform/macos/WkWebViewSession.mm; webview_core_tests; webview_macos_view_tests: no screens"],
+      "boundary": "Relative CSS, JavaScript, image, and fetch requests were not observed inside a live WKWebView.",
+      "next_action": "Run the mapped-resource cases in a logged-in WindowServer session."
+    },
+    {
+      "question_id": "OUTCOME-004",
+      "verdict": "pass",
+      "confidence": "high",
+      "answer": "Popup ownership is transferred by value, origin-bearing requests share one normalizer, capability queries describe backend/runtime support rather than session options, and backend selection remains compile-time only.",
+      "evidence_refs": ["src/webview/WebViewTypes.h; src/webview/ResourceMapping.cpp; src/platform/macos/WkWebView.mm; src/platform/macos/WkWebViewSession.mm; CMakeLists.txt; static source scan"],
+      "boundary": "This establishes the portable contract and macOS behavior only; no Windows backend was implemented.",
+      "next_action": "Map WebView2 behavior to these contracts in a separate approved Windows mission."
+    }
+  ],
+  "handoff_markdown": "20260815_13-28-50-portable-webview-contract-hardening.handoff.md"
+}
