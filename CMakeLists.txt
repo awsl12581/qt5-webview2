@@ -22,6 +22,9 @@ target_link_libraries(system_webview PUBLIC Qt5::Widgets)
 if(APPLE)
     include(cmake/platform/macos.cmake)
 elseif(WIN32)
+    target_sources(system_webview PRIVATE
+        src/platform/windows/WebView2Session.cpp
+        src/platform/windows/WebView2View.cpp)
     include(cmake/platform/windows.cmake)
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")

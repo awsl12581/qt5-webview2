@@ -1,3 +1,8 @@
-# The WebView2 backend belongs here. Keep the core library backend-free until
-# that implementation is added, so Qt Widgets tooling can still be validated.
+find_package(unofficial-webview2 CONFIG REQUIRED)
+
+target_link_libraries(system_webview
+    PRIVATE
+        unofficial::webview2::webview2
+        ole32
+        shlwapi)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_PLATFORM_WINDOWS=1)
