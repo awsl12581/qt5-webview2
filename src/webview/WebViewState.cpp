@@ -90,9 +90,4 @@ void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, cons
     }
 }
 
-quint64 WebViewState::idForNavigation(void* navigation) const
-{
-    const auto found = navigationIds.find(navigation);
-    return found == navigationIds.end() ? navigationId : found->second;
-}
 } // namespace webview

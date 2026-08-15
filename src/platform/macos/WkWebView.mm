@@ -88,6 +88,16 @@ private:
 }
 
 namespace webview {
+struct WkNavigationState {
+    std::unordered_map<void*, quint64> navigationIds;
+
+    quint64 idForNavigation(void* navigation, quint64 fallback) const
+    {
+        const auto found = navigationIds.find(navigation);
+        return found == navigationIds.end() ? fallback : found->second;
+    }
+};
+
 void installDocumentTransport(WebViewState& state, WKUserContentController* content)
 {
     state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -127,6 +137,7 @@ public:
     NativeViewHost* container = nullptr;
     WKWebView* view = nil;
     std::shared_ptr<WebViewState> state;
+    std::shared_ptr<WkNavigationState> navigationState = std::make_shared<WkNavigationState>();
     std::shared_ptr<WkSessionState> sessionState;
     id messageDelegate = nil;
     id uiDelegate = nil;
@@ -141,10 +152,12 @@ public:
 
 @interface SystemWebViewUIDelegate : NSObject <WKUIDelegate>
 @property (nonatomic, assign) webview::WebViewState* state;
+@property (nonatomic, assign) webview::WkWebView* owner;
 @end
 
 @interface SystemWebViewNavigationDelegate : NSObject <WKNavigationDelegate>
 @property (nonatomic, assign) webview::WebViewState* state;
+@property (nonatomic, assign) webview::WkNavigationState* navigationState;
 @end
 
 @implementation SystemWebViewMessageDelegate
@@ -185,7 +198,7 @@ public:
                forNavigationAction:(WKNavigationAction*)navigationAction
                     windowFeatures:(WKWindowFeatures*)windowFeatures
 {
-    if (!self.state || self.state->lifetime.isClosed() || !self.state->createWebView || !self.state->callbacks.newWindow) {
+    if (!self.state || self.state->lifetime.isClosed() || !self.owner || !self.state->callbacks.newWindow) {
         return nil;
     }
     const QUrl url(QString::fromUtf8(navigationAction.request.URL.absoluteString.UTF8String));
@@ -193,7 +206,7 @@ public:
     if (self.state->policy->decideNewWindow(request) != webview::NewWindowDecision::Allow) {
         return nil;
     }
-    return static_cast<WKWebView*>(self.state->createWebView(configuration, request));
+    return static_cast<WKWebView*>(self.owner->createPopup(configuration, request));
 }
 
 - (void)webView:(WKWebView*)webView
@@ -335,7 +348,7 @@ public:
     }
     ++self.state->navigationId;
     self.state->provisionalMainFrameNavigation = true;
-    self.state->navigationIds[static_cast<void*>(navigation)] = self.state->navigationId;
+    self.navigationState->navigationIds[static_cast<void*>(navigation)] = self.state->navigationId;
     self.state->emitLoad(webview::LoadState::Started, self.state->navigationId,
         QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
 }
@@ -344,7 +357,7 @@ public:
 {
     if (self.state) {
         self.state->emitLoad(webview::LoadState::Redirected,
-            self.state->idForNavigation(static_cast<void*>(navigation)),
+            self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId),
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
     }
 }
@@ -356,16 +369,16 @@ public:
     }
     self.state->committedUrl = QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String));
     self.state->emitLoad(webview::LoadState::Committed,
-        self.state->idForNavigation(static_cast<void*>(navigation)), self.state->committedUrl);
+        self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId), self.state->committedUrl);
 }
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation
 {
     if (self.state) {
-        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
         self.state->emitLoad(webview::LoadState::Finished, navigationId,
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)));
-        self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
 }
@@ -375,13 +388,13 @@ public:
                        withError:(NSError*)error
 {
     if (self.state) {
-        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
         self.state->emitLoad(webview::LoadState::Failed, navigationId,
             QUrl(QString::fromUtf8(error.userInfo[NSURLErrorFailingURLErrorKey]
                                        ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
                                        : "")),
             QString::fromUtf8(error.localizedDescription.UTF8String));
-        self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
 }
@@ -389,11 +402,11 @@ public:
 - (void)webView:(WKWebView*)webView didFailNavigation:(WKNavigation*)navigation withError:(NSError*)error
 {
     if (self.state) {
-        const auto navigationId = self.state->idForNavigation(static_cast<void*>(navigation));
+        const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
         self.state->emitLoad(webview::LoadState::Failed, navigationId,
             QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)),
             QString::fromUtf8(error.localizedDescription.UTF8String));
-        self.state->navigationIds.erase(static_cast<void*>(navigation));
+        self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
 }
@@ -428,23 +441,12 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     nativeConfiguration.userContentController = content;
     auto* uiDelegate = [[SystemWebViewUIDelegate alloc] init];
     uiDelegate.state = impl_->state.get();
+    uiDelegate.owner = this;
     impl_->uiDelegate = uiDelegate;
     auto* navigationDelegate = [[SystemWebViewNavigationDelegate alloc] init];
     navigationDelegate.state = impl_->state.get();
+    navigationDelegate.navigationState = impl_->navigationState.get();
     impl_->navigationDelegate = navigationDelegate;
-    impl_->state->createWebView = [this](void* childConfiguration, const NewWindowRequest& request) -> void* {
-        if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.newWindow) {
-            return nullptr;
-        }
-        if (!impl_->sessionState || !impl_->sessionState->valid) {
-            return nullptr;
-        }
-        auto child = std::unique_ptr<WkWebView>(new WkWebView(
-            nullptr, childConfiguration, impl_->state->policy, impl_->sessionState));
-        auto* nativeView = child->impl_->view;
-        impl_->state->callbacks.newWindow(request, std::move(child));
-        return nativeView;
-    };
     impl_->view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1, 1) configuration:nativeConfiguration];
     impl_->view.UIDelegate = uiDelegate;
     impl_->view.navigationDelegate = navigationDelegate;
@@ -560,12 +562,11 @@ void WkWebView::close()
     }
     impl_->state->close();
     impl_->state->callbacks = { };
-    impl_->state->createWebView = { };
     impl_->state->documentToken.clear();
     impl_->state->documentTransportPrepared = false;
     impl_->state->provisionalMainFrameNavigation = false;
     impl_->state->explicitMainFrameNavigationPending = false;
-    impl_->state->navigationIds.clear();
+    impl_->navigationState->navigationIds.clear();
     impl_->state->policy.reset();
     if (impl_->sessionState) {
         impl_->sessionState->views.erase(this);
@@ -573,6 +574,7 @@ void WkWebView::close()
     [impl_->view stopLoading];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = nullptr;
     static_cast<SystemWebViewUIDelegate*>(impl_->uiDelegate).state = nullptr;
+    static_cast<SystemWebViewUIDelegate*>(impl_->uiDelegate).owner = nullptr;
     static_cast<SystemWebViewNavigationDelegate*>(impl_->navigationDelegate).state = nullptr;
     impl_->view.navigationDelegate = nil;
     impl_->view.UIDelegate = nil;
@@ -650,6 +652,22 @@ void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
     if (!impl_->state->lifetime.isClosed()) {
         impl_->state->callbacks = std::move(callbacks);
     }
+}
+
+void* WkWebView::createPopup(void* configuration, const NewWindowRequest& request)
+{
+    if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.newWindow
+        || !impl_->sessionState || !impl_->sessionState->valid) {
+        return nullptr;
+    }
+    WebViewPtr child = std::unique_ptr<WkWebView>(new WkWebView(
+        nullptr, configuration, impl_->state->policy, impl_->sessionState));
+    auto* nativeView = static_cast<WkWebView*>(child.get())->impl_->view;
+    const auto disposition = impl_->state->callbacks.newWindow(request, child);
+    if (disposition != NewWindowDisposition::Accepted || child) {
+        return nullptr;
+    }
+    return nativeView;
 }
 
 void* WkWebView::nativeConfigurationForTesting() const

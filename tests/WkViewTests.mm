@@ -147,7 +147,10 @@ int main(int argc, char** argv)
             assert(message.payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
         }
     };
-    callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
+    callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr&) {
+        ++popupCount;
+        return webview::NewWindowDisposition::Rejected;
+    };
     view->setHostCallbacks(std::move(callbacks));
 
     const QString html = QStringLiteral(R"HTML(
@@ -377,7 +380,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     webview::WebViewPtr popup;
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
-    popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
+    popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr& child) {
         assert(child->initializationState() == webview::InitializationState::Ready);
         auto* layout = new QVBoxLayout(&popupHost);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -386,6 +389,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
         child->attachNativeView();
         popup = std::move(child);
         loop.quit();
+        return webview::NewWindowDisposition::Accepted;
     };
     view->setHostCallbacks(std::move(popupCallbacks));
     view->setHtml(QStringLiteral(R"HTML(

@@ -96,8 +96,9 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         status_->setText(QStringLiteral("Page: %1").arg(message.payload.value("message").toString()));
         page->sendMessage({ 1, QStringLiteral("ack"), QJsonObject { { "message", "Native received your message." } } });
     };
-    callbacks.newWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
+    callbacks.newWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr& child) {
         addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
+        return webview::NewWindowDisposition::Accepted;
     };
     page->setHostCallbacks(std::move(callbacks));
     const int index = tabs_->addTab(tab, title);

@@ -29,6 +29,8 @@ public:
     void sendMessage(const BridgeMessage& message, MessageCompletion completion) override;
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
+    void* createPopup(void* configuration, const NewWindowRequest& request);
+
     void* nativeConfigurationForTesting() const;
     QString documentTokenForTesting() const;
     bool isNativeViewAttachedForTesting() const;
