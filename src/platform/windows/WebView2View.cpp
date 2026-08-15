@@ -93,6 +93,40 @@ public:
                                     }
                                     return S_OK;
                                 }).Get(), &webResourceToken);
+                        webview->add_PermissionRequested(
+                            Microsoft::WRL::Callback<ICoreWebView2PermissionRequestedEventHandler>(
+                                [state = state](ICoreWebView2*, ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+                                    LPWSTR rawUri = nullptr;
+                                    COREWEBVIEW2_PERMISSION_KIND nativeKind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
+                                    args->get_Uri(&rawUri);
+                                    args->get_PermissionKind(&nativeKind);
+                                    const QUrl origin = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                    CoTaskMemFree(rawUri);
+                                    PermissionKind kind = PermissionKind::Notifications;
+                                    if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE) kind = PermissionKind::Microphone;
+                                    else if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_CAMERA) kind = PermissionKind::Camera;
+                                    else if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION) kind = PermissionKind::Location;
+                                    else if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ) kind = PermissionKind::Clipboard;
+                                    const auto decision = state->policy ? state->policy->decidePermission({ kind, origin }) : PermissionDecision::Deny;
+                                    args->put_State(decision == PermissionDecision::Allow ? COREWEBVIEW2_PERMISSION_STATE_ALLOW : COREWEBVIEW2_PERMISSION_STATE_DENY);
+                                    return S_OK;
+                                }).Get(), &permissionToken);
+                        webview->add_NewWindowRequested(
+                            Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                                [state = state](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                    LPWSTR rawUri = nullptr;
+                                    args->get_Uri(&rawUri);
+                                    const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                    CoTaskMemFree(rawUri);
+                                    const NewWindowRequest request { url, false };
+                                    const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
+                                    // Child ownership must be transferred by a host callback; without one the deferral is rejected.
+                                    args->put_Handled(TRUE);
+                                    if (decision == NewWindowDecision::Allow && state->callbacks.newWindow) {
+                                        state->callbacks.newWindow(request, {});
+                                    }
+                                    return S_OK;
+                                }).Get(), &newWindowToken);
                         webview->add_NavigationStarting(
                             Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
                                 [state = state](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -177,6 +211,8 @@ public:
     EventRegistrationToken navigationCompletedToken{};
     EventRegistrationToken webMessageToken{};
     EventRegistrationToken webResourceToken{};
+    EventRegistrationToken permissionToken{};
+    EventRegistrationToken newWindowToken{};
     WebViewPolicyPtr policy;
     QVector<WebResourceMapping> resourceMappings;
     bool attached = false;
@@ -188,6 +224,8 @@ public:
             webview->remove_NavigationCompleted(navigationCompletedToken);
             webview->remove_WebMessageReceived(webMessageToken);
             webview->remove_WebResourceRequested(webResourceToken);
+            webview->remove_PermissionRequested(permissionToken);
+            webview->remove_NewWindowRequested(newWindowToken);
         }
     }
 };
