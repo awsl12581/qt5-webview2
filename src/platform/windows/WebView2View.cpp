@@ -264,10 +264,12 @@ public:
     WebViewPolicyPtr policy;
     QVector<WebResourceMapping> resourceMappings;
     bool attached = false;
+    bool eventsRemoved = false;
 
-    ~Impl()
+    void removeEvents()
     {
-        if (webview) {
+        if (!eventsRemoved && webview) {
+            eventsRemoved = true;
             webview->remove_NavigationStarting(navigationStartingToken);
             webview->remove_NavigationCompleted(navigationCompletedToken);
             webview->remove_WebMessageReceived(webMessageToken);
@@ -280,6 +282,8 @@ public:
             }
         }
     }
+
+    ~Impl() { removeEvents(); }
 };
 
 WebView2View::WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
@@ -341,6 +345,7 @@ void WebView2View::close()
         return;
     }
     impl_->attached = false;
+    impl_->removeEvents();
     if (impl_->controller) {
         impl_->controller->put_IsVisible(FALSE);
         impl_->controller->Close();
