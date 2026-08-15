@@ -33,5 +33,13 @@ int main(int argc, char** argv)
         assert(!result.error.isEmpty());
     }
     std::fflush(stdout);
+
+    webview::WebViewSessionOptions closingOptions;
+    closingOptions.mode = webview::SessionMode::Persistent;
+    closingOptions.profilePath = profile.path() + QStringLiteral("/closing");
+    auto closingSession = webview::createWebViewSession(std::move(closingOptions));
+    closingSession.reset();
+    QTimer::singleShot(250, &app, &QCoreApplication::quit);
+    app.exec();
     return 0;
 }

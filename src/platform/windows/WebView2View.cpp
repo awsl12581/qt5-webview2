@@ -30,7 +30,7 @@ public:
 };
 }
 
-class WebView2View::Impl
+class WebView2View::Impl : public std::enable_shared_from_this<WebView2View::Impl>
 {
 public:
     explicit Impl(QWidget* parent, ICoreWebView2Environment* environment,
@@ -41,19 +41,35 @@ public:
           resourceMappings(std::move(resourceMappings))
     {
         state->policy = this->policy;
+    }
+
+    void start()
+    {
         if (!environment) {
             state->failInitialization(QStringLiteral("WebView2 environment is unavailable."));
             return;
         }
-        sessionState->runWhenReady([this, environment](const InitializationResult& result) {
+        sessionState->runWhenReady([weak = weak_from_this()](const InitializationResult& result) {
+            const auto owner = weak.lock();
+            if (!owner || owner->state->lifetime.isClosed()) return;
             if (result.state != InitializationState::Ready) {
-                state->failInitialization(result.error);
+                owner->state->failInitialization(result.error);
                 return;
             }
-            const HWND hwnd = reinterpret_cast<HWND>(container->winId());
-            const HRESULT createResult = environment->CreateCoreWebView2Controller(hwnd,
+            const HWND hwnd = reinterpret_cast<HWND>(owner->container->winId());
+            const HRESULT createResult = owner->environment->CreateCoreWebView2Controller(hwnd,
                 Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                    [state = state, this](HRESULT hr, ICoreWebView2Controller* created) -> HRESULT {
+                    [state = owner->state, owner](HRESULT hr, ICoreWebView2Controller* created) -> HRESULT {
+                        if (state->lifetime.isClosed()) return S_OK;
+                        auto& controller = owner->controller;
+                        auto& webview = owner->webview;
+                        auto& webResourceToken = owner->webResourceToken;
+                        auto& permissionToken = owner->permissionToken;
+                        auto& newWindowToken = owner->newWindowToken;
+                        auto& downloadToken = owner->downloadToken;
+                        auto& navigationStartingToken = owner->navigationStartingToken;
+                        auto& navigationCompletedToken = owner->navigationCompletedToken;
+                        auto& webMessageToken = owner->webMessageToken;
                         if (FAILED(hr) || !created) {
                             state->failInitialization(QStringLiteral("WebView2 controller creation failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(hr), 16)));
                             return S_OK;
@@ -64,10 +80,10 @@ public:
                             state->failInitialization(QStringLiteral("WebView2 core object unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(coreResult), 16)));
                             return S_OK;
                         }
-                        const auto environmentForRequests = this->environment;
-                        const auto mappingsForRequests = this->resourceMappings;
-                        const auto sessionForChildren = this->sessionState;
-                        const auto policyForChildren = this->policy;
+                        const auto environmentForRequests = owner->environment;
+                        const auto mappingsForRequests = owner->resourceMappings;
+                        const auto sessionForChildren = owner->sessionState;
+                        const auto policyForChildren = owner->policy;
                         webview->AddWebResourceRequestedFilter(L"app://*/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
                         webview->add_WebResourceRequested(
                             Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
@@ -243,7 +259,7 @@ public:
                         return S_OK;
                     }).Get());
             if (FAILED(createResult)) {
-                state->failInitialization(QStringLiteral("WebView2 controller request failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(createResult), 16)));
+                owner->state->failInitialization(QStringLiteral("WebView2 controller request failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(createResult), 16)));
             }
         });
     }
@@ -289,8 +305,9 @@ public:
 WebView2View::WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
     std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
     QVector<WebResourceMapping> resourceMappings)
-    : impl_(std::make_unique<Impl>(parent, environment, std::move(sessionState), std::move(policy), std::move(resourceMappings)))
+    : impl_(std::make_shared<Impl>(parent, environment, std::move(sessionState), std::move(policy), std::move(resourceMappings)))
 {
+    impl_->start();
 }
 
 WebView2View::~WebView2View() { close(); }
