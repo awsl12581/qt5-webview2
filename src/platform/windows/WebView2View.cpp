@@ -10,6 +10,7 @@
 #include <QMimeDatabase>
 #include <QPointer>
 #include <QWidget>
+#include <QResizeEvent>
 
 #include <WebView2.h>
 #include <windows.h>
@@ -22,10 +23,18 @@ namespace {
 class NativeViewHost final : public QWidget
 {
 public:
+    std::function<void()> resized;
     explicit NativeViewHost(QWidget* parent)
         : QWidget(parent)
     {
         setAttribute(Qt::WA_NativeWindow);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QWidget::resizeEvent(event);
+        if (resized) resized();
     }
 };
 }
@@ -45,6 +54,9 @@ public:
 
     void start()
     {
+        container->resized = [weak = weak_from_this()] {
+            if (const auto owner = weak.lock()) owner->applyHostState();
+        };
         if (!environment) {
             state->failInitialization(QStringLiteral("WebView2 environment is unavailable."));
             return;
@@ -256,6 +268,7 @@ public:
                                     return S_OK;
                                 }).Get(), &webMessageToken);
                         state->markReady();
+                        owner->applyHostState();
                         return S_OK;
                     }).Get());
             if (FAILED(createResult)) {
@@ -281,6 +294,21 @@ public:
     QVector<WebResourceMapping> resourceMappings;
     bool attached = false;
     bool eventsRemoved = false;
+
+    void applyHostState()
+    {
+        if (!controller) return;
+        if (!attached) {
+            controller->put_IsVisible(FALSE);
+            return;
+        }
+        const HWND hwnd = reinterpret_cast<HWND>(container->winId());
+        RECT bounds{};
+        GetClientRect(hwnd, &bounds);
+        controller->put_ParentWindow(hwnd);
+        controller->put_Bounds(bounds);
+        controller->put_IsVisible(TRUE);
+    }
 
     void removeEvents()
     {
@@ -317,18 +345,12 @@ void WebView2View::whenInitialized(InitializationCompletion completion) { impl_-
 void WebView2View::attachNativeView()
 {
     impl_->attached = true;
-    if (impl_->controller) {
-        RECT rect{};
-        GetClientRect(reinterpret_cast<HWND>(impl_->container->winId()), &rect);
-        impl_->controller->put_ParentWindow(reinterpret_cast<HWND>(impl_->container->winId()));
-        impl_->controller->put_Bounds(rect);
-        impl_->controller->put_IsVisible(TRUE);
-    }
+    impl_->applyHostState();
 }
 void WebView2View::detachNativeView()
 {
     impl_->attached = false;
-    if (impl_->controller) impl_->controller->put_IsVisible(FALSE);
+    impl_->applyHostState();
 }
 
 void WebView2View::load(const QUrl& url)
