@@ -1,24 +1,11 @@
 #include "webview/WebViewPolicy.h"
+#include "webview/ResourceMapping.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonDocument>
 
 namespace {
-QString normalizedOrigin(const QUrl& url)
-{
-    if (!url.isValid() || url.scheme().isEmpty()) {
-        return { };
-    }
-    QUrl origin;
-    origin.setScheme(url.scheme().toLower());
-    origin.setHost(url.host().toLower());
-    if (url.port() >= 0) {
-        origin.setPort(url.port());
-    }
-    return origin.toString(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::StripTrailingSlash);
-}
-
 bool isWithinRoot(const QString& filePath, const QString& rootPath)
 {
     const auto file = QFileInfo(filePath).canonicalFilePath();
@@ -67,7 +54,8 @@ bool WebViewPolicy::allowsBridge(const QUrl& committedUrl) const
     if (scheme == QStringLiteral("app")) {
         return config_.allowedAppHosts.contains(committedUrl.host().toLower());
     }
-    return scheme == QStringLiteral("https") && config_.trustedHttpsOrigins.contains(normalizedOrigin(committedUrl));
+    return scheme == QStringLiteral("https")
+        && config_.trustedHttpsOrigins.contains(webview::normalizedOrigin(committedUrl).toString());
 }
 
 bool WebViewPolicy::validateBridgeMessage(const BridgeMessage& message, QString* error) const

@@ -84,6 +84,7 @@ struct PermissionRequest {
 struct DownloadRequest {
     QUrl url;
     QUrl origin;
+    QUrl documentUrl;
     QString suggestedFileName;
 };
 
@@ -111,6 +112,16 @@ struct DownloadTarget {
     QString filePath;
 };
 
+enum class DownloadResolutionStatus { Resolved, Cancelled, Closed, InvalidResult };
+
+struct DownloadResolution {
+    DownloadResolutionStatus status = DownloadResolutionStatus::Cancelled;
+    DownloadTarget target;
+    QString error;
+};
+
+using DownloadCompletion = std::function<void(DownloadResolution)>;
+
 struct BridgeMessage {
     int version = 1;
     QString type;
@@ -135,6 +146,6 @@ struct WebViewHostCallbacks {
     std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;
     std::function<void(const BridgeMessage&)> message;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> selectFiles;
-    std::function<DownloadTarget(const DownloadRequest&)> resolveDownload;
+    std::function<void(const DownloadRequest&, DownloadCompletion)> resolveDownload;
 };
 } // namespace webview

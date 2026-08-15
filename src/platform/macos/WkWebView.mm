@@ -29,17 +29,6 @@ constexpr auto kBridgeName = "systemWebView";
 
 NSString* toNSString(const QString& value) { return [NSString stringWithUTF8String:value.toUtf8().constData()]; }
 
-QString originForUrl(const QUrl& url)
-{
-    QUrl origin;
-    origin.setScheme(url.scheme().toLower());
-    origin.setHost(url.host().toLower());
-    if (url.port() >= 0) {
-        origin.setPort(url.port());
-    }
-    return origin.toString(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment | QUrl::StripTrailingSlash);
-}
-
 id foundationObject(const QJsonObject& object)
 {
     const auto json = QJsonDocument(object).toJson(QJsonDocument::Compact);
@@ -51,16 +40,6 @@ webview::PermissionKind permissionKind(WKMediaCaptureType type)
 {
     return type == WKMediaCaptureTypeMicrophone ? webview::PermissionKind::Microphone
                                                  : webview::PermissionKind::Camera;
-}
-
-bool allowBrowserDownload(webview::WebViewState& state, const webview::DownloadRequest& request)
-{
-    if (state.policy->decideDownload(request) != webview::DownloadDecision::Allow
-        || !state.callbacks.resolveDownload) {
-        return false;
-    }
-    state.pendingDownload = state.callbacks.resolveDownload(request);
-    return state.pendingDownload.handling == webview::DownloadHandling::BrowserDefault;
 }
 
 class NativeViewHost final : public QWidget
@@ -157,6 +136,7 @@ public:
     id messageDelegate = nil;
     id uiDelegate = nil;
     id navigationDelegate = nil;
+    id downloadDelegate = nil;
     bool nativeViewAttachmentRequested = false;
 };
 } // namespace webview
@@ -170,9 +150,19 @@ public:
 @property (nonatomic, assign) webview::WkWebView* owner;
 @end
 
+@class SystemWebViewDownloadDelegate;
+
 @interface SystemWebViewNavigationDelegate : NSObject <WKNavigationDelegate>
 @property (nonatomic, assign) webview::WebViewState* state;
 @property (nonatomic, assign) webview::WkNavigationState* navigationState;
+@property (nonatomic, assign) SystemWebViewDownloadDelegate* downloadDelegate;
+@end
+
+@interface SystemWebViewDownloadDelegate : NSObject <WKDownloadDelegate> {
+@public
+    std::weak_ptr<webview::WebViewState> state;
+    QPointer<QWidget> context;
+}
 @end
 
 @implementation SystemWebViewMessageDelegate
@@ -182,7 +172,7 @@ public:
     if (![message.name isEqualToString:@(kBridgeName)] || !self.state || self.state->lifetime.isClosed()
         || !self.state->callbacks.message || !message.frameInfo.mainFrame
         || !self.state->policy->allowsBridge(self.state->committedUrl)
-        || originForUrl(frameUrl) != originForUrl(self.state->committedUrl)) {
+        || webview::normalizedOrigin(frameUrl) != webview::normalizedOrigin(self.state->committedUrl)) {
         return;
     }
     NSError* error = nil;
@@ -239,7 +229,7 @@ public:
                                  QString::fromUtf8(origin.host.UTF8String))
                              .arg(origin.port));
     const auto decision = webview::decideNativePermission(
-        *self.state->policy, { permissionKind(type), originUrl });
+        *self.state->policy, { permissionKind(type), webview::normalizedOrigin(originUrl) });
     decisionHandler(decision == webview::NativePermissionDecision::Grant
             ? WKPermissionDecisionGrant
             : decision == webview::NativePermissionDecision::Prompt
@@ -255,14 +245,14 @@ public:
     if (!self.state || self.state->lifetime.isClosed() || !frame.mainFrame
         || webview::decideNativePermission(*self.state->policy,
                { webview::PermissionKind::FilePicker,
-                   QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)) })
+                   webview::normalizedOrigin(QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String))) })
             != webview::NativePermissionDecision::Grant || !self.state->callbacks.selectFiles) {
         completionHandler(nil);
         return;
     }
     const QUrl documentUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String));
     const webview::FileSelectionRequest request {
-        documentUrl,
+        webview::normalizedOrigin(documentUrl),
         documentUrl,
         parameters.allowsMultipleSelection,
         parameters.allowsDirectories
@@ -295,7 +285,66 @@ public:
 }
 @end
 
+@implementation SystemWebViewDownloadDelegate
+- (void)download:(WKDownload*)download
+    decideDestinationUsingResponse:(NSURLResponse*)response
+                  suggestedFilename:(NSString*)suggestedFilename
+                   completionHandler:(void (^)(NSURL* destinationURL))completionHandler
+{
+    const auto currentState = state.lock();
+    if (!currentState || currentState->lifetime.isClosed()
+        || currentState->policy->decideDownload({
+               QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+               currentState->committedUrl,
+               QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+               QString::fromUtf8(suggestedFilename.UTF8String) }) != webview::DownloadDecision::Allow
+        || !currentState->callbacks.resolveDownload || !context) {
+        completionHandler(nil);
+        return;
+    }
+    const webview::DownloadRequest request {
+        QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+        webview::normalizedOrigin(currentState->committedUrl),
+        QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+        QString::fromUtf8(suggestedFilename.UTF8String)
+    };
+    auto guard = std::make_shared<webview::HostCompletionGuard>(currentState);
+    const QPointer<QWidget> dispatchContext = context;
+    const auto completion = [completionHandler, guard, dispatchContext](webview::DownloadResolution resolution) {
+        const auto access = guard->claim();
+        if (access.claim != webview::HostCompletionClaim::Accepted || !dispatchContext) {
+            return;
+        }
+        QMetaObject::invokeMethod(dispatchContext.data(), [completionHandler, statePtr = access.state,
+                                                     resolution = std::move(resolution)] {
+            if (statePtr->lifetime.isClosed() || resolution.status != webview::DownloadResolutionStatus::Resolved
+                || resolution.target.handling != webview::DownloadHandling::TargetPath
+                || resolution.target.filePath.isEmpty()) {
+                completionHandler(nil);
+                return;
+            }
+            completionHandler([NSURL fileURLWithPath:toNSString(resolution.target.filePath)]);
+        }, Qt::QueuedConnection);
+    };
+    currentState->callbacks.resolveDownload(request, completion);
+}
+@end
+
 @implementation SystemWebViewNavigationDelegate
+- (void)webView:(WKWebView*)webView
+    navigationAction:(WKNavigationAction*)navigationAction
+    didBecomeDownload:(WKDownload*)download
+{
+    download.delegate = self.downloadDelegate;
+}
+
+- (void)webView:(WKWebView*)webView
+    navigationResponse:(WKNavigationResponse*)navigationResponse
+    didBecomeDownload:(WKDownload*)download
+{
+    download.delegate = self.downloadDelegate;
+}
+
 - (void)webView:(WKWebView*)webView
     decidePolicyForNavigationAction:(WKNavigationAction*)navigationAction
                     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler
@@ -313,14 +362,15 @@ public:
     const webview::NavigationRequest request { url, isMainFrame, isUserInitiated, isRedirect };
     if (@available(macOS 11.3, *)) {
         if (navigationAction.shouldPerformDownload) {
-            const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
             if (isMainFrame) {
                 self.state->explicitMainFrameNavigationPending = false;
                 self.state->provisionalMainFrameNavigation = false;
             }
-            decisionHandler(allowBrowserDownload(*self.state, download)
-                ? WKNavigationActionPolicyDownload
-                : WKNavigationActionPolicyCancel);
+            decisionHandler(self.state->policy->decideDownload({
+                    url, webview::normalizedOrigin(self.state->committedUrl),
+                    url, url.fileName() }) == webview::DownloadDecision::Allow
+                && self.state->callbacks.resolveDownload
+                ? WKNavigationActionPolicyDownload : WKNavigationActionPolicyCancel);
             return;
         }
     }
@@ -367,11 +417,12 @@ public:
         return;
     }
     const QUrl url(QString::fromUtf8(navigationResponse.response.URL.absoluteString.UTF8String));
-    const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
     if (@available(macOS 11.3, *)) {
-        decisionHandler(allowBrowserDownload(*self.state, download)
-            ? WKNavigationResponsePolicyDownload
-            : WKNavigationResponsePolicyCancel);
+        decisionHandler(self.state->policy->decideDownload({
+                url, webview::normalizedOrigin(self.state->committedUrl),
+                url, url.fileName() }) == webview::DownloadDecision::Allow
+            && self.state->callbacks.resolveDownload
+            ? WKNavigationResponsePolicyDownload : WKNavigationResponsePolicyCancel);
     } else {
         decisionHandler(WKNavigationResponsePolicyCancel);
     }
@@ -483,9 +534,16 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     navigationDelegate.state = impl_->state.get();
     navigationDelegate.navigationState = impl_->navigationState.get();
     impl_->navigationDelegate = navigationDelegate;
+    auto* downloadDelegate = [[SystemWebViewDownloadDelegate alloc] init];
+    downloadDelegate->state = impl_->state;
+    downloadDelegate->context = impl_->container;
+    impl_->downloadDelegate = downloadDelegate;
     impl_->view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1, 1) configuration:nativeConfiguration];
     impl_->view.UIDelegate = uiDelegate;
     impl_->view.navigationDelegate = navigationDelegate;
+    if (@available(macOS 11.3, *)) {
+        navigationDelegate.downloadDelegate = downloadDelegate;
+    }
     impl_->view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     impl_->container->syncNativeView = [container = impl_->container, view = impl_->view,
                                             attachmentRequested = &impl_->nativeViewAttachmentRequested] {
@@ -648,6 +706,7 @@ void WkWebView::close()
     impl_->messageDelegate = nil;
     impl_->uiDelegate = nil;
     impl_->navigationDelegate = nil;
+    impl_->downloadDelegate = nil;
     impl_->view = nil;
 }
 

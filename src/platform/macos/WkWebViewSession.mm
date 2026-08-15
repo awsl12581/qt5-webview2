@@ -176,23 +176,19 @@ CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capabili
 {
     switch (capability) {
     case WebViewCapability::PersistentProfile:
-        return impl_->options.mode == SessionMode::Persistent
-            ? CapabilitySupport::Supported : CapabilitySupport::Unsupported;
+        return CapabilitySupport::Supported;
     case WebViewCapability::PrivateProfile:
-        return impl_->options.mode == SessionMode::Ephemeral
-            ? CapabilitySupport::Supported : CapabilitySupport::Unsupported;
+        return CapabilitySupport::Supported;
     case WebViewCapability::FileSelection:
         return CapabilitySupport::Supported;
     case WebViewCapability::ResourceMapping:
-        return impl_->options.resourceMappings.isEmpty()
-            ? CapabilitySupport::Unsupported
-            : CapabilitySupport::Supported;
+        return CapabilitySupport::Supported;
     case WebViewCapability::DownloadDefault:
+        return CapabilitySupport::Unsupported;
+    case WebViewCapability::DownloadTarget:
         if (@available(macOS 11.3, *)) {
             return CapabilitySupport::Supported;
         }
-        return CapabilitySupport::Unsupported;
-    case WebViewCapability::DownloadTarget:
         return CapabilitySupport::Unsupported;
     case WebViewCapability::Camera:
     case WebViewCapability::Microphone:

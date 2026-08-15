@@ -51,7 +51,13 @@ int main(int argc, char** argv)
     assert(mappingFailureReported);
     assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile)
         == webview::CapabilitySupport::Supported);
+    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PersistentProfile)
+        == webview::CapabilitySupport::Supported);
     assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile)
+        == webview::CapabilitySupport::Supported);
+    assert(session->capabilitySupport(webview::WebViewCapability::PrivateProfile)
+        == webview::CapabilitySupport::Supported);
+    assert(session->capabilitySupport(webview::WebViewCapability::ResourceMapping)
         == webview::CapabilitySupport::Supported);
     assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
         == webview::CapabilitySupport::Supported);
@@ -68,7 +74,7 @@ int main(int argc, char** argv)
             == webview::CapabilitySupport::Supported);
     }
     if (@available(macOS 11.3, *)) {
-        assert(session->capabilitySupport(webview::WebViewCapability::DownloadDefault)
+        assert(session->capabilitySupport(webview::WebViewCapability::DownloadTarget)
             == webview::CapabilitySupport::Supported);
     }
 
