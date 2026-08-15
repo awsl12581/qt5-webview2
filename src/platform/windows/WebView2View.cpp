@@ -66,6 +66,8 @@ public:
                         }
                         const auto environmentForRequests = this->environment;
                         const auto mappingsForRequests = this->resourceMappings;
+                        const auto sessionForChildren = this->sessionState;
+                        const auto policyForChildren = this->policy;
                         webview->AddWebResourceRequestedFilter(L"app://*/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
                         webview->add_WebResourceRequested(
                             Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
@@ -113,18 +115,37 @@ public:
                                 }).Get(), &permissionToken);
                         webview->add_NewWindowRequested(
                             Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-                                [state = state](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                [state = state, environment = environmentForRequests, sessionState = sessionForChildren,
+                                    policy = policyForChildren, mappings = mappingsForRequests](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                    Microsoft::WRL::ComPtr<ICoreWebView2Deferral> deferral;
+                                    args->GetDeferral(deferral.GetAddressOf());
                                     LPWSTR rawUri = nullptr;
                                     args->get_Uri(&rawUri);
                                     const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
                                     CoTaskMemFree(rawUri);
                                     const NewWindowRequest request { url, false };
                                     const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
-                                    // Child ownership must be transferred by a host callback; without one the deferral is rejected.
-                                    args->put_Handled(TRUE);
-                                    if (decision == NewWindowDecision::Allow && state->callbacks.newWindow) {
-                                        state->callbacks.newWindow(request, {});
+                                    if (decision != NewWindowDecision::Allow || !state->callbacks.newWindow) {
+                                        args->put_Handled(TRUE);
+                                        if (deferral) deferral->Complete();
+                                        return S_OK;
                                     }
+                                    auto child = std::unique_ptr<IWebView>(new WebView2View(nullptr,
+                                        environment.Get(), sessionState, policy, mappings));
+                                    auto* childView = static_cast<WebView2View*>(child.get());
+                                    auto childHolder = std::make_shared<WebViewPtr>(std::move(child));
+                                    Microsoft::WRL::ComPtr<ICoreWebView2NewWindowRequestedEventArgs> argsRef(args);
+                                    childView->whenInitialized([state, request, childHolder, argsRef, deferral](const InitializationResult& result) mutable {
+                                        if (result.state == InitializationState::Ready && childHolder && *childHolder) {
+                                            auto* readyChild = static_cast<WebView2View*>(childHolder->get());
+                                            argsRef->put_NewWindow(readyChild->impl_->webview.Get());
+                                            argsRef->put_Handled(TRUE);
+                                            if (state->callbacks.newWindow) state->callbacks.newWindow(request, std::move(*childHolder));
+                                        } else {
+                                            argsRef->put_Handled(TRUE);
+                                        }
+                                        if (deferral) deferral->Complete();
+                                    });
                                     return S_OK;
                                 }).Get(), &newWindowToken);
                         Microsoft::WRL::ComPtr<ICoreWebView2_4> webview4;
