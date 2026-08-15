@@ -1,4 +1,5 @@
 enable_language(OBJCXX)
+target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_PLATFORM_MACOS=1)
 
 find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
 find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
