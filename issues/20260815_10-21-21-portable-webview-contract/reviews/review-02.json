@@ -1,0 +1,24 @@
+{
+  "review_agent_mode": "self-review",
+  "review_independence": false,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "gpt-5",
+  "review_model_evidence": "parent-runtime",
+  "result": "limited_review",
+  "claim_coverage": "15/15",
+  "claim_coverage_status": "complete",
+  "validation_limited": ["no WindowServer or screens; real GUI view/popup E2E unavailable"],
+  "summary": "HOST-03 is implemented and committed. Queued initialization operations now receive explicit Ready/Failed/Closed results, and macOS file selection completion is one-shot and close-safe. Public boundaries, compile-time backend selection, and all available non-GUI tests remain valid.",
+  "gaps": [],
+  "assumptions": ["GUI-only claims remain limited until a logged-in macOS session with screens is available."],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": ["Run webview_macos_view_tests in a GUI-capable macOS session to observe real view/popup geometry and bridge E2E."],
+  "outcome_answers": [
+    {"question_id":"OUTCOME-001","verdict":"pass","confidence":"high","answer":"Yes for public/demo/cross-platform paths: static scan found no Wk concrete casts or platform includes; the only cast remains inside the macOS backend popup implementation.","evidence_refs":["samples/demo/; tests/; src/webview/ static scan"],"boundary":"The private macOS backend cast remains allowed.","next_action":"Keep future backend code behind the public contract."},
+    {"question_id":"OUTCOME-002","verdict":"pass","confidence":"high","answer":"Yes: public IWebView and WebViewTypes express initialization, attach/detach, navigation/bridge state consumption, popup ownership, host file/download callbacks, explicit resource mappings, and explicit queued-operation failure results.","evidence_refs":["src/webview/IWebView.h; src/webview/WebViewTypes.h; src/webview/WebViewState.cpp; src/platform/macos/WkWebView.mm:269"],"boundary":"GUI-only behavior remains unobserved.","next_action":"Reuse these contracts for the Windows backend."},
+    {"question_id":"OUTCOME-003","verdict":"partial","confidence":"moderate","answer":"Core and macOS session suites pass (2/2); the full view suite aborts before window creation because no screens are available, so real GUI navigation/popup/bridge E2E is not claimed.","evidence_refs":["ctest core/session 2/2; webview_macos_view_tests: no screens"],"boundary":"GUI-only behavior was not observed in this environment.","next_action":"Run the view suite in a logged-in WindowServer session."},
+    {"question_id":"OUTCOME-004","verdict":"pass","confidence":"high","answer":"CMake source selection and WebViewFactory use platform branches/macros; static scan found no runtime registry, plugin loader, dlopen, or LoadLibrary path.","evidence_refs":["CMakeLists.txt; src/webview/WebViewFactory.cpp; static dynamic-path scan"],"boundary":"Evidence is for the current macOS configuration.","next_action":"Reuse the same compile-time boundary for Windows implementation."}
+  ],
+  "handoff_markdown": "20260815_10-21-21-portable-webview-contract.handoff.md"
+}
