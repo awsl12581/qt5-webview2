@@ -14,6 +14,7 @@ add_library(system_webview STATIC
     src/webview/ResourceMapping.cpp
     src/webview/WebViewPolicy.cpp
     src/webview/WebViewState.cpp
+    src/webview/WebViewFactory.cpp
 )
 add_library(system_webview::system_webview ALIAS system_webview)
 target_include_directories(system_webview PUBLIC "${CMAKE_SOURCE_DIR}/src")
