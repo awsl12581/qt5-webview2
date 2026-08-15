@@ -1,6 +1,7 @@
 #include "webview/DocumentLifetime.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
+#include "webview/WebViewState.h"
 
 #if defined(__APPLE__)
 #include "platform/macos/WkPolicyMapping.h"
@@ -83,6 +84,28 @@ int main()
     assert(lifetime.resultFor(secondDocument) == webview::MessageError::Closed);
     lifetime.close();
     assert(lifetime.resultFor(lifetime.token()) == webview::MessageError::Closed);
+
+    auto state = std::make_shared<webview::WebViewState>();
+    assert(state->initializationState() == webview::InitializationState::Initializing);
+    bool queued = false;
+    state->runWhenReady([&] { queued = true; });
+    bool initialized = false;
+    state->whenInitialized([&](const webview::InitializationResult& result) {
+        initialized = result.state == webview::InitializationState::Ready;
+    });
+    state->markReady();
+    assert(initialized);
+    assert(queued);
+    assert(state->initializationState() == webview::InitializationState::Ready);
+
+    auto failedState = std::make_shared<webview::WebViewState>();
+    bool failed = false;
+    failedState->whenInitialized([&](const webview::InitializationResult& result) {
+        failed = result.state == webview::InitializationState::Failed
+            && !result.error.isEmpty();
+    });
+    failedState->failInitialization(QStringLiteral("test failure"));
+    assert(failed);
 
 #if defined(__APPLE__)
     assert(webview::mapPermissionDecision(webview::PermissionDecision::Allow)

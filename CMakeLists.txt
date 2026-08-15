@@ -11,6 +11,7 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 add_library(system_webview STATIC
     src/webview/JsonMessage.cpp
     src/webview/WebViewPolicy.cpp
+    src/webview/WebViewState.cpp
 )
 add_library(system_webview::system_webview ALIAS system_webview)
 target_include_directories(system_webview PUBLIC "${CMAKE_SOURCE_DIR}/src")

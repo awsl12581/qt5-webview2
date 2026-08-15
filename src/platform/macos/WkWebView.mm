@@ -3,7 +3,7 @@
 #include "platform/macos/WkSessionState.h"
 
 #include "webview/JsonMessage.h"
-#include "webview/DocumentLifetime.h"
+#include "webview/WebViewState.h"
 
 #include <QEvent>
 #include <QJsonArray>
@@ -88,34 +88,7 @@ private:
 }
 
 namespace webview {
-struct NativeState {
-    WebViewHostCallbacks callbacks;
-    WebViewPolicyPtr policy;
-    std::function<void*(void*, const NewWindowRequest&)> createWebView;
-    QUrl committedUrl;
-    QString documentToken;
-    bool documentTransportPrepared = false;
-    bool provisionalMainFrameNavigation = false;
-    bool explicitMainFrameNavigationPending = false;
-    quint64 navigationId = 0;
-    DocumentLifetime lifetime;
-    std::unordered_map<void*, quint64> navigationIds;
-
-    void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { }, const QString& error = { })
-    {
-        if (!lifetime.isClosed() && callbacks.load) {
-            callbacks.load({ loadState, url, error, eventNavigationId, true });
-        }
-    }
-
-    quint64 idForNavigation(void* navigation) const
-    {
-        const auto found = navigationIds.find(navigation);
-        return found == navigationIds.end() ? navigationId : found->second;
-    }
-};
-
-void installDocumentTransport(NativeState& state, WKUserContentController* content)
+void installDocumentTransport(WebViewState& state, WKUserContentController* content)
 {
     state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto escapedToken = QString::fromUtf8(
@@ -153,7 +126,7 @@ class WkWebView::Impl
 public:
     NativeViewHost* container = nullptr;
     WKWebView* view = nil;
-    std::shared_ptr<NativeState> state;
+    std::shared_ptr<WebViewState> state;
     std::shared_ptr<WkSessionState> sessionState;
     id messageDelegate = nil;
     id uiDelegate = nil;
@@ -163,15 +136,15 @@ public:
 } // namespace webview
 
 @interface SystemWebViewMessageDelegate : NSObject <WKScriptMessageHandler>
-@property (nonatomic, assign) webview::NativeState* state;
+@property (nonatomic, assign) webview::WebViewState* state;
 @end
 
 @interface SystemWebViewUIDelegate : NSObject <WKUIDelegate>
-@property (nonatomic, assign) webview::NativeState* state;
+@property (nonatomic, assign) webview::WebViewState* state;
 @end
 
 @interface SystemWebViewNavigationDelegate : NSObject <WKNavigationDelegate>
-@property (nonatomic, assign) webview::NativeState* state;
+@property (nonatomic, assign) webview::WebViewState* state;
 @end
 
 @implementation SystemWebViewMessageDelegate
@@ -438,7 +411,7 @@ WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr poli
 void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     std::shared_ptr<WkSessionState> sessionState)
 {
-    impl_->state = std::make_shared<NativeState>();
+    impl_->state = std::make_shared<WebViewState>();
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
     impl_->sessionState = std::move(sessionState);
     impl_->container = new NativeViewHost(nullptr);
@@ -494,6 +467,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     };
     if (impl_->sessionState && impl_->sessionState->valid) {
         impl_->sessionState->views.insert(this);
+        impl_->state->markReady();
     } else {
         close();
     }
@@ -505,13 +479,13 @@ QWidget* WkWebView::widget() { return impl_->container; }
 
 InitializationState WkWebView::initializationState() const
 {
-    return impl_->state->lifetime.isClosed() ? InitializationState::Closed : InitializationState::Ready;
+    return impl_->state->initializationState();
 }
 
 void WkWebView::whenInitialized(InitializationCompletion completion)
 {
     if (completion) {
-        completion({ initializationState(), { } });
+        impl_->state->whenInitialized(std::move(completion));
     }
 }
 
@@ -584,7 +558,7 @@ void WkWebView::close()
     if (impl_->state->lifetime.isClosed()) {
         return;
     }
-    impl_->state->lifetime.close();
+    impl_->state->close();
     impl_->state->callbacks = { };
     impl_->state->createWebView = { };
     impl_->state->documentToken.clear();
@@ -638,7 +612,7 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
         { QStringLiteral("payload"), message.payload },
     };
     const auto generation = impl_->state->lifetime.token();
-    const std::weak_ptr<NativeState> weakState = impl_->state;
+    const std::weak_ptr<WebViewState> weakState = impl_->state;
     const auto completionHandler = ^(id, NSError* error) {
                          if (!completion) {
                              return;
