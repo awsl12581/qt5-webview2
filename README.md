@@ -19,8 +19,12 @@ The library requires explicit profile ownership:
 webview::WebViewPolicyConfig config;
 config.allowedAppHosts.insert(QStringLiteral("my-app"));
 auto policy = webview::createDefaultWebViewPolicy(std::move(config));
-auto session = webview::createWebViewSession({ }, std::move(policy));
+webview::WebViewSessionOptions options;
+options.mode = webview::SessionMode::Ephemeral;
+auto session = webview::createWebViewSession(std::move(options), std::move(policy));
 auto view = session->createWebView(parent);
+// Insert view->widget() into the final Qt layout, then attach the native page.
+view->attachNativeView();
 ```
 
 The demo retains one session for all tabs, trusts only `app://demo` for its native bridge, and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.

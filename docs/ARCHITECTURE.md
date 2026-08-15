@@ -23,9 +23,11 @@ options.mode = webview::SessionMode::Persistent;
 options.profilePath = profilePath;
 auto session = webview::createWebViewSession(std::move(options), policy);
 auto view = session->createWebView(parent);
+// The host inserts widget() into its final layout before attaching the native page.
+view->attachNativeView();
 ```
 
-`createEphemeralSession` selects non-persistent native website storage. On macOS, `profilePath` is a logical application profile identifier: public `WKWebsiteDataStore` APIs do not support assigning an arbitrary persistent storage directory, so persistent sessions use `defaultDataStore`. Applications must not treat the path as a filesystem placement guarantee.
+`SessionMode::Ephemeral` selects non-persistent native website storage. On macOS, `profilePath` is a logical application profile identifier: public `WKWebsiteDataStore` APIs do not support assigning an arbitrary persistent storage directory, so persistent sessions use `defaultDataStore`. Applications must not treat the path as a filesystem placement guarantee.
 
 ## Navigation and lifecycle
 
@@ -40,11 +42,15 @@ Hosts receive lifecycle, external URL, popup, and bridge events through one `Web
 
 Queued native callbacks see the closed state or a changed document token and cannot be reported as results for a newer page.
 
+The host owns native attachment timing. It adds `view->widget()` to the final tab or window layout, activates the layout, and then calls `attachNativeView()`. `detachNativeView()` is called before the host surface is moved or destroyed. Backends do not infer attachment from visibility, parent widgets, default size, or event-loop timing.
+
 ## Policy and bridge
 
 The default policy permits HTTPS navigation. `app://` hosts and `file://` roots require explicit allowlisting. Malformed URLs, `javascript:`, unknown schemes, popups, downloads, media capture, and other permissions are rejected by default. An `OpenExternally` decision cancels in-view navigation and invokes the host only when an external handler exists.
 
-`IWebViewSession::permissionSupport` and `downloadSupport` report whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, downloads require macOS 11.3, and file picking is supported. Location, notifications, and clipboard permission categories currently report `Unsupported` rather than being silently granted.
+`IWebViewSession::capabilitySupport` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, browser-default downloads require macOS 11.3, and file selection is host-owned. Location, notifications, clipboard, and explicit download destinations currently report `Unsupported` rather than being silently granted.
+
+File selection and download destinations are host decisions. The backend requests a result through `selectFiles` or `resolveDownload`; it does not create a system dialog or choose a local directory. Local `app://` content must be declared through `WebViewSessionOptions::resourceMappings`. `setHtml` rejects an app origin that has no matching mapping.
 
 Bridge authority belongs to the current committed main-frame origin. A trusted `app://` host or exact HTTPS origin must be configured. Subframes, untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
 
@@ -68,12 +74,12 @@ Policy sets the maximum serialized size, allowed message types, and required pay
 | Popup | `WKUIDelegate` | `NewWindowRequested` | `create` signal |
 | Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source/frame checks | script-message frame URI/origin checks |
 
-Only the macOS backend is implemented. The common API deliberately uses semantics that the other two designs can map, but this repository does not claim WebView2 or WebKit2GTK production support.
+Only the macOS backend is implemented. The common API deliberately uses semantics that the other two designs can map, but this repository does not claim WebView2 or WebKit2GTK production support. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
 
 Views in one macOS session share its website data store and assigned `WKProcessPool`; each view receives a separate `WKUserContentController` and delegate set. `WKProcessPool` is deprecated on macOS 12 and later because multiple instances no longer affect isolation. It remains assigned for older systems and configuration identity, not as a modern process-isolation guarantee.
 
 ## Migration
 
-The session API is a source-breaking replacement. Remove calls to the former standalone view factory and page-level bridge or popup setters. There are no forwarding overloads or deprecation shims. Migration consists of retaining one session per login/profile boundary, creating views from it, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view.
+The session API is a source-breaking replacement. Remove calls to old session factory names, former standalone view factories, page-level bridge or popup setters, and concrete `WkWebView` casts. There are no forwarding overloads or deprecation shims. Migration consists of constructing `WebViewSessionOptions`, retaining one session per login/profile boundary, creating views from it, inserting each widget into its final host layout, attaching the view, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view.
 
 `setHtml` remains available only when its base URL passes navigation policy. It follows the same committed-origin bridge checks as network navigation.
