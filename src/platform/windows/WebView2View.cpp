@@ -57,7 +57,7 @@ public:
                         }
                         controller = created;
                         controller->put_IsVisible(FALSE);
-                        controller->get_CoreWebView2(&webview);
+                        controller->get_CoreWebView2(webview.GetAddressOf());
                         webview->add_NavigationStarting(
                             Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
                                 [state = state](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
