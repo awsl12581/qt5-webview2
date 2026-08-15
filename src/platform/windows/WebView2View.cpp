@@ -197,8 +197,11 @@ public:
                                     auto* childView = static_cast<WebView2View*>(child.get());
                                     auto childHolder = std::make_shared<WebViewPtr>(std::move(child));
                                     Microsoft::WRL::ComPtr<ICoreWebView2NewWindowRequestedEventArgs> argsRef(args);
-                                    childView->whenInitialized([state, request, childHolder, argsRef, deferral](const InitializationResult& result) mutable {
-                                        if (result.state == InitializationState::Ready && childHolder && *childHolder) {
+                                    childView->whenInitialized([state, sessionState, request, childHolder, argsRef, deferral](const InitializationResult& result) mutable {
+                                        if (state->lifetime.isClosed() || sessionState->lifetime.isClosed()) {
+                                            argsRef->put_Handled(TRUE);
+                                            childHolder.reset();
+                                        } else if (result.state == InitializationState::Ready && childHolder && *childHolder) {
                                             auto* readyChild = static_cast<WebView2View*>(childHolder->get());
                                             argsRef->put_NewWindow(readyChild->impl_->webview.Get());
                                             argsRef->put_Handled(TRUE);
