@@ -27,7 +27,7 @@ public:
     void markReady();
     void failInitialization(QString error);
     void whenInitialized(IWebView::InitializationCompletion completion);
-    void runWhenReady(std::function<void()> operation);
+    void runWhenReady(std::function<void(const InitializationResult&)> operation);
     void close();
 
     void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { },
@@ -36,6 +36,6 @@ private:
     InitializationState initializationState_ = InitializationState::Initializing;
     QString initializationError_;
     std::vector<IWebView::InitializationCompletion> initializationCompletions_;
-    std::vector<std::function<void()>> readyOperations_;
+    std::vector<std::function<void(const InitializationResult&)>> readyOperations_;
 };
 } // namespace webview

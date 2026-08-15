@@ -84,7 +84,9 @@ int main()
     auto state = std::make_shared<webview::WebViewState>();
     assert(state->initializationState() == webview::InitializationState::Initializing);
     bool queued = false;
-    state->runWhenReady([&] { queued = true; });
+    state->runWhenReady([&](const webview::InitializationResult& result) {
+        queued = result.state == webview::InitializationState::Ready;
+    });
     bool initialized = false;
     state->whenInitialized([&](const webview::InitializationResult& result) {
         initialized = result.state == webview::InitializationState::Ready;
@@ -102,5 +104,20 @@ int main()
     });
     failedState->failInitialization(QStringLiteral("test failure"));
     assert(failed);
+
+    bool queuedFailure = false;
+    failedState->runWhenReady([&](const webview::InitializationResult& result) {
+        queuedFailure = result.state == webview::InitializationState::Failed
+            && result.error == QStringLiteral("test failure");
+    });
+    assert(queuedFailure);
+
+    auto closingState = std::make_shared<webview::WebViewState>();
+    bool queuedClose = false;
+    closingState->runWhenReady([&](const webview::InitializationResult& result) {
+        queuedClose = result.state == webview::InitializationState::Closed;
+    });
+    closingState->close();
+    assert(queuedClose);
 
 }

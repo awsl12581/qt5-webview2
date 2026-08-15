@@ -15,6 +15,8 @@
 #include <QWidget>
 
 #include <unordered_map>
+#include <atomic>
+#include <memory>
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
@@ -271,7 +273,11 @@ public:
         parameters.allowsMultipleSelection,
         parameters.allowsDirectories
     };
-    const auto completion = [completionHandler](QStringList paths) {
+    const auto completed = std::make_shared<std::atomic_bool>(false);
+    const auto completion = [completionHandler, completed, state = self.state](QStringList paths) {
+        if (completed->exchange(true) || !state || state->lifetime.isClosed()) {
+            return;
+        }
         NSMutableArray<NSURL*>* urls = [NSMutableArray arrayWithCapacity:paths.size()];
         for (const auto& path : paths) {
             [urls addObject:[NSURL fileURLWithPath:toNSString(path)]];

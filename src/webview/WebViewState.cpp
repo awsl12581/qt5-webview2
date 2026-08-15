@@ -22,7 +22,7 @@ void WebViewState::markReady()
     const auto operations = std::move(readyOperations_);
     for (const auto& operation : operations) {
         if (operation) {
-            operation();
+            operation({ InitializationState::Ready, { } });
         }
     }
 }
@@ -34,7 +34,12 @@ void WebViewState::failInitialization(QString error)
     }
     initializationError_ = std::move(error);
     initializationState_ = InitializationState::Failed;
-    readyOperations_.clear();
+    const auto operations = std::move(readyOperations_);
+    for (const auto& operation : operations) {
+        if (operation) {
+            operation({ InitializationState::Failed, initializationError_ });
+        }
+    }
     const auto completions = std::move(initializationCompletions_);
     for (const auto& completion : completions) {
         if (completion) {
@@ -55,7 +60,7 @@ void WebViewState::whenInitialized(IWebView::InitializationCompletion completion
     completion({ initializationState_, initializationError_ });
 }
 
-void WebViewState::runWhenReady(std::function<void()> operation)
+void WebViewState::runWhenReady(std::function<void(const InitializationResult&)> operation)
 {
     if (!operation) {
         return;
@@ -65,15 +70,22 @@ void WebViewState::runWhenReady(std::function<void()> operation)
         return;
     }
     if (initializationState_ == InitializationState::Ready) {
-        operation();
+        operation({ InitializationState::Ready, { } });
+        return;
     }
+    operation({ initializationState_, initializationError_ });
 }
 
 void WebViewState::close()
 {
     lifetime.close();
     initializationState_ = InitializationState::Closed;
-    readyOperations_.clear();
+    const auto operations = std::move(readyOperations_);
+    for (const auto& operation : operations) {
+        if (operation) {
+            operation({ InitializationState::Closed, QStringLiteral("The web view is closed.") });
+        }
+    }
     const auto completions = std::move(initializationCompletions_);
     for (const auto& completion : completions) {
         if (completion) {
