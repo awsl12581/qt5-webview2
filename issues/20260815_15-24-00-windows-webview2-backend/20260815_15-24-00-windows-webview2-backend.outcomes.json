@@ -1,0 +1,21 @@
+{
+  "source": "docs/specs/2026-08-15-windows-webview2-backend.md",
+  "execution_scope": "approved spec全文",
+  "artifact_role": {"kind":"task","producer":"approved Windows WebView2 backend spec","consumers":["mission review","Windows backend maintainers"],"authority":"定义 Windows backend 如何消费 portable WebView contract","not_authority":"不定义 Runtime 安装器、企业部署策略或跨平台原生 API 完全相同"},
+  "desired_effects": [
+    {"id":"EFFECT-001","statement":"Windows ARM64 Qt host can create a WebView2 session and page through the public interfaces.","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:18"},
+    {"id":"EFFECT-002","statement":"Navigation, bridge, popup, download and resource mapping behavior follows the same observable public contract as macOS where WebView2 supports it.","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:20"},
+    {"id":"EFFECT-003","statement":"Unsupported Runtime capabilities, including host-owned FileSelection, are explicit rather than silently emulated.","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:25"}
+  ],
+  "reader_questions": [
+    {"id":"OUTCOME-001","question":"Windows ARM64 构建和 WebView2 Runtime 初始化是否已经可以通过公共 session 接口稳定创建页面？","why_it_matters":"没有可重复的 environment/controller 初始化，其他 backend 契约无法落地。","evidence_required":"integration","scope":"vcpkg target, COM STA, environment, profile and controller lifecycle","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:51","status":"pending"},
+    {"id":"OUTCOME-002","question":"Windows 页面承载、navigation、bridge、popup 和异步 completion 是否遵守公共生命周期与 host-owned 语义？","why_it_matters":"这些路径最容易把 COM callback、Qt UI 线程和 child ownership 混在一起。","evidence_required":"integration","scope":"Qt HWND hosting, navigation, bridge, popup, completion guards and close","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:65","status":"pending"},
+    {"id":"OUTCOME-003","question":"app:// resource mapping 和 download 是否提供真实内容/目标结果，并拒绝越界访问和过期 completion？","why_it_matters":"静态 resolver 检查不能证明 WebView2 生产请求和异步下载真的走通。","evidence_required":"real_e2e","scope":"custom scheme, WebResourceRequested, download deferral and mapping security","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:81","status":"pending"},
+    {"id":"OUTCOME-004","question":"能力差异和 FileSelection Unsupported 是否被明确报告，同时仍保持编译期 backend 选择？","why_it_matters":"Windows 不能用未实现的 chooser shim 或动态 fallback 掩盖 SDK 限制。","evidence_required":"integration","scope":"capabilitySupport, TODO marker, public boundary and CMake selection","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:94","status":"pending"}
+  ],
+  "decisive_result": {"question":"Windows WebView2 backend 是否已按 portable contract 提供可运行、可验证且不自行猜测 host 行为的实现？","success_condition":"ARM64 build and Runtime initialize; production page, navigation, bridge, popup, download and mapped resources work; unsupported FileSelection and Runtime gaps are explicit; public boundary remains native-type-free and static-selected.","failure_condition":"Environment/controller lifecycle fails silently, callbacks enter COM from the wrong thread, ownership conflicts, resources are rewritten or unsafe, or unsupported chooser behavior is disguised as supported.","source_refs":["docs/specs/2026-08-15-windows-webview2-backend.md:12","docs/specs/2026-08-15-windows-webview2-backend.md:113"]},
+  "blocked_claims":[
+    {"claim":"WebView2 Runtime 已随 vcpkg SDK 一起安装、发布或自动部署。","reason":"vcpkg package supplies SDK/loader, while Runtime deployment is explicitly outside this mission.","release_condition":"另行批准并执行 Runtime deployment mission。","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:34"},
+    {"claim":"Windows FileSelection 已实现 host-owned HTML file chooser。","reason":"SDK 1.0.3800.47 lacks a public chooser interception event; this mission explicitly reports Unsupported and leaves a TODO marker.","release_condition":"WebView2 exposes a supported chooser event and a separate approved mission implements and tests it.","source_ref":"docs/specs/2026-08-15-windows-webview2-backend.md:25"}
+  ]
+}
