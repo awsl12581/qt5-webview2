@@ -48,6 +48,16 @@ webview::PermissionKind permissionKind(WKMediaCaptureType type)
                                                  : webview::PermissionKind::Camera;
 }
 
+bool allowBrowserDownload(webview::WebViewState& state, const webview::DownloadRequest& request)
+{
+    if (state.policy->decideDownload(request) != webview::DownloadDecision::Allow
+        || !state.callbacks.resolveDownload) {
+        return false;
+    }
+    state.pendingDownload = state.callbacks.resolveDownload(request);
+    return state.pendingDownload.handling == webview::DownloadHandling::BrowserDefault;
+}
+
 class NativeViewHost final : public QWidget
 {
 public:
@@ -241,18 +251,23 @@ public:
         || webview::decideNativePermission(*self.state->policy,
                { webview::PermissionKind::FilePicker,
                    QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)) })
-            != webview::NativePermissionDecision::Grant) {
+            != webview::NativePermissionDecision::Grant || !self.state->callbacks.selectFiles) {
         completionHandler(nil);
         return;
     }
-    NSOpenPanel* panel = [NSOpenPanel openPanel];
-    panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
-    if (@available(macOS 10.13.4, *)) {
-        panel.canChooseDirectories = parameters.allowsDirectories;
-    }
-    [panel beginWithCompletionHandler:^(NSModalResponse result) {
-        completionHandler(result == NSModalResponseOK ? panel.URLs : nil);
-    }];
+    const webview::FileSelectionRequest request {
+        QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)),
+        parameters.allowsMultipleSelection,
+        parameters.allowsDirectories
+    };
+    const auto completion = [completionHandler](QStringList paths) {
+        NSMutableArray<NSURL*>* urls = [NSMutableArray arrayWithCapacity:paths.size()];
+        for (const auto& path : paths) {
+            [urls addObject:[NSURL fileURLWithPath:toNSString(path)]];
+        }
+        completionHandler(urls);
+    };
+    self.state->callbacks.selectFiles(request, completion);
 }
 @end
 
@@ -279,8 +294,7 @@ public:
                 self.state->explicitMainFrameNavigationPending = false;
                 self.state->provisionalMainFrameNavigation = false;
             }
-            decisionHandler(webview::mapDownloadDecision(self.state->policy->decideDownload(download))
-                    == webview::NativeDownloadDecision::Download
+            decisionHandler(allowBrowserDownload(*self.state, download)
                 ? WKNavigationActionPolicyDownload
                 : WKNavigationActionPolicyCancel);
             return;
@@ -331,12 +345,10 @@ public:
     const QUrl url(QString::fromUtf8(navigationResponse.response.URL.absoluteString.UTF8String));
     const webview::DownloadRequest download { url, self.state->committedUrl, url.fileName() };
     if (@available(macOS 11.3, *)) {
-        decisionHandler(webview::mapDownloadDecision(self.state->policy->decideDownload(download))
-                == webview::NativeDownloadDecision::Download
+        decisionHandler(allowBrowserDownload(*self.state, download)
             ? WKNavigationResponsePolicyDownload
             : WKNavigationResponsePolicyCancel);
     } else {
-        self.state->policy->decideDownload(download);
         decisionHandler(WKNavigationResponsePolicyCancel);
     }
 }

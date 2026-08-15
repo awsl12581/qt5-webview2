@@ -17,6 +17,7 @@ public:
     WebViewPolicyPtr policy;
     QUrl committedUrl;
     QString documentToken;
+    DownloadTarget pendingDownload;
     bool documentTransportPrepared = false;
     bool provisionalMainFrameNavigation = false;
     bool explicitMainFrameNavigationPending = false;

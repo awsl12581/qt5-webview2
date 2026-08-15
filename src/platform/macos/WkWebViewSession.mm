@@ -104,10 +104,11 @@ CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capabili
     case WebViewCapability::ResourceMapping:
         return CapabilitySupport::Supported;
     case WebViewCapability::DownloadDefault:
-    case WebViewCapability::DownloadTarget:
         if (@available(macOS 11.3, *)) {
             return CapabilitySupport::Supported;
         }
+        return CapabilitySupport::Unsupported;
+    case WebViewCapability::DownloadTarget:
         return CapabilitySupport::Unsupported;
     case WebViewCapability::Camera:
     case WebViewCapability::Microphone:
