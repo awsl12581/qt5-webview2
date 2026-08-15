@@ -50,7 +50,7 @@ The default policy permits HTTPS navigation. `app://` hosts and `file://` roots 
 
 `IWebViewSession::capabilitySupport` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, browser-default downloads require macOS 11.3, and file selection is host-owned. Location, notifications, clipboard, and explicit download destinations currently report `Unsupported` rather than being silently granted.
 
-File selection and download destinations are host decisions. The backend requests a result through `selectFiles` or `resolveDownload`; it does not create a system dialog or choose a local directory. Local `app://` content must be declared through `WebViewSessionOptions::resourceMappings`. `setHtml` rejects an app origin that has no matching mapping.
+File selection and download destinations are host decisions. The backend requests a result through `selectFiles` or `resolveDownload`; it does not create a system dialog or choose a local directory. Popup ownership is also the result: the backend transfers a child `WebViewPtr` by value, and the host accepts by retaining it in a tab or window before the callback returns. Local `app://` content must be declared through `WebViewSessionOptions::resourceMappings`; macOS serves validated mappings through a private `WKURLSchemeHandler`.
 
 Bridge authority belongs to the current committed main-frame origin. A trusted `app://` host or exact HTTPS origin must be configured. Subframes, untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
 

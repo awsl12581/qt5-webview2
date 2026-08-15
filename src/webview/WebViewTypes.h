@@ -45,7 +45,6 @@ struct NewWindowRequest {
 };
 
 enum class NewWindowDecision { Allow, Cancel };
-enum class NewWindowDisposition { Accepted, Rejected };
 enum class PermissionDecision { Allow, Deny, Unsupported };
 enum class PermissionKind { Camera, Microphone, Location, Notifications, Clipboard, FilePicker };
 enum class DownloadDecision { Allow, Cancel };
@@ -133,7 +132,7 @@ struct WebsiteDataResult {
 struct WebViewHostCallbacks {
     std::function<void(const LoadEvent&)> load;
     std::function<void(const QUrl&)> openExternal;
-    std::function<NewWindowDisposition(const NewWindowRequest&, WebViewPtr&)> newWindow;
+    std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;
     std::function<void(const BridgeMessage&)> message;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> selectFiles;
     std::function<DownloadTarget(const DownloadRequest&)> resolveDownload;

@@ -725,9 +725,12 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
     }
     WebViewPtr child = std::unique_ptr<WkWebView>(new WkWebView(
         nullptr, configuration, impl_->state->policy, impl_->sessionState));
-    auto* nativeView = static_cast<WkWebView*>(child.get())->impl_->view;
-    const auto disposition = impl_->state->callbacks.newWindow(request, child);
-    if (disposition != NewWindowDisposition::Accepted || child) {
+    auto* concreteChild = static_cast<WkWebView*>(child.get());
+    auto* nativeView = concreteChild->impl_->view;
+    const std::weak_ptr<WebViewState> childState = concreteChild->impl_->state;
+    impl_->state->callbacks.newWindow(request, std::move(child));
+    const auto acceptedState = childState.lock();
+    if (!acceptedState || acceptedState->lifetime.isClosed()) {
         return nullptr;
     }
     return nativeView;
