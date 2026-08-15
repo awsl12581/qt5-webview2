@@ -10,6 +10,7 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 
 add_library(system_webview STATIC
     src/webview/JsonMessage.cpp
+    src/webview/HostCompletion.cpp
     src/webview/WebViewPolicy.cpp
     src/webview/WebViewState.cpp
 )

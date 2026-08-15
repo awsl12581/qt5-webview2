@@ -90,11 +90,20 @@ struct DownloadRequest {
 
 struct FileSelectionRequest {
     QUrl origin;
+    QUrl documentUrl;
     bool allowsMultiple = false;
     bool allowsDirectories = false;
 };
 
-using FileSelectionCompletion = std::function<void(QStringList)>;
+enum class FileSelectionStatus { Selected, Cancelled, Closed, InvalidResult };
+
+struct FileSelectionResult {
+    FileSelectionStatus status = FileSelectionStatus::Cancelled;
+    QStringList paths;
+    QString error;
+};
+
+using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
 
 enum class DownloadHandling { Cancel, BrowserDefault, TargetPath };
 

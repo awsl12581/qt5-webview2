@@ -3,11 +3,14 @@
 #include "platform/macos/WkSessionState.h"
 
 #include "webview/JsonMessage.h"
+#include "webview/HostCompletion.h"
 #include "webview/WebViewState.h"
 
 #include <QEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMetaObject>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QString>
 #include <QSize>
@@ -15,7 +18,6 @@
 #include <QWidget>
 
 #include <unordered_map>
-#include <atomic>
 #include <memory>
 
 #import <Cocoa/Cocoa.h>
@@ -268,21 +270,36 @@ public:
         completionHandler(nil);
         return;
     }
+    const QUrl documentUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String));
     const webview::FileSelectionRequest request {
-        QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String)),
+        documentUrl,
+        documentUrl,
         parameters.allowsMultipleSelection,
         parameters.allowsDirectories
     };
-    const auto completed = std::make_shared<std::atomic_bool>(false);
-    const auto completion = [completionHandler, completed, state = self.state](QStringList paths) {
-        if (completed->exchange(true) || !state || state->lifetime.isClosed()) {
+    auto guard = std::make_shared<webview::HostCompletionGuard>(self.owner->stateForHostCompletion());
+    const QPointer<QWidget> context(self.owner->widget());
+    const auto completion = [completionHandler, guard, context, request](webview::FileSelectionResult result) {
+        const auto access = guard->claim();
+        if (access.claim != webview::HostCompletionClaim::Accepted || !context) {
             return;
         }
-        NSMutableArray<NSURL*>* urls = [NSMutableArray arrayWithCapacity:paths.size()];
-        for (const auto& path : paths) {
-            [urls addObject:[NSURL fileURLWithPath:toNSString(path)]];
-        }
-        completionHandler(urls);
+        result = webview::normalizeFileSelectionResult(request, std::move(result));
+        QMetaObject::invokeMethod(context.data(), [completionHandler, state = access.state,
+                                                     result = std::move(result)] {
+            if (state->lifetime.isClosed()) {
+                return;
+            }
+            if (result.status != webview::FileSelectionStatus::Selected) {
+                completionHandler(nil);
+                return;
+            }
+            NSMutableArray<NSURL*>* urls = [NSMutableArray arrayWithCapacity:result.paths.size()];
+            for (const auto& path : result.paths) {
+                [urls addObject:[NSURL fileURLWithPath:toNSString(path)]];
+            }
+            completionHandler(urls);
+        }, Qt::QueuedConnection);
     };
     self.state->callbacks.selectFiles(request, completion);
 }
@@ -705,6 +722,11 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
         return nullptr;
     }
     return nativeView;
+}
+
+std::shared_ptr<WebViewState> WkWebView::stateForHostCompletion() const
+{
+    return impl_->state;
 }
 
 } // namespace webview

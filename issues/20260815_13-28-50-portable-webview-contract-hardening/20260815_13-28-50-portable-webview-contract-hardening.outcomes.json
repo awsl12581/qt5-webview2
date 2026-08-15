@@ -1,0 +1,32 @@
+{
+  "source": "docs/specs/2026-08-15-portable-webview-contract-hardening.md",
+  "execution_scope": "approved spec全文",
+  "artifact_role": {
+    "kind": "design",
+    "producer": "approved mission spec",
+    "consumers": ["mission review", "handoff", "future WebView2 backend implementers"],
+    "authority": "控制portable WebView异步回调、初始化调度、资源映射、popup所有权、origin和capability的公共语义",
+    "not_authority": "不能证明Windows WebView2 backend、vcpkg接入、Runtime发布或所有平台原生API完全一致"
+  },
+  "desired_effects": [
+    {"id":"EFFECT-001","statement":"Host延迟或跨线程完成file/download请求时不会访问已释放对象，并且原生API只在所属UI线程调用。","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:38"},
+    {"id":"EFFECT-002","statement":"异步backend可以直接复用公共初始化排队和失败语义，不需要自行猜测请求如何结束。","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:48"},
+    {"id":"EFFECT-003","statement":"app资源映射、popup接管、origin和capability具有可验证且不可矛盾的公共行为。","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:59"}
+  ],
+  "reader_questions": [
+    {"id":"OUTCOME-001","question":"异步host completion在重复、延迟、关闭后和跨线程调用时是否安全且结果明确？","why_it_matters":"WebView2异步deferral和macOS host UI都可能让completion晚于view生命周期。","evidence_required":"integration","scope":"file selection, download target, shared completion state and macOS dispatch","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:38","status":"pending"},
+    {"id":"OUTCOME-002","question":"公共初始化调度是否真正控制macOS生产路径中的attach、load、setHtml和session clear？","why_it_matters":"只测试内部helper不能约束后续异步backend行为。","evidence_required":"integration","scope":"WebViewState, IWebView/IWebViewSession and macOS backend wiring","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:48","status":"pending"},
+    {"id":"OUTCOME-003","question":"app资源映射是否真实加载相对资源并阻止root之外的文件访问？","why_it_matters":"仅检查localDirectory非空会把未实现能力报告为Supported。","evidence_required":"real_e2e","scope":"session mapping validation and macOS WKURLSchemeHandler production path","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:61","status":"pending"},
+    {"id":"OUTCOME-004","question":"popup所有权、规范化origin和capability查询是否已经消除矛盾或配置依赖，并保持编译期backend选择？","why_it_matters":"这些契约直接决定WebView2能否按上位语义实现。","evidence_required":"integration","scope":"public API, macOS consumption, demo/tests and build boundaries","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:69","status":"pending"}
+  ],
+  "decisive_result": {
+    "question": "当前公共契约是否已经不依赖macOS同步时序和名义能力，可供异步WebView2 backend直接实现？",
+    "success_condition": "生产路径使用公共调度和安全completion，资源mapping有真实加载与安全证据，popup/origin/capability无矛盾，且可运行回归通过。",
+    "failure_condition": "仍有裸owner捕获、平台方法绕过调度、mapping仅作字符串门禁、ownership矛盾或能力随配置变化。",
+    "source_refs": ["docs/specs/2026-08-15-portable-webview-contract-hardening.md:12", "docs/specs/2026-08-15-portable-webview-contract-hardening.md:97"]
+  },
+  "blocked_claims": [
+    {"claim":"Windows WebView2 backend、vcpkg接入或Runtime发布已经完成。","reason":"这些内容是批准规范的明确Non-goal。","release_condition":"单独批准并执行Windows backend任务并取得Windows集成证据。","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:28"},
+    {"claim":"WKWebView、WebView2和WebKit2GTK的原生API行为完全相同。","reason":"本任务只统一公共可观察结果。","release_condition":"各平台实现完成后逐项验证能力与行为映射。","source_ref":"docs/specs/2026-08-15-portable-webview-contract-hardening.md:31"}
+  ]
+}

@@ -1,4 +1,5 @@
 #include "webview/DocumentLifetime.h"
+#include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
 #include "webview/WebViewState.h"
@@ -8,6 +9,8 @@
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <QTemporaryDir>
+#include <QFile>
 
 int main()
 {
@@ -119,5 +122,37 @@ int main()
     });
     closingState->close();
     assert(queuedClose);
+
+    auto completionState = std::make_shared<webview::WebViewState>();
+    webview::HostCompletionGuard completionGuard(completionState);
+    assert(completionGuard.claim().claim == webview::HostCompletionClaim::Accepted);
+    assert(completionGuard.claim().claim == webview::HostCompletionClaim::Duplicate);
+
+    webview::HostCompletionGuard closedGuard(completionState);
+    completionState->close();
+    assert(closedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
+    webview::HostCompletionGuard destroyedGuard(completionState);
+    completionState.reset();
+    assert(destroyedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
+
+    QTemporaryDir selectedRoot;
+    assert(selectedRoot.isValid());
+    const auto selectedFile = selectedRoot.filePath(QStringLiteral("selected.txt"));
+    QFile file(selectedFile);
+    assert(file.open(QIODevice::WriteOnly));
+    file.close();
+    const webview::FileSelectionRequest singleFileRequest { { }, { }, false, false };
+    const auto selected = webview::normalizeFileSelectionResult(singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { selectedFile }, { } });
+    assert(selected.status == webview::FileSelectionStatus::Selected);
+    const auto empty = webview::normalizeFileSelectionResult(singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { }, { } });
+    assert(empty.status == webview::FileSelectionStatus::Cancelled);
+    const auto multiple = webview::normalizeFileSelectionResult(singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { selectedFile, selectedFile }, { } });
+    assert(multiple.status == webview::FileSelectionStatus::InvalidResult);
+    const auto directory = webview::normalizeFileSelectionResult(singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { selectedRoot.path() }, { } });
+    assert(directory.status == webview::FileSelectionStatus::InvalidResult);
 
 }

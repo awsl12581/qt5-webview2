@@ -8,6 +8,7 @@
 namespace webview
 {
 class WkWebViewSession;
+class WebViewState;
 struct WkSessionState;
 
 class WkWebView final : public IWebView
@@ -30,6 +31,7 @@ public:
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
     void* createPopup(void* configuration, const NewWindowRequest& request);
+    std::shared_ptr<WebViewState> stateForHostCompletion() const;
 
 private:
     friend class WkWebViewSession;
