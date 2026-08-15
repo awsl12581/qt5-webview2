@@ -6,12 +6,15 @@
 
 #include <QMetaObject>
 #include <QJsonDocument>
+#include <QFile>
+#include <QMimeDatabase>
 #include <QPointer>
 #include <QWidget>
 
 #include <WebView2.h>
 #include <windows.h>
 #include <wrl.h>
+#include <shlwapi.h>
 
 namespace webview
 {
@@ -48,7 +51,7 @@ public:
                 return;
             }
             const HWND hwnd = reinterpret_cast<HWND>(container->winId());
-            environment->CreateCoreWebView2Controller(hwnd,
+            const HRESULT createResult = environment->CreateCoreWebView2Controller(hwnd,
                 Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                     [state = state, this](HRESULT hr, ICoreWebView2Controller* created) -> HRESULT {
                         if (FAILED(hr) || !created) {
@@ -56,8 +59,40 @@ public:
                             return S_OK;
                         }
                         controller = created;
-                        controller->put_IsVisible(FALSE);
-                        controller->get_CoreWebView2(webview.GetAddressOf());
+                        const HRESULT coreResult = controller->get_CoreWebView2(webview.GetAddressOf());
+                        if (FAILED(coreResult) || !webview) {
+                            state->failInitialization(QStringLiteral("WebView2 core object unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(coreResult), 16)));
+                            return S_OK;
+                        }
+                        const auto environmentForRequests = this->environment;
+                        const auto mappingsForRequests = this->resourceMappings;
+                        webview->AddWebResourceRequestedFilter(L"app://*/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                        webview->add_WebResourceRequested(
+                            Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                                [state = state, environment = environmentForRequests, mappings = mappingsForRequests](ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                                    Microsoft::WRL::ComPtr<ICoreWebView2WebResourceRequest> request;
+                                    if (FAILED(args->get_Request(request.GetAddressOf())) || !request) return S_OK;
+                                    LPWSTR rawUri = nullptr;
+                                    request->get_Uri(&rawUri);
+                                    const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                    CoTaskMemFree(rawUri);
+                                    const auto* mapping = findResourceMapping(mappings, url);
+                                    QString error;
+                                    const QString path = mapping ? resolveMappedResource(*mapping, url, &error) : QString();
+                                    if (path.isEmpty()) return S_OK;
+                                    QFile file(path);
+                                    if (!file.open(QIODevice::ReadOnly)) return S_OK;
+                                    const QByteArray bytes = file.readAll();
+                                    Microsoft::WRL::ComPtr<IStream> stream(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.constData()), static_cast<UINT>(bytes.size())));
+                                    if (!stream) return S_OK;
+                                    const QString mime = QMimeDatabase().mimeTypeForFile(path).name();
+                                    const std::wstring headers = std::wstring(L"Content-Type: ") + mime.toStdWString() + L"\r\n";
+                                    Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
+                                    if (SUCCEEDED(environment->CreateWebResourceResponse(stream.Get(), 200, L"OK", headers.c_str(), &response)) && response) {
+                                        args->put_Response(response.Get());
+                                    }
+                                    return S_OK;
+                                }).Get(), &webResourceToken);
                         webview->add_NavigationStarting(
                             Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
                                 [state = state](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -126,6 +161,9 @@ public:
                         state->markReady();
                         return S_OK;
                     }).Get());
+            if (FAILED(createResult)) {
+                state->failInitialization(QStringLiteral("WebView2 controller request failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(createResult), 16)));
+            }
         });
     }
 
@@ -138,6 +176,7 @@ public:
     EventRegistrationToken navigationStartingToken{};
     EventRegistrationToken navigationCompletedToken{};
     EventRegistrationToken webMessageToken{};
+    EventRegistrationToken webResourceToken{};
     WebViewPolicyPtr policy;
     QVector<WebResourceMapping> resourceMappings;
     bool attached = false;
@@ -148,6 +187,7 @@ public:
             webview->remove_NavigationStarting(navigationStartingToken);
             webview->remove_NavigationCompleted(navigationCompletedToken);
             webview->remove_WebMessageReceived(webMessageToken);
+            webview->remove_WebResourceRequested(webResourceToken);
         }
     }
 };
