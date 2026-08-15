@@ -1,0 +1,41 @@
+## REVIEW-01
+- Source doc: docs/specs/2026-08-15-windows-webview2-backend.md
+- Review agent: reviewer-subagent
+- Review independence: true
+- Review requested model: gpt-5.6-sol
+- Review observed model: unknown
+- Review model evidence: unknown
+- Scope checked: CLAIM-001 through CLAIM-016; ARM64 build and Runtime evidence; session/profile, hosting, navigation, bridge, resource mapping, popup, download, capability and public native boundaries
+- Evidence checked: commits through b4884f2; Debug/Release artifacts; Runtime probe; static contracts; production Windows sources
+- Claim coverage: gaps
+- Claim/evidence alignment: mismatches found
+- Limited validation honestly reported: yes
+- Handoff humanized: true
+- Result: gaps_found
+- Gaps: FOLLOWUP-01 through FOLLOWUP-08
+- Follow-up issues added: FOLLOWUP-01 through FOLLOWUP-08 and REVIEW-02
+- Assumptions: Runtime evidence below controller/page E2E is not accepted as GUI E2E
+- Decision debt: static-execution.md was stale relative to the production implementation
+- Deferred findings: none
+- Human-required blockers: none
+
+## REVIEW-02
+- Source doc: docs/specs/2026-08-15-windows-webview2-backend.md
+- Review agent: reviewer-subagent
+- Review independence: true
+- Review requested model: gpt-5.6-sol
+- Review observed model: unknown
+- Review model evidence: unknown
+- Scope checked: all CLAIM-001..016; FOLLOWUP-01..08 implementation, readiness, navigation, bridge, resource mapping, popup, download, capability and Runtime evidence
+- Evidence checked: HEAD 410a6de; current Windows sources; Debug/Release link builds; static contracts; Runtime probe outcomes; CSV and prior review JSON
+- Claim coverage: gaps
+- Claim/evidence alignment: mismatches found
+- Limited validation honestly reported: yes
+- Handoff humanized: pending final REVIEW-03 handoff
+- Result: gaps_found
+- Gaps: FOLLOWUP-09..15
+- Follow-up issues added: FOLLOWUP-09..15 and REVIEW-03
+- Assumptions: no successful controller/page Runtime evidence is inferred from build or static checks
+- Decision debt: none
+- Deferred findings: none
+- Human-required blockers: none

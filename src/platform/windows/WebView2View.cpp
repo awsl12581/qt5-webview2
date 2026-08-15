@@ -24,6 +24,10 @@
 #include <wrl.h>
 #include <shlwapi.h>
 
+#include <algorithm>
+#include <atomic>
+#include <vector>
+
 namespace webview
 {
 namespace {
@@ -49,32 +53,52 @@ protected:
 class WebView2View::Impl : public std::enable_shared_from_this<WebView2View::Impl>
 {
 public:
-    explicit Impl(QWidget* parent, ICoreWebView2Environment* environment,
+    struct PendingAction {
+        std::atomic_bool completed = false;
+        std::function<void()> cancel;
+
+        bool finish(const std::function<void()>& action)
+        {
+            if (completed.exchange(true)) return false;
+            if (action) action();
+            return true;
+        }
+    };
+
+    explicit Impl(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
         QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
-        std::function<QString(ICoreWebView2*)> registerProfile)
+        std::function<QString(ICoreWebView2*)> registerProfile,
+        std::function<void(std::function<void()>)> registerSessionClose)
         : container(new NativeViewHost(parent)), state(std::make_shared<WebViewState>()),
-          sessionState(std::move(sessionState)), environment(environment), policy(std::move(policy)),
+          sessionState(std::move(sessionState)), environmentProvider(std::move(environmentProvider)), policy(std::move(policy)),
           resourceMappings(std::move(resourceMappings)), sessionMode(sessionMode),
-          registerProfile(std::move(registerProfile)), inlineDocuments(std::make_shared<QHash<QString, QByteArray>>())
+          registerProfile(std::move(registerProfile)), registerSessionClose(std::move(registerSessionClose)),
+          inlineDocuments(std::make_shared<QHash<QString, QByteArray>>()), ownsContainer(parent == nullptr)
     {
         state->policy = this->policy;
     }
 
     void start()
     {
+        if (registerSessionClose) {
+            registerSessionClose([weak = weak_from_this()] {
+                if (const auto owner = weak.lock()) owner->cancelPendingActions();
+            });
+        }
         container->resized = [weak = weak_from_this()] {
             if (const auto owner = weak.lock()) owner->applyHostState();
         };
-        if (!environment) {
-            state->failInitialization(QStringLiteral("WebView2 environment is unavailable."));
-            return;
-        }
         sessionState->runWhenReady([weak = weak_from_this()](const InitializationResult& result) {
             const auto owner = weak.lock();
             if (!owner || owner->state->lifetime.isClosed()) return;
             if (result.state != InitializationState::Ready) {
                 owner->state->failInitialization(result.error);
+                return;
+            }
+            owner->environment = owner->environmentProvider ? owner->environmentProvider() : nullptr;
+            if (!owner->environment) {
+                owner->state->failInitialization(QStringLiteral("WebView2 environment is unavailable."));
                 return;
             }
             const HWND hwnd = reinterpret_cast<HWND>(owner->container->winId());
@@ -161,7 +185,7 @@ public:
                                     COREWEBVIEW2_PERMISSION_KIND nativeKind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
                                     args->get_Uri(&rawUri);
                                     args->get_PermissionKind(&nativeKind);
-                                    const QUrl origin = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                    const QUrl origin = normalizedOrigin(QUrl(QString::fromWCharArray(rawUri ? rawUri : L"")));
                                     CoTaskMemFree(rawUri);
                                     PermissionKind kind = PermissionKind::Notifications;
                                     if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE) kind = PermissionKind::Microphone;
@@ -177,7 +201,8 @@ public:
                                 [state = state, environment = environmentForRequests, sessionState = sessionForChildren,
                                     policy = policyForChildren, mappings = mappingsForRequests,
                                     sessionMode = sessionModeForChildren,
-                                    registerProfile = profileRegistrarForChildren](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                    registerProfile = profileRegistrarForChildren,
+                                    weakOwner = owner->weak_from_this()](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
                                     Microsoft::WRL::ComPtr<ICoreWebView2Deferral> deferral;
                                     args->GetDeferral(deferral.GetAddressOf());
                                     LPWSTR rawUri = nullptr;
@@ -191,33 +216,53 @@ public:
                                         if (deferral) deferral->Complete();
                                         return S_OK;
                                     }
+                                    auto childEnvironment = [environment]() -> ICoreWebView2Environment* { return environment.Get(); };
                                     auto child = std::unique_ptr<IWebView>(new WebView2View(nullptr,
-                                        environment.Get(), sessionState, policy, mappings,
+                                        std::move(childEnvironment), sessionState, policy, mappings,
                                         sessionMode, registerProfile));
                                     auto* childView = static_cast<WebView2View*>(child.get());
                                     auto childHolder = std::make_shared<WebViewPtr>(std::move(child));
                                     Microsoft::WRL::ComPtr<ICoreWebView2NewWindowRequestedEventArgs> argsRef(args);
-                                    childView->whenInitialized([state, sessionState, request, childHolder, argsRef, deferral](const InitializationResult& result) mutable {
-                                        if (state->lifetime.isClosed() || sessionState->lifetime.isClosed()) {
-                                            argsRef->put_Handled(TRUE);
-                                            childHolder.reset();
-                                        } else if (result.state == InitializationState::Ready && childHolder && *childHolder) {
-                                            auto* readyChild = static_cast<WebView2View*>(childHolder->get());
-                                            argsRef->put_NewWindow(readyChild->impl_->webview.Get());
-                                            argsRef->put_Handled(TRUE);
-                                            if (state->callbacks.newWindow) state->callbacks.newWindow(request, std::move(*childHolder));
-                                        } else {
-                                            argsRef->put_Handled(TRUE);
-                                        }
+                                    auto pending = std::make_shared<PendingAction>();
+                                    pending->cancel = [argsRef, deferral, childHolder]() mutable {
+                                        if (childHolder && *childHolder) (*childHolder)->close();
+                                        if (childHolder) childHolder->reset();
+                                        argsRef->put_Handled(TRUE);
                                         if (deferral) deferral->Complete();
+                                    };
+                                    if (const auto owner = weakOwner.lock()) owner->pendingActions.push_back(pending);
+                                    childView->whenInitialized([state, sessionState, request, childHolder, argsRef, deferral,
+                                                                  pending, weakOwner](const InitializationResult& result) mutable {
+                                        pending->finish([&] {
+                                            if (state->lifetime.isClosed() || sessionState->lifetime.isClosed()) {
+                                                if (childHolder && *childHolder) (*childHolder)->close();
+                                                if (childHolder) childHolder->reset();
+                                                argsRef->put_Handled(TRUE);
+                                            } else if (result.state == InitializationState::Ready && childHolder && *childHolder) {
+                                                auto* readyChild = static_cast<WebView2View*>(childHolder->get());
+                                                argsRef->put_NewWindow(readyChild->impl_->webview.Get());
+                                                argsRef->put_Handled(TRUE);
+                                                if (state->callbacks.newWindow) state->callbacks.newWindow(request, std::move(*childHolder));
+                                            } else {
+                                                if (childHolder && *childHolder) (*childHolder)->close();
+                                                if (childHolder) childHolder->reset();
+                                                argsRef->put_Handled(TRUE);
+                                            }
+                                            if (deferral) deferral->Complete();
+                                        });
+                                        if (const auto owner = weakOwner.lock()) owner->removePendingAction(pending);
+                                        else if (!pending->completed) {
+                                            argsRef->put_Handled(TRUE);
+                                            if (deferral) deferral->Complete();
+                                        }
                                     });
                                     return S_OK;
                                 }).Get(), &newWindowToken);
                         Microsoft::WRL::ComPtr<ICoreWebView2_4> webview4;
                         if (SUCCEEDED(webview.As(&webview4)) && webview4) {
                             webview4->add_DownloadStarting(
-                                Microsoft::WRL::Callback<ICoreWebView2DownloadStartingEventHandler>(
-                                    [state = state](ICoreWebView2*, ICoreWebView2DownloadStartingEventArgs* args) -> HRESULT {
+                            Microsoft::WRL::Callback<ICoreWebView2DownloadStartingEventHandler>(
+                                    [state = state, weakOwner = owner->weak_from_this()](ICoreWebView2*, ICoreWebView2DownloadStartingEventArgs* args) -> HRESULT {
                                         Microsoft::WRL::ComPtr<ICoreWebView2DownloadOperation> operation;
                                         if (FAILED(args->get_DownloadOperation(operation.GetAddressOf())) || !operation) {
                                             args->put_Cancel(TRUE);
@@ -244,23 +289,32 @@ public:
                                         }
                                         auto guard = std::make_shared<HostCompletionGuard>(state);
                                         Microsoft::WRL::ComPtr<ICoreWebView2DownloadStartingEventArgs> argsRef(args);
+                                        auto pending = std::make_shared<PendingAction>();
+                                        pending->cancel = [argsRef, deferral] {
+                                            argsRef->put_Cancel(TRUE);
+                                            deferral->Complete();
+                                        };
+                                        if (const auto owner = weakOwner.lock()) owner->pendingActions.push_back(pending);
                                         state->callbacks.resolveDownload(request,
-                                            [guard, argsRef, deferral](DownloadResolution resolution) mutable {
+                                            [guard, argsRef, deferral, pending, weakOwner](DownloadResolution resolution) mutable {
                                                 const auto access = guard->claim();
                                                 if (access.claim == HostCompletionClaim::Duplicate) return;
                                                 QMetaObject::invokeMethod(QCoreApplication::instance(),
-                                                    [state = access.state, argsRef, deferral, resolution = std::move(resolution)]() mutable {
-                                                        if (!state || state->lifetime.isClosed()) {
-                                                            argsRef->put_Cancel(TRUE);
-                                                        } else if (resolution.status != DownloadResolutionStatus::Resolved
-                                                            || resolution.target.handling == DownloadHandling::Cancel) {
-                                                            argsRef->put_Cancel(TRUE);
-                                                        } else if (resolution.target.handling == DownloadHandling::TargetPath) {
-                                                            const QFileInfo target(resolution.target.filePath);
-                                                            if (!target.isAbsolute() || !target.dir().exists()) argsRef->put_Cancel(TRUE);
-                                                            else argsRef->put_ResultFilePath(resolution.target.filePath.toStdWString().c_str());
-                                                        }
-                                                        deferral->Complete();
+                                                    [state = access.state, argsRef, deferral, resolution = std::move(resolution), pending, weakOwner]() mutable {
+                                                        pending->finish([&] {
+                                                            if (!state || state->lifetime.isClosed()) {
+                                                                argsRef->put_Cancel(TRUE);
+                                                            } else if (resolution.status != DownloadResolutionStatus::Resolved
+                                                                || resolution.target.handling == DownloadHandling::Cancel) {
+                                                                argsRef->put_Cancel(TRUE);
+                                                            } else if (resolution.target.handling == DownloadHandling::TargetPath) {
+                                                                const QFileInfo target(resolution.target.filePath);
+                                                                if (!target.isAbsolute() || !target.dir().exists()) argsRef->put_Cancel(TRUE);
+                                                                else argsRef->put_ResultFilePath(resolution.target.filePath.toStdWString().c_str());
+                                                            }
+                                                            deferral->Complete();
+                                                        });
+                                                        if (const auto owner = weakOwner.lock()) owner->removePendingAction(pending);
                                                     }, Qt::QueuedConnection);
                                             });
                                         return S_OK;
@@ -282,14 +336,19 @@ public:
                                     const quint64 id = state->navigationId = webviewNavigationId;
                                     state->documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
                                     const auto decision = state->policy ? state->policy->decideNavigation({ url, true, userInitiated != FALSE, redirected != FALSE }) : NavigationDecision::Allow;
-                                    if (decision == NavigationDecision::Cancel) args->put_Cancel(TRUE);
+                                    if (decision == NavigationDecision::Cancel) {
+                                        args->put_Cancel(TRUE);
+                                        state->lifetime.invalidate();
+                                        state->emitLoad(LoadState::Failed, id, url, QStringLiteral("Navigation rejected by policy."));
+                                        return S_OK;
+                                    }
                                     if (decision == NavigationDecision::OpenExternally) {
                                         args->put_Cancel(TRUE);
                                         if (state->callbacks.openExternal) state->callbacks.openExternal(url);
+                                        return S_OK;
                                     }
                                     state->lifetime.invalidate();
-                                    state->emitLoad(decision == NavigationDecision::Cancel ? LoadState::Failed : (redirected ? LoadState::Redirected : LoadState::Started), id, url,
-                                        decision == NavigationDecision::Cancel ? QStringLiteral("Navigation rejected by policy.") : QString());
+                                    state->emitLoad(redirected ? LoadState::Redirected : LoadState::Started, id, url);
                                     return S_OK;
                                 }).Get(), &navigationStartingToken);
                         webview->add_SourceChanged(
@@ -337,7 +396,7 @@ public:
                                         state->committedUrl = url;
                                         state->emitLoad(LoadState::Finished, id, url);
                                     } else {
-                                        state->emitLoad(LoadState::Failed, id, {}, QStringLiteral("WebView2 navigation failed (status %1).").arg(static_cast<int>(status)));
+                                        state->emitLoad(LoadState::Failed, id, url, QStringLiteral("WebView2 navigation failed (status %1).").arg(static_cast<int>(status)));
                                     }
                                     return S_OK;
                                 }).Get(), &navigationCompletedToken);
@@ -369,23 +428,35 @@ public:
                                     if (state->callbacks.message) state->callbacks.message(message);
                                     return S_OK;
                                 }).Get(), &webMessageToken);
-                        state->documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
-                        const QJsonArray tokenJson { state->documentToken };
-                        const QString tokenLiteral = QString::fromUtf8(QJsonDocument(tokenJson).toJson(QJsonDocument::Compact));
                         const QString transport = QStringLiteral(R"JS((() => {
-  const documentToken = %1[0];
-  window.__systemWebViewToken = documentToken;
+  window.__systemWebViewToken = null;
   const transport = Object.freeze({ postMessage(message) {
     window.chrome.webview.postMessage({ documentToken: window.__systemWebViewToken, message });
   }});
   Object.defineProperty(window, 'systemWebView', { value: transport, configurable: false, enumerable: true, writable: false });
-  window.__systemWebViewReceive = function(message) {
+  window.chrome.webview.addEventListener('message', function(event) {
+    const message = event.data;
     window.dispatchEvent(new CustomEvent('system-webview-message', { detail: message }));
-  };
-})();)JS").arg(tokenLiteral);
-                        owner->transportScript = transport;
-                        state->markReady();
-                        owner->applyHostState();
+  });
+})();)JS");
+                        const HRESULT transportResult = webview->AddScriptToExecuteOnDocumentCreated(
+                            transport.toStdWString().c_str(),
+                            Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                                [state, owner](HRESULT result, LPCWSTR) -> HRESULT {
+                                    if (FAILED(result)) {
+                                        state->failInitialization(QStringLiteral("WebView2 document transport registration failed (HRESULT 0x%1).")
+                                            .arg(QString::number(static_cast<quint32>(result), 16)));
+                                        return S_OK;
+                                    }
+                                    state->documentTransportPrepared = true;
+                                    state->markReady();
+                                    owner->applyHostState();
+                                    return S_OK;
+                                }).Get());
+                        if (FAILED(transportResult)) {
+                            state->failInitialization(QStringLiteral("WebView2 document transport request failed (HRESULT 0x%1).")
+                                .arg(QString::number(static_cast<quint32>(transportResult), 16)));
+                        }
                         return S_OK;
                     });
             HRESULT createResult = E_NOINTERFACE;
@@ -414,6 +485,7 @@ public:
     NativeViewHost* container;
     std::shared_ptr<WebViewState> state;
     std::shared_ptr<WebViewState> sessionState;
+    std::function<ICoreWebView2Environment*()> environmentProvider;
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview;
@@ -430,10 +502,24 @@ public:
     QVector<WebResourceMapping> resourceMappings;
     SessionMode sessionMode = SessionMode::Persistent;
     std::function<QString(ICoreWebView2*)> registerProfile;
+    std::function<void(std::function<void()>)> registerSessionClose;
     std::shared_ptr<QHash<QString, QByteArray>> inlineDocuments;
-    QString transportScript;
+    std::vector<std::shared_ptr<PendingAction>> pendingActions;
     bool attached = false;
     bool eventsRemoved = false;
+    bool ownsContainer = false;
+
+    void removePendingAction(const std::shared_ptr<PendingAction>& pending)
+    {
+        pendingActions.erase(std::remove(pendingActions.begin(), pendingActions.end(), pending), pendingActions.end());
+    }
+
+    void cancelPendingActions()
+    {
+        auto pending = std::move(pendingActions);
+        pendingActions.clear();
+        for (const auto& action : pending) action->finish(action->cancel);
+    }
 
     void applyHostState()
     {
@@ -469,15 +555,21 @@ public:
         }
     }
 
-    ~Impl() { removeEvents(); }
+    ~Impl()
+    {
+        cancelPendingActions();
+        removeEvents();
+        if (ownsContainer) delete container;
+    }
 };
 
-WebView2View::WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
+WebView2View::WebView2View(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
     std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
     QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
-    std::function<QString(ICoreWebView2*)> registerProfile)
-    : impl_(std::make_shared<Impl>(parent, environment, std::move(sessionState), std::move(policy),
-          std::move(resourceMappings), sessionMode, std::move(registerProfile)))
+    std::function<QString(ICoreWebView2*)> registerProfile,
+    std::function<void(std::function<void()>)> registerSessionClose)
+    : impl_(std::make_shared<Impl>(parent, std::move(environmentProvider), std::move(sessionState), std::move(policy),
+          std::move(resourceMappings), sessionMode, std::move(registerProfile), std::move(registerSessionClose)))
 {
     impl_->start();
 }
@@ -494,13 +586,13 @@ void WebView2View::attachNativeView()
 void WebView2View::detachNativeView()
 {
     impl_->attached = false;
+    impl_->cancelPendingActions();
     impl_->applyHostState();
 }
 
 void WebView2View::load(const QUrl& url)
 {
-    impl_->state->runWhenReady([state = impl_->state, url, webview = impl_->webview,
-        transportScript = impl_->transportScript](const InitializationResult& result) {
+    impl_->state->runWhenReady([state = impl_->state, url, webview = impl_->webview](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
             state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error);
             return;
@@ -510,21 +602,6 @@ void WebView2View::load(const QUrl& url)
             state->emitLoad(LoadState::Failed, ++state->navigationId, url,
                 QStringLiteral("WebView2 core object is unavailable."));
             return;
-        }
-        if (!transportScript.isEmpty()) {
-            const HRESULT scriptResult = webview->AddScriptToExecuteOnDocumentCreated(
-                transportScript.toStdWString().c_str(),
-                Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-                    [state](HRESULT result, LPCWSTR) -> HRESULT {
-                        state->documentTransportPrepared = SUCCEEDED(result);
-                        return S_OK;
-                    }).Get());
-            if (FAILED(scriptResult)) {
-                state->emitLoad(LoadState::Failed, ++state->navigationId, url,
-                    QStringLiteral("WebView2 document transport request failed (HRESULT 0x%1).")
-                        .arg(QString::number(static_cast<quint32>(scriptResult), 16)));
-                return;
-            }
         }
         const HRESULT navigateResult = webview->Navigate(text.c_str());
         if (FAILED(navigateResult)) {

@@ -40,8 +40,10 @@ class WebView2Session::Impl
 public:
     struct AsyncState {
         std::shared_ptr<WebViewState> scheduler = std::make_shared<WebViewState>();
+        std::shared_ptr<WebViewState> profileScheduler = std::make_shared<WebViewState>();
         Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment;
         Microsoft::WRL::ComPtr<ICoreWebView2Profile2> profile;
+        std::vector<std::function<void()>> closeCallbacks;
         bool closed = false;
     };
 
@@ -98,7 +100,9 @@ public:
                     const auto owner = weak.lock();
                     if (!owner || owner->closed) return S_OK;
                     if (FAILED(hr) || !created) {
-                        owner->scheduler->failInitialization(QStringLiteral("WebView2 Runtime environment creation failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(hr), 16)));
+                        const auto error = QStringLiteral("WebView2 Runtime environment creation failed (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(hr), 16));
+                        owner->scheduler->failInitialization(error);
+                        owner->profileScheduler->failInitialization(error);
                         return S_OK;
                     }
                     owner->environment = created;
@@ -106,7 +110,9 @@ public:
                     return S_OK;
                 }).Get());
         if (FAILED(result)) {
-            async->scheduler->failInitialization(QStringLiteral("WebView2 Runtime is unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(result), 16)));
+            const auto error = QStringLiteral("WebView2 Runtime is unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(result), 16));
+            async->scheduler->failInitialization(error);
+            async->profileScheduler->failInitialization(error);
         }
     }
 
@@ -114,7 +120,7 @@ public:
         WebView2Session::ClearCompletion completion)
     {
         auto sharedCompletion = std::make_shared<WebView2Session::ClearCompletion>(std::move(completion));
-        async->scheduler->runWhenReady([weak = std::weak_ptr<AsyncState>(async),
+        async->profileScheduler->runWhenReady([weak = std::weak_ptr<AsyncState>(async),
                                            kind, sharedCompletion](const InitializationResult& initialization) {
             const auto owner = weak.lock();
             if (!owner || owner->closed) {
@@ -160,6 +166,9 @@ WebView2Session::~WebView2Session()
     if (impl_) {
         impl_->async->closed = true;
         impl_->async->scheduler->close();
+        impl_->async->profileScheduler->close();
+        auto callbacks = std::move(impl_->async->closeCallbacks);
+        for (auto& callback : callbacks) if (callback) callback();
         impl_->async->profile.Reset();
         impl_->async->environment.Reset();
     }
@@ -196,11 +205,24 @@ WebViewPtr WebView2Session::createWebView(QWidget* parent)
             return QStringLiteral("WebView2 returned a profile mode that does not match the requested session mode.");
         }
         owner->profile = std::move(profile2);
+        owner->profileScheduler->markReady();
         return {};
     };
-    return std::unique_ptr<IWebView>(new WebView2View(parent, impl_->async->environment.Get(),
+    auto registerSessionClose = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async)](std::function<void()> callback) {
+        const auto owner = weak.lock();
+        if (!owner || owner->closed) {
+            if (callback) callback();
+            return;
+        }
+        owner->closeCallbacks.push_back(std::move(callback));
+    };
+    auto environmentProvider = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async)]() -> ICoreWebView2Environment* {
+        const auto owner = weak.lock();
+        return owner && !owner->closed ? owner->environment.Get() : nullptr;
+    };
+    return std::unique_ptr<IWebView>(new WebView2View(parent, std::move(environmentProvider),
         impl_->async->scheduler, impl_->policy, impl_->options.resourceMappings,
-        impl_->options.mode, std::move(registerProfile)));
+        impl_->options.mode, std::move(registerProfile), std::move(registerSessionClose)));
 }
 
 void WebView2Session::clearCache(ClearCompletion completion)
@@ -236,8 +258,7 @@ CapabilitySupport WebView2Session::capabilitySupport(WebViewCapability capabilit
             : CapabilitySupport::Unsupported;
     }
     if (capability == WebViewCapability::ResourceMapping) {
-        return !impl_->options.resourceMappings.isEmpty()
-            && impl_->async->scheduler->initializationState() == InitializationState::Ready
+        return impl_->async->scheduler->initializationState() == InitializationState::Ready
             ? CapabilitySupport::Supported
             : CapabilitySupport::Unsupported;
     }

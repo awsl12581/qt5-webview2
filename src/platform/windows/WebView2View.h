@@ -37,10 +37,11 @@ public:
 
 private:
     friend class WebView2Session;
-    WebView2View(QWidget* parent, ICoreWebView2Environment* environment,
+    WebView2View(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
         QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
-        std::function<QString(ICoreWebView2*)> registerProfile);
+        std::function<QString(ICoreWebView2*)> registerProfile,
+        std::function<void(std::function<void()>)> registerSessionClose = { });
 
     class Impl;
     std::shared_ptr<Impl> impl_;
