@@ -13,6 +13,27 @@ ctest --preset default-debug
 
 The real WKWebView page integration test needs access to macOS WindowServer. In a headless or restricted sandbox, run the core and session suites there and run `webview_macos_view_tests` in a logged-in GUI session.
 
+## Windows ARM64
+
+Open a VS 2026 ARM64 developer prompt from PowerShell:
+
+```powershell
+cmd.exe /k '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=arm64'
+```
+
+Configure and build from that prompt:
+
+```bat
+cmake --preset windows-msvc-arm64-debug
+cmake --build --preset windows-msvc-arm64-debug
+cmake --preset windows-msvc-arm64-release
+cmake --build --preset windows-msvc-arm64-release
+```
+
+The Windows presets use vcpkg manifest mode and the `arm64-windows` triplet. vcpkg supplies the WebView2 SDK/Loader and performs app-local deployment of linked Qt and package DLLs during the CMake build. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; an ARM64-compatible Runtime remains an application deployment prerequisite.
+
+`webview_core_tests` and `webview_windows_contract_tests` are compile/integration evidence. `webview_windows_runtime_probe` is GUI Runtime evidence only when it reaches each named scenario in an interactive desktop session and exits successfully. A missing Runtime, missing DLL, controller timeout, or restricted desktop must be reported with the failed scope and manual rerun command, not as E2E success.
+
 The library requires explicit profile ownership:
 
 ```cpp

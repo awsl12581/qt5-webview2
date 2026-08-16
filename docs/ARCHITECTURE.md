@@ -76,7 +76,9 @@ Policy sets the maximum serialized size, allowed message types, and required pay
 | Popup | `WKUIDelegate` | `NewWindowRequested` | `create` signal |
 | Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source, top-level document token, and schema checks; no direct frame flag | script-message frame URI/origin checks |
 
-Only the macOS backend is implemented. The common API deliberately uses semantics that the other two designs can map, but this repository does not claim WebView2 or WebKit2GTK production support. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
+The macOS WKWebView and Windows WebView2 backends are implemented. WebKit2GTK remains a design mapping only. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
+
+On Windows, vcpkg manifest mode provides the ARM64 SDK, import libraries, `WebView2Loader.dll`, Qt, and app-local dependency deployment during the CMake build. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
 
 Views in one macOS session share its website data store and assigned `WKProcessPool`; each view receives a separate `WKUserContentController` and delegate set. `WKProcessPool` is deprecated on macOS 12 and later because multiple instances no longer affect isolation. It remains assigned for older systems and configuration identity, not as a modern process-isolation guarantee.
 
