@@ -2,6 +2,7 @@
 #include "webview/ResourceMapping.h"
 #include "webview/WebViewFactory.h"
 #include "webview/WebViewPolicy.h"
+#include "webview/WebViewState.h"
 
 #include <QApplication>
 #include <QFile>
@@ -9,6 +10,7 @@
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <thread>
 
 namespace
 {
@@ -45,6 +47,22 @@ void testUnsupportedFileSelectionIsExplicit()
     assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
         == webview::CapabilitySupport::Unsupported);
 }
+
+void testHostCompletionGuardIsThreadSafe()
+{
+    auto state = std::make_shared<webview::WebViewState>();
+    auto guard = std::make_shared<webview::HostCompletionGuard>(state);
+    webview::HostCompletionAccess workerAccess;
+    std::thread worker([&] { workerAccess = guard->claim(); });
+    worker.join();
+    assert(workerAccess.claim == webview::HostCompletionClaim::Accepted);
+    assert(guard->claim().claim == webview::HostCompletionClaim::Duplicate);
+
+    auto closedState = std::make_shared<webview::WebViewState>();
+    closedState->close();
+    webview::HostCompletionGuard closedGuard(closedState);
+    assert(closedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
+}
 }
 
 int main(int argc, char** argv)
@@ -52,5 +70,6 @@ int main(int argc, char** argv)
     QApplication application(argc, argv);
     testPublicContracts();
     testUnsupportedFileSelectionIsExplicit();
+    testHostCompletionGuardIsThreadSafe();
     return 0;
 }

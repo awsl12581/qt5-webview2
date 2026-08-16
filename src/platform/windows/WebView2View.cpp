@@ -6,7 +6,6 @@
 #include "webview/ResourceMapping.h"
 
 #include <QMetaObject>
-#include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QFile>
@@ -18,6 +17,7 @@
 #include <QUuid>
 #include <QWidget>
 #include <QResizeEvent>
+#include <QThread>
 
 #include <WebView2.h>
 #include <windows.h>
@@ -301,7 +301,9 @@ public:
                                             [guard, argsRef, deferral, pending, weakOwner](DownloadResolution resolution) mutable {
                                                 const auto access = guard->claim();
                                                 if (access.claim == HostCompletionClaim::Duplicate) return;
-                                                QMetaObject::invokeMethod(QCoreApplication::instance(),
+                                                const auto owner = weakOwner.lock();
+                                                if (!owner) return;
+                                                owner->runOnUiThread(
                                                     [state = access.state, argsRef, deferral, resolution = std::move(resolution), pending, weakOwner]() mutable {
                                                         pending->finish([&] {
                                                             if (!state || state->lifetime.isClosed()) {
@@ -317,7 +319,7 @@ public:
                                                             deferral->Complete();
                                                         });
                                                         if (const auto owner = weakOwner.lock()) owner->removePendingAction(pending);
-                                                    }, Qt::QueuedConnection);
+                                                    });
                                             });
                                         return S_OK;
                                     }).Get(), &downloadToken);
@@ -510,6 +512,7 @@ public:
     bool attached = false;
     bool eventsRemoved = false;
     bool ownsContainer = false;
+    QThread* uiThread = QThread::currentThread();
 
     void removePendingAction(const std::shared_ptr<PendingAction>& pending)
     {
@@ -538,6 +541,16 @@ public:
         }
         state->callbacks = {};
         state->close();
+    }
+
+    bool runOnUiThread(std::function<void()> action)
+    {
+        if (!action || !container) return false;
+        if (QThread::currentThread() == uiThread) {
+            action();
+            return true;
+        }
+        return QMetaObject::invokeMethod(container, std::move(action), Qt::QueuedConnection);
     }
 
     void applyHostState()
