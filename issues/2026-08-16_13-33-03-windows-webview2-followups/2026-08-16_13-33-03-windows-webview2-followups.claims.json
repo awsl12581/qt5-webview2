@@ -1,0 +1,165 @@
+{
+  "source_doc": "docs/specs/2026-08-16-windows-webview2-followups.md",
+  "csv": "2026-08-16_13-33-03-windows-webview2-followups.csv",
+  "execution_scope": "approved spec全文",
+  "claim_coverage": {
+    "covered": 13,
+    "total": 13,
+    "status": "pending"
+  },
+  "claims": [
+    {
+      "claim_id": "CLAIM-001",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:43",
+      "promise": "Session销毁后，保留的root和popup view进入closed/inert状态，controller和pending action不再生效。",
+      "covered_by": [
+        "LIFECYCLE-01",
+        "E2E-02"
+      ],
+      "evidence_required": "real_e2e",
+      "production_path_required": true,
+      "status": "covered"
+    },
+    {
+      "claim_id": "CLAIM-002",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:44",
+      "promise": "WebView2 COM操作遵守Qt UI STA线程契约，worker-thread completion回到创建线程并只完成一次。",
+      "covered_by": [
+        "THREAD-01",
+        "E2E-02"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-003",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:45",
+      "promise": "Bridge的main-frame结论与SDK接口一致，并覆盖同源iframe、跨origin、旧token和导航后旧消息。",
+      "covered_by": [
+        "BRIDGE-01",
+        "E2E-01"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-004",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:46",
+      "promise": "Debug和Release ARM64真实桌面harness覆盖controller、hosting、navigation、bridge、resource mapping、popup、download、permission、profile清理和close race。",
+      "covered_by": [
+        "HARNESS-01",
+        "E2E-01",
+        "E2E-02",
+        "PROFILE-01"
+      ],
+      "evidence_required": "real_e2e",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-005",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:47",
+      "promise": "Persistent与ephemeral profile不静默降级。",
+      "covered_by": [
+        "PROFILE-01"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-006",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:47",
+      "promise": "Cache、cookies和website data清理返回明确成功或HRESULT错误。",
+      "covered_by": [
+        "PROFILE-01"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-007",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:48",
+      "promise": "FileSelection保持Unsupported，PrivateProfile和ResourceMapping按Runtime接口能力报告。",
+      "covered_by": [
+        "PROFILE-01"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": true,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-008",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:49",
+      "promise": "文档区分WebView2 SDK、Loader、Qt/vcpkg DLL自动部署和Runtime安装责任。",
+      "covered_by": [
+        "DOCS-01"
+      ],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-009",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:50",
+      "promise": "证据区分静态、编译、Runtime session和GUI E2E，受限路径记录原因、差距和手工命令。",
+      "covered_by": [
+        "HARNESS-01",
+        "DOCS-01",
+        "REVIEW-01"
+      ],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-010",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:26",
+      "promise": "本任务不实现WebView2 Runtime安装器或企业部署策略。",
+      "covered_by": [
+        "DOCS-01",
+        "REVIEW-01"
+      ],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-011",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:27",
+      "promise": "不实现HTML file chooser shim。",
+      "covered_by": [
+        "PROFILE-01",
+        "REGRESSION-01"
+      ],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-012",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:28",
+      "promise": "公共WebView API不暴露WebView2、COM或HWND类型。",
+      "covered_by": [
+        "REGRESSION-01"
+      ],
+      "evidence_required": "static",
+      "production_path_required": false,
+      "status": "pending"
+    },
+    {
+      "claim_id": "CLAIM-013",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:29",
+      "promise": "macOS backend既有行为不变。",
+      "covered_by": [
+        "REGRESSION-01"
+      ],
+      "evidence_required": "integration",
+      "production_path_required": false,
+      "status": "pending"
+    }
+  ]
+}

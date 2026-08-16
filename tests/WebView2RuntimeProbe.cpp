@@ -31,9 +31,35 @@ public:
 
     bool isReady() const { return profile.isValid(); }
 
-    void start() { runCase(); }
+    void start()
+    {
+        if (verifyRetainedViewClose()) runCase();
+    }
 
 private:
+    bool verifyRetainedViewClose()
+    {
+        auto closingSession = webview::createWebViewSession({ });
+        auto retainedView = closingSession->createWebView(&parent);
+        closingSession.reset();
+        if (!retainedView->isClosed()) {
+            fail(QStringLiteral("A retained WebView2 view remained active after its session was destroyed."));
+            return false;
+        }
+        bool completionCalled = false;
+        retainedView->sendMessage({ 1, QStringLiteral("closed-probe"), {} },
+            [&completionCalled](const webview::MessageResult& result) {
+                completionCalled = result.error == webview::MessageError::Closed;
+            });
+        if (!completionCalled) {
+            fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
+            return false;
+        }
+        std::printf("session-close=ok retained-view=closed\n");
+        std::fflush(stdout);
+        return true;
+    }
+
     void armTimeout(const QString& operation)
     {
         const auto expectedGeneration = ++generation;
@@ -160,7 +186,22 @@ private:
         options.mode = webview::SessionMode::Persistent;
         options.profilePath = profile.path() + QStringLiteral("/closing");
         auto closingSession = webview::createWebViewSession(std::move(options));
+        auto retainedView = closingSession->createWebView(&parent);
         closingSession.reset();
+        if (!retainedView->isClosed()) {
+            fail(QStringLiteral("A retained WebView2 view remained active after its session was destroyed."));
+            return;
+        }
+        bool completionCalled = false;
+        retainedView->sendMessage({ 1, QStringLiteral("closed-probe"), {} },
+            [&completionCalled](const webview::MessageResult& result) {
+                completionCalled = result.error == webview::MessageError::Closed;
+            });
+        if (!completionCalled) {
+            fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
+            return;
+        }
+        retainedView.reset();
         ++generation;
         parent.close();
         QTimer::singleShot(250, &application, &QApplication::quit);

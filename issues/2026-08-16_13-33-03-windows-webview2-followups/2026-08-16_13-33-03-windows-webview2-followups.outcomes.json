@@ -1,0 +1,86 @@
+{
+  "source": "docs/specs/2026-08-16-windows-webview2-followups.md",
+  "execution_scope": "approved spec全文",
+  "artifact_role": {
+    "kind": "design",
+    "producer": "approved mission spec",
+    "consumers": ["mission review", "handoff"],
+    "authority": "控制Windows WebView2 follow-up的实现边界和验收等级",
+    "not_authority": "不能仅凭文档或编译结果证明真实桌面WebView2 Runtime链路通过"
+  },
+  "desired_effects": [
+    {
+      "id": "EFFECT-001",
+      "statement": "Windows WebView2 session和view在关闭、异步completion及跨线程场景中保持可预测且无残留controller。",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:16"
+    },
+    {
+      "id": "EFFECT-002",
+      "statement": "Bridge安全声明与SDK实际frame能力一致，并由真实页面场景验证。",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:18"
+    },
+    {
+      "id": "EFFECT-003",
+      "statement": "维护者能区分构建、Runtime session和GUI E2E证据，也能判断部署产物是否包含WebView2 Runtime。",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:21"
+    }
+  ],
+  "reader_questions": [
+    {
+      "id": "OUTCOME-001",
+      "question": "销毁session后，外部仍持有的root和popup view是否确实关闭并释放controller与pending action？",
+      "why_it_matters": "残留view会继续持有session权限或触发关闭后的COM回调。",
+      "evidence_required": "real_e2e",
+      "scope": "Windows ARM64 WebView2 root和popup view生命周期",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:43",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-002",
+      "question": "Windows bridge是否按SDK真实能力隔离frame、origin和document token，且没有夸大main-frame保证？",
+      "why_it_matters": "同源iframe或旧文档消息可能越过host授权边界。",
+      "evidence_required": "integration",
+      "scope": "WebView2 WebMessageReceived与document-start transport",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:45",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-003",
+      "question": "Debug和Release ARM64真实桌面harness是否覆盖批准的页面、profile和异步交互路径？",
+      "why_it_matters": "静态检查和链接成功不能证明controller与页面事件在Runtime中工作。",
+      "evidence_required": "real_e2e",
+      "scope": "批准spec列出的Windows WebView2生产路径",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:46",
+      "status": "pending"
+    },
+    {
+      "id": "OUTCOME-004",
+      "question": "交付文档是否准确说明vcpkg自动部署与WebView2 Runtime安装之间的责任边界？",
+      "why_it_matters": "用户需要判断目标机器还需安装什么，不能把Loader DLL误认为Runtime。",
+      "evidence_required": "human_review",
+      "scope": "Windows构建与部署文档",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:49",
+      "status": "pending"
+    }
+  ],
+  "decisive_result": {
+    "question": "真实桌面WebView2 Runtime证据是否支撑生命周期、bridge、profile和交互路径的交付声明？",
+    "success_condition": "Debug和Release ARM64 harness在真实Runtime上通过，或每个客观不可达场景被准确标为受限且未冒充E2E通过。",
+    "failure_condition": "保留view仍可活动、跨线程COM访问不受控、bridge frame声明失实，或用静态/编译结果替代GUI E2E。",
+    "source_refs": ["docs/specs/2026-08-16-windows-webview2-followups.md:39", "docs/specs/2026-08-16-windows-webview2-followups.md:43"]
+  },
+  "blocked_claims": [
+    {
+      "claim": "vcpkg WebView2包或WebView2Loader.dll会安装目标机器所需的WebView2 Runtime。",
+      "reason": "批准范围明确不实现Runtime安装器，SDK和Loader不等于Runtime。",
+      "release_condition": "另行批准并验证Runtime安装或企业部署任务。",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:26"
+    },
+    {
+      "claim": "Windows backend支持host-owned HTML file chooser。",
+      "reason": "FileSelection明确保持Unsupported且禁止chooser shim。",
+      "release_condition": "WebView2提供可接管chooser接口，并由新的批准任务实现和验证。",
+      "source_ref": "docs/specs/2026-08-16-windows-webview2-followups.md:27"
+    }
+  ]
+}

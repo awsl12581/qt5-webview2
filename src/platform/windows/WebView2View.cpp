@@ -83,7 +83,7 @@ public:
     {
         if (registerSessionClose) {
             registerSessionClose([weak = weak_from_this()] {
-                if (const auto owner = weak.lock()) owner->cancelPendingActions();
+                if (const auto owner = weak.lock()) owner->close();
             });
         }
         container->resized = [weak = weak_from_this()] {
@@ -143,6 +143,7 @@ public:
                         const auto policyForChildren = owner->policy;
                         const auto sessionModeForChildren = owner->sessionMode;
                         const auto profileRegistrarForChildren = owner->registerProfile;
+                        const auto sessionCloseRegistrarForChildren = owner->registerSessionClose;
                         webview->AddWebResourceRequestedFilter(L"app://*/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
                         webview->add_WebResourceRequested(
                             Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
@@ -202,6 +203,7 @@ public:
                                     policy = policyForChildren, mappings = mappingsForRequests,
                                     sessionMode = sessionModeForChildren,
                                     registerProfile = profileRegistrarForChildren,
+                                    registerSessionClose = sessionCloseRegistrarForChildren,
                                     weakOwner = owner->weak_from_this()](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
                                     Microsoft::WRL::ComPtr<ICoreWebView2Deferral> deferral;
                                     args->GetDeferral(deferral.GetAddressOf());
@@ -219,7 +221,7 @@ public:
                                     auto childEnvironment = [environment]() -> ICoreWebView2Environment* { return environment.Get(); };
                                     auto child = std::unique_ptr<IWebView>(new WebView2View(nullptr,
                                         std::move(childEnvironment), sessionState, policy, mappings,
-                                        sessionMode, registerProfile));
+                                        sessionMode, registerProfile, registerSessionClose));
                                     auto* childView = static_cast<WebView2View*>(child.get());
                                     auto childHolder = std::make_shared<WebViewPtr>(std::move(child));
                                     Microsoft::WRL::ComPtr<ICoreWebView2NewWindowRequestedEventArgs> argsRef(args);
@@ -521,6 +523,23 @@ public:
         for (const auto& action : pending) action->finish(action->cancel);
     }
 
+    void close()
+    {
+        if (state->lifetime.isClosed()) return;
+        attached = false;
+        cancelPendingActions();
+        removeEvents();
+        if (webview) webview->Stop();
+        if (controller) {
+            controller->put_IsVisible(FALSE);
+            controller->Close();
+            controller.Reset();
+            webview.Reset();
+        }
+        state->callbacks = {};
+        state->close();
+    }
+
     void applyHostState()
     {
         if (!controller) return;
@@ -629,19 +648,7 @@ void WebView2View::reload() { if (impl_->webview) impl_->webview->Reload(); }
 
 void WebView2View::close()
 {
-    if (!impl_ || impl_->state->lifetime.isClosed()) {
-        return;
-    }
-    impl_->attached = false;
-    impl_->removeEvents();
-    if (impl_->controller) {
-        impl_->controller->put_IsVisible(FALSE);
-        impl_->controller->Close();
-        impl_->controller.Reset();
-        impl_->webview.Reset();
-    }
-    impl_->state->callbacks = {};
-    impl_->state->close();
+    if (impl_) impl_->close();
 }
 
 bool WebView2View::isClosed() const { return impl_->state->lifetime.isClosed(); }
