@@ -12,6 +12,34 @@
 
 namespace
 {
+using HRESULT = long;
+using PCWSTR = const wchar_t*;
+using LPWSTR = wchar_t*;
+extern "C" HRESULT __stdcall GetAvailableCoreWebView2BrowserVersionString(
+    PCWSTR browserExecutableFolder, LPWSTR* versionInfo);
+extern "C" void __stdcall CoTaskMemFree(void* memory);
+
+const char* architecture()
+{
+#if defined(_M_ARM64)
+    return "arm64";
+#elif defined(_M_X64)
+    return "x64";
+#else
+    return "unknown";
+#endif
+}
+
+QString runtimeVersion()
+{
+    LPWSTR version = nullptr;
+    const HRESULT result = GetAvailableCoreWebView2BrowserVersionString(nullptr, &version);
+    if (result < 0) return QStringLiteral("unavailable:hresult=0x%1").arg(QString::number(static_cast<quint32>(result), 16));
+    const QString value = QString::fromWCharArray(version ? version : L"");
+    CoTaskMemFree(version);
+    return value;
+}
+
 enum class ClearKind { Cache, Cookies, WebsiteData };
 
 struct ProbeCase {
@@ -63,7 +91,7 @@ private:
     void armTimeout(const QString& operation)
     {
         const auto expectedGeneration = ++generation;
-        QTimer::singleShot(60000, &application,
+        QTimer::singleShot(15000, &application,
             [weak = weak_from_this(), expectedGeneration, operation] {
                 const auto owner = weak.lock();
                 if (owner && owner->generation == expectedGeneration) {
@@ -204,17 +232,22 @@ private:
         retainedView.reset();
         ++generation;
         parent.close();
+        std::printf("result=passed architecture=%s scenarios=%zu exit_code=0\n", architecture(), cases.size());
+        std::fflush(stdout);
         QTimer::singleShot(250, &application, &QApplication::quit);
     }
 
     void fail(const QString& message)
     {
+        if (failed) return;
+        failed = true;
         ++generation;
         if (view) view->close();
         view.reset();
         session.reset();
         parent.close();
-        std::fprintf(stderr, "%s\n", message.toUtf8().constData());
+        std::fprintf(stderr, "result=failed architecture=%s scenario=%zu exit_code=1 detail=%s\n",
+            architecture(), caseIndex, message.toUtf8().constData());
         std::fflush(stderr);
         application.exit(1);
     }
@@ -226,6 +259,7 @@ private:
     webview::WebViewPtr view;
     std::size_t caseIndex = 0;
     quint64 generation = 0;
+    bool failed = false;
     const std::array<ProbeCase, 4> cases { {
         { webview::SessionMode::Persistent, ClearKind::Cache },
         { webview::SessionMode::Persistent, ClearKind::Cookies },
@@ -238,6 +272,9 @@ private:
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    std::printf("probe=webview2-runtime architecture=%s runtime_version=%s timeout_ms=15000\n",
+        architecture(), runtimeVersion().toUtf8().constData());
+    std::fflush(stdout);
     auto probe = std::make_shared<RuntimeProbe>(application);
     if (!probe->isReady()) {
         std::fprintf(stderr, "Unable to create the persistent test profile.\n");
