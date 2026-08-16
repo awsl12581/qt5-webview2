@@ -407,6 +407,8 @@ public:
                         webview->add_WebMessageReceived(
                             Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                 [state = state](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                    // This SDK event exposes source origin but no main-frame flag. The
+                                    // top-level document token is the additional document boundary.
                                     LPWSTR rawJson = nullptr;
                                     LPWSTR rawSource = nullptr;
                                     args->get_WebMessageAsJson(&rawJson);

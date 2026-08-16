@@ -52,9 +52,11 @@ The default policy permits HTTPS navigation. `app://` hosts and `file://` roots 
 
 File selection and download destinations are host decisions. The backend requests a result through `selectFiles` or `resolveDownload`; it does not create a system dialog or choose a local directory. Popup ownership is also the result: the backend transfers a child `WebViewPtr` by value, and the host accepts by retaining it in a tab or window before the callback returns. Local `app://` content must be declared through `WebViewSessionOptions::resourceMappings`; macOS serves validated mappings through a private `WKURLSchemeHandler`.
 
-Bridge authority belongs to the current committed main-frame origin. A trusted `app://` host or exact HTTPS origin must be configured. Subframes, untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
+Bridge authority belongs to the current committed main-frame document. A trusted `app://` host or exact HTTPS origin must be configured. Untrusted pages, pre-commit documents, and an origin different from the committed page are rejected.
 
 On macOS, trusted pages send through `window.systemWebView.postMessage(message)`. The document-start transport attaches an unguessable token that native code rotates before each allowed main-frame navigation. The raw `window.webkit.messageHandlers.systemWebView` object is a backend detail: messages without the current token, including iframe calls and queued messages from an earlier same-origin document, are rejected.
+
+On Windows, the WebView2 SDK interface used by this backend exposes the message source URL but no direct main-frame flag on `ICoreWebView2WebMessageReceivedEventArgs`. The backend therefore does not describe its origin comparison as frame validation. It injects the current token into the top-level document, then requires that token together with the committed origin, message size, protocol version, type, and payload schema. Cross-origin frames fail the origin check; frames without the top-level token and stale documents fail the token check. A hostile same-origin frame that can obtain the top-level token is outside the guarantees of this SDK path.
 
 Messages use this envelope:
 
@@ -72,7 +74,7 @@ Policy sets the maximum serialized size, allowed message types, and required pay
 | Ephemeral session | `nonPersistentDataStore` | InPrivate profile when supported | Ephemeral website data manager/context |
 | Lifecycle | `WKNavigationDelegate` | Navigation starting/source/content/completed events | policy decision, load-changed, and failure signals |
 | Popup | `WKUIDelegate` | `NewWindowRequested` | `create` signal |
-| Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source/frame checks | script-message frame URI/origin checks |
+| Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source, top-level document token, and schema checks; no direct frame flag | script-message frame URI/origin checks |
 
 Only the macOS backend is implemented. The common API deliberately uses semantics that the other two designs can map, but this repository does not claim WebView2 or WebKit2GTK production support. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
 
