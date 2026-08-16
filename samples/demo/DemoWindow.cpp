@@ -3,12 +3,10 @@
 #include "webview/WebViewFactory.h"
 
 #include <QLabel>
+#include <QFile>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
-
-#include <fstream>
-#include <sstream>
 
 namespace samples::demo
 {
@@ -79,16 +77,17 @@ DemoWindow::DemoWindow()
     statusBar()->addWidget(status_);
 
     webview::WebViewSessionOptions options;
+    options.mode = webview::SessionMode::Ephemeral;
     options.resourceMappings.push_back({
         QUrl(QStringLiteral("app://demo")),
         QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR)
     });
     session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
     auto webView = session_->createWebView();
-    std::ifstream input(std::string(SYSTEM_WEBVIEW_RESOURCE_DIR) + "/demo.html");
-    std::stringstream buffer;
-    buffer << input.rdbuf();
-    webView->setHtml(QString::fromStdString(buffer.str()), QUrl(QStringLiteral("app://demo/index.html")));
+    QFile htmlFile(QStringLiteral(SYSTEM_WEBVIEW_RESOURCE_DIR) + QStringLiteral("/demo.html"));
+    if (htmlFile.open(QIODevice::ReadOnly)) {
+        webView->setHtml(QString::fromUtf8(htmlFile.readAll()), QUrl(QStringLiteral("app://demo/index.html")));
+    }
     addTab(std::move(webView), QStringLiteral("Home"));
 }
 

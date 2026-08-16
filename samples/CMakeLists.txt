@@ -1,5 +1,7 @@
-if(APPLE)
+if(APPLE OR WIN32)
     add_subdirectory(demo)
-elseif(WIN32)
+endif()
+
+if(WIN32)
     add_subdirectory(windows_widget_demo)
 endif()
