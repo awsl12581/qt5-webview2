@@ -592,11 +592,13 @@ void WebView2View::detachNativeView()
 
 void WebView2View::load(const QUrl& url)
 {
-    impl_->state->runWhenReady([state = impl_->state, url, webview = impl_->webview](const InitializationResult& result) {
+    impl_->state->runWhenReady([state = impl_->state, url, owner = std::weak_ptr<Impl>(impl_)](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
             state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error);
             return;
         }
+        const auto view = owner.lock();
+        const auto webview = view ? view->webview : nullptr;
         const auto text = url.toString().toStdWString();
         if (!webview) {
             state->emitLoad(LoadState::Failed, ++state->navigationId, url,
