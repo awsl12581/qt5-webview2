@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Qt5 5.15 COMPONENTS Network Widgets)
+
+if(WIN32)
+    find_dependency(unofficial-webview2 CONFIG)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/system_webviewTargets.cmake")
+check_required_components(system_webview)
