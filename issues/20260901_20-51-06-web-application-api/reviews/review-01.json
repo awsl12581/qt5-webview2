@@ -1,0 +1,23 @@
+{
+  "review_agent_mode": "self-review",
+  "review_independence": false,
+  "review_requested_model": "gpt-5.6-sol",
+  "review_observed_model": "unknown",
+  "review_model_evidence": "unknown",
+  "result": "limited_review",
+  "claim_coverage": "9/9",
+  "claim_coverage_status": "complete",
+  "validation_limited": ["Independent Codex review cannot initialize its state database in this sandbox.", "macOS has no WindowServer/screen and the Windows MSVC/WebView2 Runtime path is unavailable."],
+  "summary": "The public application model and local bundle path are implemented, but native GUI evidence is unavailable in this host.",
+  "gaps": [],
+  "assumptions": ["Static Windows contract evidence accurately reflects the edited Windows source path."],
+  "decision_debt": [],
+  "deferred_findings": [],
+  "human_required_blockers": ["Run native GUI tests on an interactive macOS desktop and ARM64 Windows environment."],
+  "outcome_answers": [
+    {"question_id":"OUTCOME-001","verdict":"partial","answer":"The installed API compiles for LocalBundle, DevelopmentServer, and RemoteOrigin; both backend source paths use open(application, route).","evidence_refs":["tests/JsonMessageTests.cpp","src/platform/macos/WkWebView.mm","src/platform/windows/WebView2View.cpp","/private/tmp/system-webview-consumer/build4"],"confidence":"moderate","boundary":"Windows MSVC/Runtime and native GUI navigation were unavailable.","next_action":"Run Windows ARM64 preset and GUI runtime probe."},
+    {"question_id":"OUTCOME-002","verdict":"partial","answer":"Core tests cover root validation, traversal and symlink rejection, document-only SPA fallback, and missing static resources.","evidence_refs":["tests/JsonMessageTests.cpp","src/webview/ResourceMapping.cpp"],"confidence":"moderate","boundary":"Live WebKit/WebView2 resource requests were not runnable.","next_action":"Run macOS view tests in a logged-in session and the Windows runtime probe."},
+    {"question_id":"OUTCOME-003","verdict":"pass","answer":"The old public mapping type, option, capability, and caller entry points are removed; an external consumer builds against the new API.","evidence_refs":["src/webview/WebViewTypes.h","/private/tmp/system-webview-install/include","/private/tmp/system-webview-consumer/build4"],"confidence":"high","boundary":"Historical specs and ADRs retain old names as decision records.","next_action":"No implementation action required."}
+  ],
+  "handoff_markdown": "See 20260901_20-51-06-web-application-api.handoff.md."
+}
