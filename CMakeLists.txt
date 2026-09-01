@@ -32,6 +32,7 @@ target_include_directories(system_webview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(system_webview PUBLIC Qt5::Widgets)
+target_compile_features(system_webview PUBLIC cxx_std_17)
 
 if(APPLE)
     target_sources(system_webview PRIVATE src/webview/PathSecurity.cpp)

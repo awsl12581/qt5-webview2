@@ -243,5 +243,9 @@ int main()
     remoteOptions.id = QStringLiteral("demo-remote");
     remoteOptions.source = webview::RemoteOrigin { QUrl(QStringLiteral("https://example.com")) };
     assert(webview::createApplication(std::move(remoteOptions), &mappingError));
+    webview::WebApplicationOptions invalidRemote;
+    invalidRemote.id = QStringLiteral("invalid-remote");
+    invalidRemote.source = webview::RemoteOrigin { QUrl(QStringLiteral("http://example.com")) };
+    assert(!webview::createApplication(std::move(invalidRemote), &mappingError));
 
 }

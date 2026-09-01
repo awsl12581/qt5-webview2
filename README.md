@@ -66,7 +66,7 @@ The library requires explicit profile ownership:
 
 ```cpp
 webview::WebViewPolicyConfig config;
-config.allowedAppHosts.insert(QStringLiteral("my-app"));
+config.allowedAppHosts.insert(QStringLiteral("dashboard"));
 auto policy = webview::createDefaultWebViewPolicy(std::move(config));
 webview::WebViewSessionOptions options;
 options.mode = webview::SessionMode::Ephemeral;

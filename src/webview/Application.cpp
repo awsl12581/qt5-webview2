@@ -30,9 +30,15 @@ WebApplicationPtr createApplication(WebApplicationOptions options, QString* erro
             return { };
         }
     } else {
-        const QUrl url = std::get_if<DevelopmentServer>(&options.source)
-            ? std::get<DevelopmentServer>(options.source).url : std::get<RemoteOrigin>(options.source).url;
-        if (!url.isValid() || url.scheme().isEmpty() || url.host().isEmpty()) {
+        const bool developmentServer = std::holds_alternative<DevelopmentServer>(options.source);
+        const QUrl url = developmentServer ? std::get<DevelopmentServer>(options.source).url
+                                           : std::get<RemoteOrigin>(options.source).url;
+        const auto scheme = url.scheme().toLower();
+        if (!url.isValid() || url.host().isEmpty() || (developmentServer
+                ? scheme != QStringLiteral("http") && scheme != QStringLiteral("https")
+                : scheme != QStringLiteral("https"))
+            || (url.path() != QStringLiteral("/") && !url.path().isEmpty()) || url.hasQuery()
+            || url.hasFragment()) {
             if (error) *error = QStringLiteral("Application URL sources require an absolute origin URL.");
             return { };
         }
