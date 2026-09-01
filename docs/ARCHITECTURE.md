@@ -46,7 +46,7 @@ The host owns native attachment timing. It adds `view->widget()` to the final ta
 
 ## Policy and bridge
 
-The default policy permits HTTPS navigation. `app://` hosts and `file://` roots require explicit allowlisting. Malformed URLs, `javascript:`, unknown schemes, popups, downloads, media capture, and other permissions are rejected by default. An `OpenExternally` decision cancels in-view navigation and invokes the host only when an external handler exists.
+The default policy permits HTTPS navigation. `app://` hosts, `file://` roots, and HTTP development origins each require explicit allowlisting. `trustedDevelopmentOrigins` accepts exact origins such as `http://127.0.0.1:5173`; it does not enable arbitrary HTTP. Malformed URLs, `javascript:`, unknown schemes, popups, downloads, media capture, and other permissions are rejected by default. An `OpenExternally` decision cancels in-view navigation and invokes the host only when an external handler exists.
 
 `IWebViewSession::capabilitySupport` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, browser-default downloads require macOS 11.3, and file selection is host-owned. Location, notifications, clipboard, and explicit download destinations currently report `Unsupported` rather than being silently granted.
 

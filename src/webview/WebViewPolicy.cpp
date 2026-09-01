@@ -35,6 +35,10 @@ NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& requ
     if (scheme == QStringLiteral("https")) {
         return NavigationDecision::Allow;
     }
+    if (scheme == QStringLiteral("http")
+        && config_.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString())) {
+        return NavigationDecision::Allow;
+    }
     if (scheme == QStringLiteral("app") && config_.allowedAppHosts.contains(request.url.host().toLower())) {
         return NavigationDecision::Allow;
     }
@@ -59,8 +63,9 @@ bool WebViewPolicy::allowsBridge(const QUrl& committedUrl) const
     if (scheme == QStringLiteral("app")) {
         return config_.allowedAppHosts.contains(committedUrl.host().toLower());
     }
-    return scheme == QStringLiteral("https")
-        && config_.trustedHttpsOrigins.contains(webview::normalizedOrigin(committedUrl).toString());
+    const auto origin = webview::normalizedOrigin(committedUrl).toString();
+    return (scheme == QStringLiteral("https") && config_.trustedHttpsOrigins.contains(origin))
+        || (scheme == QStringLiteral("http") && config_.trustedDevelopmentOrigins.contains(origin));
 }
 
 bool WebViewPolicy::validateBridgeMessage(const BridgeMessage& message, QString* error) const

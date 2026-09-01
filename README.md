@@ -81,3 +81,5 @@ view->open(dashboard, QStringLiteral("/orders/42"));
 ```
 
 `LocalBundle` is the normal production source for a Vite `dist` directory. During development, use `DevelopmentServer { QUrl("http://127.0.0.1:5173") }`; a deployed site uses `RemoteOrigin`. All three sources use `view->open(application, route)`. The demo retains one session for all tabs and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.
+
+For a development server, add its exact origin to `WebViewPolicyConfig::trustedDevelopmentOrigins`; HTTP remains denied for every other origin.

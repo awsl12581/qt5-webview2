@@ -32,6 +32,7 @@ int main()
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert(QStringLiteral("ui"));
     config.allowedFileRoots.append(files.path());
+    config.trustedDevelopmentOrigins.insert(QStringLiteral("http://127.0.0.1:5173"));
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
     config.bridgeSchemas.insert(QStringLiteral("ping"), { QSet<QString> { QStringLiteral("sequence") } });
     config.maximumBridgeMessageBytes = 128;
@@ -41,6 +42,8 @@ int main()
         return policy.decideNavigation({ QUrl(url), true, true, false });
     };
     assert(navigation(QStringLiteral("https://example.com/page")) == webview::NavigationDecision::Allow);
+    assert(navigation(QStringLiteral("http://127.0.0.1:5173/")) == webview::NavigationDecision::Allow);
+    assert(navigation(QStringLiteral("http://127.0.0.1:5174/")) == webview::NavigationDecision::Cancel);
     assert(navigation(QStringLiteral("app://ui/home")) == webview::NavigationDecision::Allow);
     assert(navigation(QUrl::fromLocalFile(allowedFile.fileName()).toString()) == webview::NavigationDecision::Allow);
     assert(navigation(QStringLiteral("app://other/home")) == webview::NavigationDecision::Cancel);
@@ -55,6 +58,7 @@ int main()
     assert(policy.decideDownload({ QUrl(QStringLiteral("https://example.com/file")), { }, { } })
         == webview::DownloadDecision::Cancel);
     assert(policy.allowsBridge(QUrl(QStringLiteral("app://ui/page"))));
+    assert(policy.allowsBridge(QUrl(QStringLiteral("http://127.0.0.1:5173/page"))));
     assert(policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example/path"))));
     assert(!policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example.evil/path"))));
 

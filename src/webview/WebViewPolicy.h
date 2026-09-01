@@ -18,6 +18,7 @@ struct BridgeMessageSchema {
 struct WebViewPolicyConfig {
     QSet<QString> allowedAppHosts;
     QStringList allowedFileRoots;
+    QSet<QString> trustedDevelopmentOrigins;
     QSet<QString> trustedHttpsOrigins;
     QHash<QString, BridgeMessageSchema> bridgeSchemas;
     int maximumBridgeMessageBytes = 64 * 1024;
