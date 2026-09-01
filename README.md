@@ -23,7 +23,7 @@ cmake --build build/release
 cmake --install build/release
 ```
 
-This creates an install tree containing `include/`, `lib/`, `bin/`, and
+This creates an install tree containing `include/`, `lib/`, and
 `lib/cmake/system_webview/`. A consumer can then use the installed target:
 
 ```cmake
@@ -52,7 +52,13 @@ cmake --preset windows-msvc-arm64-release
 cmake --build --preset windows-msvc-arm64-release
 ```
 
-The Windows presets use vcpkg manifest mode and the `arm64-windows` triplet. vcpkg supplies the WebView2 SDK/Loader and performs app-local deployment of linked Qt and package DLLs during the CMake build. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; an ARM64-compatible Runtime remains an application deployment prerequisite.
+The Windows presets use the `arm64-windows` triplet and expect a sibling vcpkg checkout with the required packages already installed:
+
+```powershell
+vcpkg install qt5-base:arm64-windows webview2:arm64-windows
+```
+
+vcpkg supplies the WebView2 SDK/Loader and linked Qt dependencies. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; an ARM64-compatible Runtime remains an application deployment prerequisite.
 
 `webview_core_tests` and `webview_windows_contract_tests` are compile/integration evidence. `webview_windows_runtime_probe` is GUI Runtime evidence only when it reaches each named scenario in an interactive desktop session and exits successfully. A missing Runtime, missing DLL, controller timeout, or restricted desktop must be reported with the failed scope and manual rerun command, not as E2E success.
 

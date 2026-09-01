@@ -78,7 +78,7 @@ Policy sets the maximum serialized size, allowed message types, and required pay
 
 The macOS WKWebView and Windows WebView2 backends are implemented. WebKit2GTK remains a design mapping only. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
 
-On Windows, vcpkg manifest mode provides the ARM64 SDK, import libraries, `WebView2Loader.dll`, Qt, and app-local dependency deployment during the CMake build. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
+On Windows, the ARM64 CMake presets use vcpkg classic mode. Install `qt5-base:arm64-windows` and `webview2:arm64-windows` in the sibling vcpkg checkout before configuring; those packages provide the SDK, import libraries, `WebView2Loader.dll`, and Qt dependencies. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
 
 Views in one macOS session share its website data store and assigned `WKProcessPool`; each view receives a separate `WKUserContentController` and delegate set. `WKProcessPool` is deprecated on macOS 12 and later because multiple instances no longer affect isolation. It remains assigned for older systems and configuration identity, not as a modern process-isolation guarantee.
 

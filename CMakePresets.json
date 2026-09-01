@@ -46,7 +46,7 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/../vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "arm64-windows",
-        "VCPKG_MANIFEST_INSTALL": "ON"
+        "VCPKG_MANIFEST_MODE": "OFF"
       }
     },
     {

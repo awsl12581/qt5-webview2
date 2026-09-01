@@ -12,7 +12,7 @@ The two backends share the same public C++ API, but they do not have identical r
 
 - macOS is the established backend. Its session and page integration tests are intended to run in a logged-in macOS WindowServer session.
 - Windows is compiled for ARM64 and uses WebView2. Its production code includes the controller, profile, navigation, bridge, resource, popup, and download paths, but GUI E2E was explicitly not run on 2026-08-16. Do not report static checks, builds, or contract tests as successful Windows page E2E.
-- `vcpkg` installs the WebView2 SDK and Loader DLL used at build/deployment time. It does not install the Microsoft Edge WebView2 Evergreen Runtime required on the target device.
+- The Windows preset uses vcpkg classic mode. The sibling vcpkg checkout must contain the `qt5-base:arm64-windows` and `webview2:arm64-windows` packages, including the WebView2 SDK and Loader DLL. It does not install the Microsoft Edge WebView2 Evergreen Runtime required on the target device.
 
 ## Version Requirements
 
@@ -82,9 +82,9 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 
 | Artifact or check | Provided by | Does it demonstrate successful page E2E? |
 | --- | --- | --- |
-| WebView2 SDK headers/import libraries | vcpkg package | No. It only enables compilation/linking. |
-| `WebView2Loader.dll` | vcpkg/app-local deployment | No. It locates the Runtime but is not the Runtime. |
-| Qt and package DLL deployment | CMake/vcpkg | No. It only makes the built application loadable. |
+| WebView2 SDK headers/import libraries | Preinstalled vcpkg `webview2:arm64-windows` package | No. It only enables compilation/linking. |
+| `WebView2Loader.dll` | Preinstalled vcpkg `webview2:arm64-windows` package and app deployment | No. It locates the Runtime but is not the Runtime. |
+| Qt and package DLL deployment | Preinstalled vcpkg packages and app deployment | No. It only makes the built application loadable. |
 | Edge WebView2 Evergreen Runtime (ARM64) | Target-machine/application deployment prerequisite | Necessary but not sufficient. |
 | `webview_core_tests` / `webview_windows_contract_tests` | Test suite | No. They are non-UI contract evidence. |
 | `scripts/check_windows_static_contracts.py` | Static check | No. It validates source-level invariants only. |
