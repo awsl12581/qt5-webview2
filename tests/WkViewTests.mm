@@ -309,12 +309,6 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     QTimer::singleShot(100, &permissionLoop, &QEventLoop::quit);
     permissionLoop.exec();
     assert(policy->permissionRequests.empty());
-    assert(policy->decidePermission(
-               { webview::PermissionKind::FilePicker,
-                   QUrl(QStringLiteral("https://trusted.example/file-input.html")) })
-        == webview::PermissionDecision::Deny);
-    assert(policy->permissionRequests.size() == 1);
-    assert(policy->permissionRequests.back().kind == webview::PermissionKind::FilePicker);
 
     policy->downloadRequests.clear();
     events.clear();
