@@ -11,6 +11,28 @@ ctest --preset default-debug
 ./build/debug/samples/demo/system_webview_demo
 ```
 
+## Install and consume from CMake
+
+The default install prefix is the repository's `install/` directory. It can
+be overridden in the normal CMake way with `-DCMAKE_INSTALL_PREFIX=...`:
+
+```sh
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release \
+  -DSYSTEM_WEBVIEW_BUILD_SAMPLES=OFF
+cmake --build build/release
+cmake --install build/release
+```
+
+This creates an install tree containing `include/`, `lib/`, `bin/`, and
+`lib/cmake/system_webview/`. A consumer can then use the installed target:
+
+```cmake
+find_package(system_webview CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE system_webview::system_webview)
+```
+
+Configure the consumer with `-DCMAKE_PREFIX_PATH=/path/to/system-webview/install`.
+
 The real WKWebView page integration test needs access to macOS WindowServer. In a headless or restricted sandbox, run the core and session suites there and run `webview_macos_view_tests` in a logged-in GUI session.
 
 ## Windows ARM64
