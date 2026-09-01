@@ -20,8 +20,9 @@ public:
     virtual void whenInitialized(InitializationCompletion completion) = 0;
     virtual void attachNativeView() = 0;
     virtual void detachNativeView() = 0;
-    virtual void load(const QUrl& url) = 0;
-    virtual void setHtml(const QString& html, const QUrl& baseUrl = { }) = 0;
+    virtual void open(WebApplicationPtr application, const QString& route = { }) = 0;
+    virtual void navigate(const QUrl& url) = 0;
+    virtual void loadDocument(const QString& html, const QUrl& baseUrl = { }) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
     virtual void close() = 0;

@@ -3,10 +3,12 @@
 #include "platform/macos/WkWebView.h"
 #include "platform/macos/WkSessionState.h"
 
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
+#include "internal/Application.h"
 
 #include <QFile>
 #include <QMimeDatabase>
+#include <QSet>
 
 #import <WebKit/WebKit.h>
 
@@ -29,7 +31,10 @@
     const QUrl url(QString::fromUtf8(task.request.URL.absoluteString.UTF8String));
     const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
     QString errorText;
-    const auto path = mapping ? webview::resolveMappedResource(*mapping, url, &errorText) : QString();
+    const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
+    const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
+    const auto path = mapping
+        ? webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest) : QString();
     if (path.isEmpty()) {
         [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
                                                    code:NSURLErrorFileDoesNotExist
@@ -71,6 +76,8 @@ public:
     WKProcessPool* processPool = nil;
     id schemeHandler = nil;
     std::shared_ptr<WkSessionState> state = std::make_shared<WkSessionState>();
+    QSet<QString> applicationIds;
+    QVector<WebApplicationPtr> applications;
 };
 
 WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy)
@@ -78,17 +85,10 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
 {
     impl_->options = std::move(options);
     impl_->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
-    QString mappingError;
-    if (!validateResourceMappings(&impl_->options.resourceMappings, &mappingError)) {
-        impl_->state->valid = false;
-        impl_->state->initialization.fail(std::move(mappingError));
-        return;
-    }
     impl_->dataStore = impl_->options.mode == SessionMode::Ephemeral
         ? [WKWebsiteDataStore nonPersistentDataStore]
         : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
-    impl_->state->resourceMappings = impl_->options.resourceMappings;
     auto* schemeHandler = [[SystemWebViewSchemeHandler alloc] init];
     schemeHandler->state = impl_->state;
     impl_->schemeHandler = schemeHandler;
@@ -105,6 +105,24 @@ void WkWebViewSession::whenInitialized(InitializationCompletion completion)
     if (completion) {
         impl_->state->initialization.whenInitialized(std::move(completion));
     }
+}
+
+WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions options)
+{
+    QString error;
+    const auto application = webview::createApplication(std::move(options), &error);
+    if (!application || impl_->applicationIds.contains(application->id())) return { };
+    if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
+        ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback };
+        QVector<ResourceMapping> candidate = impl_->state->resourceMappings;
+        candidate.push_back(std::move(mapping));
+        if (!validateResourceMappings(&candidate, &error)
+            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty()) return { };
+        impl_->state->resourceMappings = std::move(candidate);
+    }
+    impl_->applicationIds.insert(application->id());
+    impl_->applications.push_back(application);
+    return application;
 }
 
 WkWebViewSession::~WkWebViewSession()
@@ -180,8 +198,6 @@ CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capabili
     case WebViewCapability::PrivateProfile:
         return CapabilitySupport::Supported;
     case WebViewCapability::FileSelection:
-        return CapabilitySupport::Supported;
-    case WebViewCapability::ResourceMapping:
         return CapabilitySupport::Supported;
     case WebViewCapability::DownloadDefault:
         return CapabilitySupport::Unsupported;

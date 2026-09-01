@@ -1,10 +1,12 @@
 #include "platform/windows/WebView2Session.h"
 
 #include "platform/windows/WebView2View.h"
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
+#include "internal/Application.h"
 #include "webview/WebViewState.h"
 
 #include <QWidget>
+#include <QSet>
 
 #include <WebView2.h>
 #if defined(_MSC_VER) && defined(__has_attribute)
@@ -60,11 +62,6 @@ public:
             async->scheduler->failInitialization(QStringLiteral("Persistent WebView2 sessions require a profilePath."));
             return;
         }
-        QString mappingError;
-        if (!validateResourceMappings(&this->options.resourceMappings, &mappingError)) {
-            async->scheduler->failInitialization(mappingError);
-            return;
-        }
         std::filesystem::path profilePath;
         if (this->options.mode == SessionMode::Persistent) {
             profilePath = std::filesystem::path(this->options.profilePath.toStdWString());
@@ -77,21 +74,19 @@ public:
         }
         Microsoft::WRL::ComPtr<CoreWebView2EnvironmentOptions> environmentOptions;
         Microsoft::WRL::ComPtr<CoreWebView2CustomSchemeRegistration> appScheme;
-        if (!this->options.resourceMappings.isEmpty()) {
-            environmentOptions = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-            appScheme = Microsoft::WRL::Make<CoreWebView2CustomSchemeRegistration>(L"app");
-            if (!environmentOptions || !appScheme
-                || FAILED(appScheme->put_TreatAsSecure(TRUE))
-                || FAILED(appScheme->put_HasAuthorityComponent(TRUE))) {
-                async->scheduler->failInitialization(QStringLiteral("WebView2 app custom-scheme options are unavailable."));
-                return;
-            }
-            ICoreWebView2CustomSchemeRegistration* schemes[] = { appScheme.Get() };
-            const HRESULT registration = environmentOptions->SetCustomSchemeRegistrations(1, schemes);
-            if (FAILED(registration)) {
-                async->scheduler->failInitialization(hresultError(QStringLiteral("WebView2 app custom-scheme registration"), registration));
-                return;
-            }
+        environmentOptions = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+        appScheme = Microsoft::WRL::Make<CoreWebView2CustomSchemeRegistration>(L"app");
+        if (!environmentOptions || !appScheme
+            || FAILED(appScheme->put_TreatAsSecure(TRUE))
+            || FAILED(appScheme->put_HasAuthorityComponent(TRUE))) {
+            async->scheduler->failInitialization(QStringLiteral("WebView2 app custom-scheme options are unavailable."));
+            return;
+        }
+        ICoreWebView2CustomSchemeRegistration* schemes[] = { appScheme.Get() };
+        const HRESULT registration = environmentOptions->SetCustomSchemeRegistrations(1, schemes);
+        if (FAILED(registration)) {
+            async->scheduler->failInitialization(hresultError(QStringLiteral("WebView2 app custom-scheme registration"), registration));
+            return;
         }
         const HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
             nullptr, profilePath.empty() ? nullptr : profilePath.c_str(), environmentOptions.Get(),
@@ -151,6 +146,9 @@ public:
     }
 
     WebViewSessionOptions options;
+    std::shared_ptr<QVector<ResourceMapping>> resourceMappings = std::make_shared<QVector<ResourceMapping>>();
+    QSet<QString> applicationIds;
+    QVector<WebApplicationPtr> applications;
     WebViewPolicyPtr policy;
     std::shared_ptr<AsyncState> async;
     bool ownsApartment = false;
@@ -182,6 +180,23 @@ InitializationState WebView2Session::initializationState() const { return impl_-
 void WebView2Session::whenInitialized(InitializationCompletion completion)
 {
     impl_->async->scheduler->whenInitialized(std::move(completion));
+}
+
+WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions options)
+{
+    QString error;
+    const auto application = webview::createApplication(std::move(options), &error);
+    if (!application || impl_->applicationIds.contains(application->id())) return { };
+    if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
+        QVector<ResourceMapping> candidate = *impl_->resourceMappings;
+        candidate.push_back({ application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback });
+        if (!validateResourceMappings(&candidate, &error)
+            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty()) return { };
+        *impl_->resourceMappings = std::move(candidate);
+    }
+    impl_->applicationIds.insert(application->id());
+    impl_->applications.push_back(application);
+    return application;
 }
 
 WebViewPtr WebView2Session::createWebView(QWidget* parent)
@@ -221,7 +236,7 @@ WebViewPtr WebView2Session::createWebView(QWidget* parent)
         return owner && !owner->closed ? owner->environment.Get() : nullptr;
     };
     return std::unique_ptr<IWebView>(new WebView2View(parent, std::move(environmentProvider),
-        impl_->async->scheduler, impl_->policy, impl_->options.resourceMappings,
+        impl_->async->scheduler, impl_->policy, impl_->resourceMappings,
         impl_->options.mode, std::move(registerProfile), std::move(registerSessionClose)));
 }
 
@@ -254,11 +269,6 @@ CapabilitySupport WebView2Session::capabilitySupport(WebViewCapability capabilit
     if (capability == WebViewCapability::PrivateProfile) {
         Microsoft::WRL::ComPtr<ICoreWebView2Environment10> environment10;
         return impl_->async->environment && SUCCEEDED(impl_->async->environment.As(&environment10))
-            ? CapabilitySupport::Supported
-            : CapabilitySupport::Unsupported;
-    }
-    if (capability == WebViewCapability::ResourceMapping) {
-        return impl_->async->scheduler->initializationState() == InitializationState::Ready
             ? CapabilitySupport::Supported
             : CapabilitySupport::Unsupported;
     }

@@ -39,6 +39,7 @@ public:
     WebViewHostCallbacks callbacks;
     WebViewPolicyPtr policy;
     QUrl committedUrl;
+    QUrl bridgeOrigin;
     QString documentToken;
     bool documentTransportPrepared = false;
     bool provisionalMainFrameNavigation = false;

@@ -71,9 +71,13 @@ auto policy = webview::createDefaultWebViewPolicy(std::move(config));
 webview::WebViewSessionOptions options;
 options.mode = webview::SessionMode::Ephemeral;
 auto session = webview::createWebViewSession(std::move(options), std::move(policy));
+webview::WebApplicationOptions app;
+app.id = QStringLiteral("dashboard");
+app.source = webview::LocalBundle { QStringLiteral("/path/to/vite/dist") };
+auto dashboard = session->createApplication(std::move(app));
 auto view = session->createWebView(parent);
-// Insert view->widget() into the final Qt layout, then attach the native page.
 view->attachNativeView();
+view->open(dashboard, QStringLiteral("/orders/42"));
 ```
 
-The demo retains one session for all tabs, trusts only `app://demo` for its native bridge, and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.
+`LocalBundle` is the normal production source for a Vite `dist` directory. During development, use `DevelopmentServer { QUrl("http://127.0.0.1:5173") }`; a deployed site uses `RemoteOrigin`. All three sources use `view->open(application, route)`. The demo retains one session for all tabs and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.

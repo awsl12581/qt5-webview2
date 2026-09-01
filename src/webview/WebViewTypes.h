@@ -8,11 +8,14 @@
 
 #include <functional>
 #include <memory>
+#include <variant>
 
 namespace webview
 {
 class IWebView;
 using WebViewPtr = std::unique_ptr<IWebView>;
+class WebApplication;
+using WebApplicationPtr = std::shared_ptr<const WebApplication>;
 
 enum class LoadState { Started, Redirected, Committed, Finished, Failed };
 enum class InitializationState { Initializing, Ready, Failed, Closed };
@@ -55,7 +58,6 @@ enum class WebViewCapability {
     FileSelection,
     DownloadDefault,
     DownloadTarget,
-    ResourceMapping,
     Camera,
     Microphone,
     Location,
@@ -64,16 +66,27 @@ enum class WebViewCapability {
 };
 
 enum class SessionMode { Persistent, Ephemeral };
+enum class BridgeAccess { Denied, Allowed };
 
-struct WebResourceMapping {
-    QUrl origin;
-    QString localDirectory;
+struct LocalBundle {
+    QString directory;
+    QString entryDocument = QStringLiteral("index.html");
+    bool spaFallback = true;
+};
+
+struct DevelopmentServer { QUrl url; };
+struct RemoteOrigin { QUrl url; };
+using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOrigin>;
+
+struct WebApplicationOptions {
+    QString id;
+    ApplicationSource source;
+    BridgeAccess bridgeAccess = BridgeAccess::Denied;
 };
 
 struct WebViewSessionOptions {
     SessionMode mode = SessionMode::Ephemeral;
     QString profilePath;
-    QVector<WebResourceMapping> resourceMappings;
 };
 
 struct PermissionRequest {

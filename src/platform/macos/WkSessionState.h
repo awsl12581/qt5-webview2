@@ -1,6 +1,6 @@
 #pragma once
 
-#include "webview/WebViewTypes.h"
+#include "internal/ResourceMapping.h"
 #include "webview/WebViewState.h"
 
 #include <unordered_set>
@@ -13,7 +13,7 @@ class WkWebView;
 struct WkSessionState {
     std::atomic_bool valid = true;
     InitializationScheduler initialization;
-    QVector<WebResourceMapping> resourceMappings;
+    QVector<ResourceMapping> resourceMappings;
     std::unordered_set<WkWebView*> views;
 };
 } // namespace webview

@@ -15,6 +15,7 @@ public:
 
     InitializationState initializationState() const override;
     void whenInitialized(InitializationCompletion completion) override;
+    WebApplicationPtr createApplication(WebApplicationOptions options) override;
     WebViewPtr createWebView(QWidget* parent) override;
     void clearCache(ClearCompletion completion) override;
     void clearCookies(ClearCompletion completion) override;

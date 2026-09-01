@@ -3,7 +3,6 @@
 #include "webview/WebViewFactory.h"
 
 #include <QLabel>
-#include <QFile>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -78,16 +77,14 @@ DemoWindow::DemoWindow()
 
     webview::WebViewSessionOptions options;
     options.mode = webview::SessionMode::Ephemeral;
-    options.resourceMappings.push_back({
-        QUrl(QStringLiteral("app://demo")),
-        QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR)
-    });
     session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
+    webview::WebApplicationOptions app;
+    app.id = QStringLiteral("demo");
+    app.source = webview::LocalBundle { QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR) };
+    app.bridgeAccess = webview::BridgeAccess::Allowed;
+    const auto application = session_->createApplication(std::move(app));
     auto webView = session_->createWebView();
-    QFile htmlFile(QStringLiteral(SYSTEM_WEBVIEW_RESOURCE_DIR) + QStringLiteral("/demo.html"));
-    if (htmlFile.open(QIODevice::ReadOnly)) {
-        webView->setHtml(QString::fromUtf8(htmlFile.readAll()), QUrl(QStringLiteral("app://demo/index.html")));
-    }
+    webView->open(application);
     addTab(std::move(webView), QStringLiteral("Home"));
 }
 

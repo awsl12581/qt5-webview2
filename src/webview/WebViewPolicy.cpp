@@ -1,5 +1,5 @@
 #include "webview/WebViewPolicy.h"
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
 
 #include <QDir>
 #include <QFileInfo>

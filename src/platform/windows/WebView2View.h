@@ -1,6 +1,7 @@
 #pragma once
 
 #include "webview/IWebView.h"
+#include "internal/ResourceMapping.h"
 #include "webview/WebViewPolicy.h"
 
 #include <functional>
@@ -26,8 +27,9 @@ public:
     void whenInitialized(InitializationCompletion completion) override;
     void attachNativeView() override;
     void detachNativeView() override;
-    void load(const QUrl& url) override;
-    void setHtml(const QString& html, const QUrl& baseUrl) override;
+    void open(WebApplicationPtr application, const QString& route) override;
+    void navigate(const QUrl& url) override;
+    void loadDocument(const QString& html, const QUrl& baseUrl) override;
     void stop() override;
     void reload() override;
     void close() override;
@@ -39,7 +41,7 @@ private:
     friend class WebView2Session;
     WebView2View(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
-        QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
+        std::shared_ptr<QVector<ResourceMapping>> resourceMappings, SessionMode sessionMode,
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose = { });
 

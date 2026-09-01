@@ -1,9 +1,10 @@
 #include "platform/windows/WebView2View.h"
+#include "internal/Application.h"
 
 #include "webview/WebViewState.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
 
 #include <QMetaObject>
 #include <QJsonDocument>
@@ -67,7 +68,7 @@ public:
 
     explicit Impl(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
-        QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
+        std::shared_ptr<QVector<ResourceMapping>> resourceMappings, SessionMode sessionMode,
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose)
         : container(new NativeViewHost(parent)), state(std::make_shared<WebViewState>()),
@@ -161,9 +162,14 @@ public:
                                     if (inlineDocument != inlineDocuments->cend()) {
                                         bytes = inlineDocument.value();
                                     } else {
-                                        const auto* mapping = findResourceMapping(mappings, url);
+                                        const auto* mapping = findResourceMapping(*mappings, url);
                                         QString error;
-                                        const QString path = mapping ? resolveMappedResource(*mapping, url, &error) : QString();
+                                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT context{};
+                                        args->get_ResourceContext(&context);
+                                        const QString path = mapping
+                                            ? resolveMappedResource(*mapping, url, &error,
+                                                context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)
+                                            : QString();
                                         if (path.isEmpty()) return S_OK;
                                         QFile file(path);
                                         if (!file.open(QIODevice::ReadOnly)) return S_OK;
@@ -420,7 +426,8 @@ public:
                                     if (json.toUtf8().size() > 1024 * 1024 || state->committedUrl.isEmpty()) return S_OK;
                                     QJsonObject object;
                                     QString error;
-                                    if (!state->policy || !state->policy->allowsBridge(source)
+                                    if (state->bridgeOrigin != normalizedOrigin(source)
+                                        || !state->policy || !state->policy->allowsBridge(source)
                                         || source.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
                                             != state->committedUrl.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
                                         || !parseMessage(json, &object, &error)
@@ -505,7 +512,7 @@ public:
     EventRegistrationToken newWindowToken{};
     EventRegistrationToken downloadToken{};
     WebViewPolicyPtr policy;
-    QVector<WebResourceMapping> resourceMappings;
+    std::shared_ptr<QVector<ResourceMapping>> resourceMappings;
     SessionMode sessionMode = SessionMode::Persistent;
     std::function<QString(ICoreWebView2*)> registerProfile;
     std::function<void(std::function<void()>)> registerSessionClose;
@@ -599,7 +606,7 @@ public:
 
 WebView2View::WebView2View(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
     std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
-    QVector<WebResourceMapping> resourceMappings, SessionMode sessionMode,
+    std::shared_ptr<QVector<ResourceMapping>> resourceMappings, SessionMode sessionMode,
     std::function<QString(ICoreWebView2*)> registerProfile,
     std::function<void(std::function<void()>)> registerSessionClose)
     : impl_(std::make_shared<Impl>(parent, std::move(environmentProvider), std::move(sessionState), std::move(policy),
@@ -624,7 +631,15 @@ void WebView2View::detachNativeView()
     impl_->applyHostState();
 }
 
-void WebView2View::load(const QUrl& url)
+void WebView2View::open(WebApplicationPtr application, const QString& route)
+{
+    if (!application) return;
+    impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed
+        ? normalizedOrigin(application->origin()) : QUrl();
+    navigate(application->urlForRoute(route));
+}
+
+void WebView2View::navigate(const QUrl& url)
 {
     impl_->state->runWhenReady([state = impl_->state, url, owner = std::weak_ptr<Impl>(impl_)](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
@@ -648,15 +663,16 @@ void WebView2View::load(const QUrl& url)
     });
 }
 
-void WebView2View::setHtml(const QString& html, const QUrl& baseUrl)
+void WebView2View::loadDocument(const QString& html, const QUrl& baseUrl)
 {
-    if (baseUrl.scheme() == QStringLiteral("app") && !findResourceMapping(impl_->resourceMappings, baseUrl)) {
+    if (baseUrl.scheme() == QStringLiteral("app") && (!impl_->resourceMappings
+        || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
         const auto id = ++impl_->state->navigationId;
-        impl_->state->emitLoad(LoadState::Failed, id, baseUrl, QStringLiteral("ResourceMapping capability is unsupported for this app origin."));
+        impl_->state->emitLoad(LoadState::Failed, id, baseUrl, QStringLiteral("The document base URL is unavailable."));
         return;
     }
     impl_->inlineDocuments->insert(baseUrl.toString(QUrl::FullyEncoded), html.toUtf8());
-    load(baseUrl);
+    navigate(baseUrl);
 }
 void WebView2View::stop() { if (impl_->webview) impl_->webview->Stop(); }
 void WebView2View::reload() { if (impl_->webview) impl_->webview->Reload(); }

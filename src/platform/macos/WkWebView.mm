@@ -3,9 +3,10 @@
 #include "platform/macos/WkSessionState.h"
 
 #include "webview/JsonMessage.h"
+#include "internal/Application.h"
 #include "webview/HostCompletion.h"
 #include "webview/WebViewState.h"
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
 
 #include <QEvent>
 #include <QJsonArray>
@@ -171,6 +172,7 @@ public:
     const QUrl frameUrl(QString::fromUtf8(message.frameInfo.request.URL.absoluteString.UTF8String));
     if (![message.name isEqualToString:@(kBridgeName)] || !self.state || self.state->lifetime.isClosed()
         || !self.state->callbacks.message || !message.frameInfo.mainFrame
+        || self.state->bridgeOrigin != webview::normalizedOrigin(self.state->committedUrl)
         || !self.state->policy->allowsBridge(self.state->committedUrl)
         || webview::normalizedOrigin(frameUrl) != webview::normalizedOrigin(self.state->committedUrl)) {
         return;
@@ -609,7 +611,15 @@ void WkWebView::detachNativeView()
     [impl_->view removeFromSuperview];
 }
 
-void WkWebView::load(const QUrl& url)
+void WkWebView::open(WebApplicationPtr application, const QString& route)
+{
+    if (!application) return;
+    impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed
+        ? normalizedOrigin(application->origin()) : QUrl();
+    navigate(application->urlForRoute(route));
+}
+
+void WkWebView::navigate(const QUrl& url)
 {
     impl_->state->runWhenReady([this, url](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
@@ -625,7 +635,7 @@ void WkWebView::load(const QUrl& url)
     });
 }
 
-void WkWebView::setHtml(const QString& html, const QUrl& baseUrl)
+void WkWebView::loadDocument(const QString& html, const QUrl& baseUrl)
 {
     impl_->state->runWhenReady([this, html, baseUrl](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {

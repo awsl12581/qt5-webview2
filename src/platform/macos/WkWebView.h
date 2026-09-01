@@ -21,8 +21,9 @@ public:
     void whenInitialized(InitializationCompletion completion) override;
     void attachNativeView() override;
     void detachNativeView() override;
-    void load(const QUrl& url) override;
-    void setHtml(const QString& html, const QUrl& baseUrl) override;
+    void open(WebApplicationPtr application, const QString& route) override;
+    void navigate(const QUrl& url) override;
+    void loadDocument(const QString& html, const QUrl& baseUrl) override;
     void stop() override;
     void reload() override;
     void close() override;

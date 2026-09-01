@@ -1,4 +1,4 @@
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
 #include "webview/PathSecurity.h"
 
 #include <QDir>
@@ -21,7 +21,7 @@ QUrl normalizedOrigin(const QUrl& url)
     return origin;
 }
 
-bool validateResourceMappings(QVector<WebResourceMapping>* mappings, QString* error)
+bool validateResourceMappings(QVector<ResourceMapping>* mappings, QString* error)
 {
     if (!mappings) {
         if (error) {
@@ -65,8 +65,7 @@ bool validateResourceMappings(QVector<WebResourceMapping>* mappings, QString* er
     return true;
 }
 
-const WebResourceMapping* findResourceMapping(
-    const QVector<WebResourceMapping>& mappings, const QUrl& url)
+const ResourceMapping* findResourceMapping(const QVector<ResourceMapping>& mappings, const QUrl& url)
 {
     const auto origin = normalizedOrigin(url);
     for (const auto& mapping : mappings) {
@@ -77,7 +76,8 @@ const WebResourceMapping* findResourceMapping(
     return nullptr;
 }
 
-QString resolveMappedResource(const WebResourceMapping& mapping, const QUrl& url, QString* error)
+QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, QString* error,
+    bool allowSpaFallback)
 {
     const auto encodedPath = url.path(QUrl::FullyEncoded).toUtf8();
     const auto decodedPath = QUrl::fromPercentEncoding(encodedPath);
@@ -88,20 +88,30 @@ QString resolveMappedResource(const WebResourceMapping& mapping, const QUrl& url
         }
         return { };
     }
-    const auto candidatePath = QDir(mapping.localDirectory).filePath(segments.join(QLatin1Char('/')));
-    const QFileInfo candidate(candidatePath);
-    const auto canonicalPath = candidate.canonicalFilePath();
-    const auto relativePath = QDir(mapping.localDirectory).relativeFilePath(canonicalPath);
-    const bool outsideRoot = relativePath == QStringLiteral("..")
-        || relativePath.startsWith(QStringLiteral("../"))
-        || relativePath.startsWith(QStringLiteral("..\\"));
-    if (canonicalPath.isEmpty() || candidate.isDir() || outsideRoot
-        || hasExternalFileLink(canonicalPath)) {
+    const auto resolve = [&mapping](const QString& relativePath) {
+        const QFileInfo candidate(QDir(mapping.localDirectory).filePath(relativePath));
+        const auto canonicalPath = candidate.canonicalFilePath();
+        const auto pathWithinRoot = QDir(mapping.localDirectory).relativeFilePath(canonicalPath);
+        const bool outsideRoot = pathWithinRoot == QStringLiteral("..")
+            || pathWithinRoot.startsWith(QStringLiteral("../"))
+            || pathWithinRoot.startsWith(QStringLiteral("..\\"));
+        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot || hasExternalFileLink(canonicalPath)
+            ? QString() : canonicalPath;
+    };
+    const auto requestedPath = segments.join(QLatin1Char('/'));
+    const auto resolved = resolve(requestedPath);
+    if (!resolved.isEmpty()) return resolved;
+    const QFileInfo requestInfo(requestedPath);
+    if (allowSpaFallback && mapping.spaFallback && !mapping.entryDocument.isEmpty()
+        && requestInfo.suffix().isEmpty()) {
+        const auto entry = resolve(mapping.entryDocument);
+        if (!entry.isEmpty()) return entry;
+    }
+    {
         if (error) {
             *error = QStringLiteral("The mapped resource is unavailable or outside its root.");
         }
         return { };
     }
-    return canonicalPath;
 }
 } // namespace webview

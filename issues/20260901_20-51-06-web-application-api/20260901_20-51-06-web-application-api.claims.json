@@ -1,0 +1,17 @@
+{
+  "source_doc": "docs/specs/2026-09-01-web-application-api.md",
+  "csv": "20260901_20-51-06-web-application-api.csv",
+  "execution_scope": "approved spec in full",
+  "claim_coverage": {"covered": 9, "total": 9, "status": "pending"},
+  "claims": [
+    {"claim_id":"CLAIM-001","source_ref":"docs/specs/2026-09-01-web-application-api.md:16","promise":"Public headers expose WebApplication, ApplicationSource, LocalBundle, DevelopmentServer, and RemoteOrigin.","covered_by":["API-01"],"evidence_required":"unit","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-002","source_ref":"docs/specs/2026-09-01-web-application-api.md:17","promise":"A session creates applications and a view opens an application with an internal route.","covered_by":["API-01","API-03"],"evidence_required":"integration","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-003","source_ref":"docs/specs/2026-09-01-web-application-api.md:18","promise":"Session options no longer carry application resource configuration.","covered_by":["API-01"],"evidence_required":"static","production_path_required":false,"status":"pending"},
+    {"claim_id":"CLAIM-004","source_ref":"docs/specs/2026-09-01-web-application-api.md:19","promise":"Local bundle resource mapping and security checks are internal implementation details.","covered_by":["API-02","API-03"],"evidence_required":"integration","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-005","source_ref":"docs/specs/2026-09-01-web-application-api.md:20","promise":"SPA fallback applies only to main-document navigation, never missing static or fetch resources.","covered_by":["API-02","API-03"],"evidence_required":"integration","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-006","source_ref":"docs/specs/2026-09-01-web-application-api.md:47","promise":"Local bundles, development servers, and remote origins share the same open call and do not create an implicit server.","covered_by":["API-01","API-03"],"evidence_required":"integration","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-007","source_ref":"docs/specs/2026-09-01-web-application-api.md:49","promise":"Bridge authorization remains explicit and subject to existing policy, origin, top-level-document, token, and schema checks.","covered_by":["API-01","API-03"],"evidence_required":"integration","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-008","source_ref":"docs/specs/2026-09-01-web-application-api.md:55","promise":"The old public mapping API is removed without adapters, flags, parallel registration, or fallback.","covered_by":["API-01","API-04"],"evidence_required":"static","production_path_required":true,"status":"pending"},
+    {"claim_id":"CLAIM-009","source_ref":"docs/specs/2026-09-01-web-application-api.md:73","promise":"Demo, architecture and installation documentation, and relevant tests use the new model.","covered_by":["API-04"],"evidence_required":"integration","production_path_required":true,"status":"pending"}
+  ]
+}

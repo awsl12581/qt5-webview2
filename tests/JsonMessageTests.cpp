@@ -1,9 +1,10 @@
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
-#include "webview/ResourceMapping.h"
+#include "internal/ResourceMapping.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewPolicy.h"
 #include "webview/WebViewState.h"
+#include "internal/Application.h"
 
 #include <QDir>
 #include <QFile>
@@ -160,6 +161,9 @@ int main()
     QFile file(selectedFile);
     assert(file.open(QIODevice::WriteOnly));
     file.close();
+    QFile indexFile(selectedRoot.filePath(QStringLiteral("index.html")));
+    assert(indexFile.open(QIODevice::WriteOnly));
+    indexFile.close();
     const webview::FileSelectionRequest singleFileRequest { { }, { }, false, false };
     const auto selected = webview::normalizeFileSelectionResult(singleFileRequest,
         { webview::FileSelectionStatus::Selected, { selectedFile }, { } });
@@ -174,8 +178,8 @@ int main()
         { webview::FileSelectionStatus::Selected, { selectedRoot.path() }, { } });
     assert(directory.status == webview::FileSelectionStatus::InvalidResult);
 
-    QVector<webview::WebResourceMapping> mappings {
-        { QUrl(QStringLiteral("app://demo")), selectedRoot.path() }
+    QVector<webview::ResourceMapping> mappings {
+        { QUrl(QStringLiteral("app://demo")), selectedRoot.path(), QStringLiteral("index.html"), true }
     };
     QString mappingError;
     assert(webview::validateResourceMappings(&mappings, &mappingError));
@@ -192,6 +196,12 @@ int main()
     assert(webview::resolveMappedResource(
                *mapping, QUrl(QStringLiteral("app://demo/missing.txt")), &mappingError)
         .isEmpty());
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/orders/42")), &mappingError, true)
+        == QFileInfo(indexFile.fileName()).canonicalFilePath());
+    assert(webview::resolveMappedResource(
+               *mapping, QUrl(QStringLiteral("app://demo/missing.js")), &mappingError, true)
+        .isEmpty());
     QTemporaryDir outsideRoot;
     assert(outsideRoot.isValid());
     const auto outsideFile = outsideRoot.filePath(QStringLiteral("secret.txt"));
@@ -206,14 +216,32 @@ int main()
             .isEmpty());
     }
 
-    QVector<webview::WebResourceMapping> duplicateMappings {
+    QVector<webview::ResourceMapping> duplicateMappings {
         { QUrl(QStringLiteral("app://demo")), selectedRoot.path() },
         { QUrl(QStringLiteral("APP://DEMO")), selectedRoot.path() }
     };
     assert(!webview::validateResourceMappings(&duplicateMappings, &mappingError));
-    QVector<webview::WebResourceMapping> invalidMappings {
+    QVector<webview::ResourceMapping> invalidMappings {
         { QUrl(QStringLiteral("https://demo/path")), selectedRoot.path() }
     };
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
+
+    webview::WebApplicationOptions bundleOptions;
+    bundleOptions.id = QStringLiteral("demo-app");
+    bundleOptions.source = webview::LocalBundle { selectedRoot.path() };
+    const auto bundleApplication = webview::createApplication(std::move(bundleOptions), &mappingError);
+    assert(bundleApplication);
+    assert(bundleApplication->urlForRoute(QStringLiteral("orders/42"))
+        == QUrl(QStringLiteral("app://demo-app/orders/42")));
+    webview::WebApplicationOptions devOptions;
+    devOptions.id = QStringLiteral("demo-dev");
+    devOptions.source = webview::DevelopmentServer { QUrl(QStringLiteral("http://127.0.0.1:5173")) };
+    const auto devApplication = webview::createApplication(std::move(devOptions), &mappingError);
+    assert(devApplication && devApplication->urlForRoute(QStringLiteral("assets/main.js"))
+        == QUrl(QStringLiteral("http://127.0.0.1:5173/assets/main.js")));
+    webview::WebApplicationOptions remoteOptions;
+    remoteOptions.id = QStringLiteral("demo-remote");
+    remoteOptions.source = webview::RemoteOrigin { QUrl(QStringLiteral("https://example.com")) };
+    assert(webview::createApplication(std::move(remoteOptions), &mappingError));
 
 }

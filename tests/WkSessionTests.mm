@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -38,17 +39,18 @@ int main(int argc, char** argv)
     persistentOptions.profilePath = profile.path();
     auto session = webview::createWebViewSession(std::move(persistentOptions));
     auto ephemeral = webview::createWebViewSession({ });
-    webview::WebViewSessionOptions invalidMappingOptions;
-    invalidMappingOptions.resourceMappings.push_back(
-        { QUrl(QStringLiteral("app://demo/path")), profile.path() });
-    auto invalidMappingSession = webview::createWebViewSession(std::move(invalidMappingOptions));
-    assert(invalidMappingSession->initializationState() == webview::InitializationState::Failed);
-    bool mappingFailureReported = false;
-    invalidMappingSession->whenInitialized([&](const webview::InitializationResult& result) {
-        mappingFailureReported = result.state == webview::InitializationState::Failed
-            && result.error.contains(QStringLiteral("origin"));
-    });
-    assert(mappingFailureReported);
+    webview::WebApplicationOptions invalidBundle;
+    invalidBundle.id = QStringLiteral("demo");
+    invalidBundle.source = webview::LocalBundle { profile.path(), QStringLiteral("../index.html") };
+    assert(!session->createApplication(std::move(invalidBundle)));
+    QFile bundleEntry(profile.filePath(QStringLiteral("index.html")));
+    assert(bundleEntry.open(QIODevice::WriteOnly));
+    bundleEntry.close();
+    webview::WebApplicationOptions bundle;
+    bundle.id = QStringLiteral("bundle");
+    bundle.source = webview::LocalBundle { profile.path() };
+    assert(session->createApplication(bundle));
+    assert(!session->createApplication(std::move(bundle)));
     assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile)
         == webview::CapabilitySupport::Supported);
     assert(ephemeral->capabilitySupport(webview::WebViewCapability::PersistentProfile)
@@ -56,8 +58,6 @@ int main(int argc, char** argv)
     assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile)
         == webview::CapabilitySupport::Supported);
     assert(session->capabilitySupport(webview::WebViewCapability::PrivateProfile)
-        == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::ResourceMapping)
         == webview::CapabilitySupport::Supported);
     assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
         == webview::CapabilitySupport::Supported);

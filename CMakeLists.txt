@@ -19,6 +19,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 
 add_library(system_webview STATIC
+    src/webview/Application.cpp
     src/webview/JsonMessage.cpp
     src/webview/HostCompletion.cpp
     src/webview/ResourceMapping.cpp

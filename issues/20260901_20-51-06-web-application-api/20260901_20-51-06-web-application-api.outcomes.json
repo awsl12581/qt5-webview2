@@ -1,0 +1,18 @@
+{
+  "source": "docs/specs/2026-09-01-web-application-api.md",
+  "execution_scope": "approved spec in full",
+  "artifact_role": {"kind":"design","producer":"approved mission spec","consumers":["mission review","handoff"],"authority":"Defines the public application-loading contract and its acceptance criteria.","not_authority":"Does not prove runtime behavior without platform integration evidence."},
+  "desired_effects": [
+    {"id":"EFFECT-001","statement":"A Vite developer opens a development server, a dist bundle, or a remote deployment through one application-oriented API without configuring app:// mappings.","source_ref":"docs/specs/2026-09-01-web-application-api.md:12"},
+    {"id":"EFFECT-002","statement":"Local bundles retain secure resource serving and correct SPA routing without exposing their implementation details.","source_ref":"docs/specs/2026-09-01-web-application-api.md:19"}
+  ],
+  "reader_questions": [
+    {"id":"OUTCOME-001","question":"Can an application use the same public lifecycle to open a Vite dist bundle, a Vite development server, and an HTTPS origin?","why_it_matters":"This is the developer-facing mental model that replaces manual resource mapping.","evidence_required":"integration","scope":"Public API and both platform backends","source_ref":"docs/specs/2026-09-01-web-application-api.md:68","status":"pending"},
+    {"id":"OUTCOME-002","question":"Are local bundle resources secure and does SPA fallback avoid masking missing static or fetch resources?","why_it_matters":"The simplified API must not weaken resource isolation or make debugging missing assets misleading.","evidence_required":"integration","scope":"LocalBundle resource serving","source_ref":"docs/specs/2026-09-01-web-application-api.md:69","status":"pending"},
+    {"id":"OUTCOME-003","question":"Has the old resource mapping concept been fully removed from public developer-facing code without a compatibility path?","why_it_matters":"A parallel API would preserve the old mental burden and leave two production paths.","evidence_required":"static","scope":"Public headers, demo, docs, and production callers","source_ref":"docs/specs/2026-09-01-web-application-api.md:67","status":"pending"}
+  ],
+  "decisive_result": {"question":"Does the delivered public API make an application, rather than a resource mapping, the sole entry point for Vite development and deployment?","success_condition":"Both backends and the demo use the new application API; security and SPA behavior have matching tests; no public mapping API remains.","failure_condition":"Any public mapping configuration, compatibility path, missing platform wiring, or unverified security regression remains.","source_refs":["docs/specs/2026-09-01-web-application-api.md:12","docs/specs/2026-09-01-web-application-api.md:67"]},
+  "blocked_claims": [
+    {"claim":"A backend without the required native resource-serving capability supports LocalBundle.","reason":"The approved spec requires an explicit failure rather than an implicit HTTP-server fallback.","release_condition":"The backend implements the capability and passes equivalent integration tests.","source_ref":"docs/specs/2026-09-01-web-application-api.md:72"}
+  ]
+}
