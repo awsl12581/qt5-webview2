@@ -108,8 +108,10 @@ int main(int argc, char** argv)
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert(QStringLiteral("bridge-test"));
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
-    config.bridgeSchemas.insert(
-        QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
+    config.pageToHostSchemas.insert(QStringLiteral("hello"),
+        { { { QStringLiteral("message"), QJsonValue::String } }, true });
+    config.hostToPageSchemas.insert(QStringLiteral("hello"),
+        { { { QStringLiteral("message"), QJsonValue::String } } });
     auto policy = std::make_shared<TestPolicy>(std::move(config));
     auto session = webview::createWebViewSession({ }, policy);
     auto view = session->createWebView();

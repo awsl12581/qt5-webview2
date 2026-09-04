@@ -34,7 +34,10 @@ int main()
     config.allowedFileRoots.append(files.path());
     config.trustedDevelopmentOrigins.insert(QStringLiteral("http://127.0.0.1:5173"));
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
-    config.bridgeSchemas.insert(QStringLiteral("ping"), { QSet<QString> { QStringLiteral("sequence") } });
+    config.pageToHostSchemas.insert(
+        QStringLiteral("ping"), { { { QStringLiteral("sequence"), QJsonValue::Double } } });
+    config.hostToPageSchemas.insert(
+        QStringLiteral("pong"), { { { QStringLiteral("accepted"), QJsonValue::Bool } } });
     config.maximumBridgeMessageBytes = 128;
     const webview::WebViewPolicy policy(std::move(config));
 
@@ -66,15 +69,31 @@ int main()
     const webview::BridgeMessage validMessage {
         1, QStringLiteral("ping"), QJsonObject { { QStringLiteral("sequence"), 1 } }
     };
-    assert(policy.validateBridgeMessage(validMessage, &validationError));
+    assert(policy.validatePageToHostMessage(validMessage, &validationError));
     assert(validationError.isEmpty());
-    assert(!policy.validateBridgeMessage({ 2, validMessage.type, validMessage.payload }, &validationError));
-    assert(validationError.contains(QStringLiteral("version")));
-    assert(!policy.validateBridgeMessage({ 1, QStringLiteral("unknown"), validMessage.payload }, &validationError));
+    assert(!policy.validateHostToPageMessage(validMessage, &validationError));
     assert(validationError.contains(QStringLiteral("type")));
-    assert(!policy.validateBridgeMessage({ 1, validMessage.type, { } }, &validationError));
+    assert(policy.validateHostToPageMessage(
+        { 1, QStringLiteral("pong"), { { QStringLiteral("accepted"), true } } }, &validationError));
+    assert(!policy.validatePageToHostMessage(
+        { 2, validMessage.type, validMessage.payload }, &validationError));
+    assert(validationError.contains(QStringLiteral("version")));
+    assert(!policy.validatePageToHostMessage(
+        { 1, QStringLiteral("unknown"), validMessage.payload }, &validationError));
+    assert(validationError.contains(QStringLiteral("type")));
+    assert(!policy.validatePageToHostMessage({ 1, validMessage.type, { } }, &validationError));
     assert(validationError.contains(QStringLiteral("sequence")));
-    assert(!policy.validateBridgeMessage(
+    assert(!policy.validatePageToHostMessage(
+        { 1, validMessage.type,
+            QJsonObject { { QStringLiteral("sequence"), QStringLiteral("wrong type") } } },
+        &validationError));
+    assert(validationError.contains(QStringLiteral("number")));
+    assert(!policy.validatePageToHostMessage(
+        { 1, validMessage.type,
+            QJsonObject { { QStringLiteral("sequence"), 1 }, { QStringLiteral("extra"), true } } },
+        &validationError));
+    assert(validationError.contains(QStringLiteral("unexpected")));
+    assert(!policy.validatePageToHostMessage(
         { 1, validMessage.type, QJsonObject { { QStringLiteral("sequence"), QString(200, QLatin1Char('x')) } } },
         &validationError));
     assert(validationError.contains(QStringLiteral("size")));

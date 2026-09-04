@@ -17,10 +17,10 @@ public:
         : WebViewPolicy([] {
             webview::WebViewPolicyConfig config;
             config.allowedAppHosts.insert(QStringLiteral("demo"));
-            config.bridgeSchemas.insert(
-                QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
-            config.bridgeSchemas.insert(
-                QStringLiteral("ack"), { QSet<QString> { QStringLiteral("message") } });
+            config.pageToHostSchemas.insert(QStringLiteral("hello"),
+                { { { QStringLiteral("message"), QJsonValue::String } } });
+            config.hostToPageSchemas.insert(QStringLiteral("ack"),
+                { { { QStringLiteral("message"), QJsonValue::String } } });
             return config;
         }())
     {

@@ -187,12 +187,16 @@ public:
         && wrapper.value(QStringLiteral("documentToken")).toString() == self.state->documentToken
         && wrapper.value(QStringLiteral("message")).isObject()) {
         const auto object = wrapper.value(QStringLiteral("message")).toObject();
+        if (!object.value(QStringLiteral("type")).isString()
+            || !object.value(QStringLiteral("payload")).isObject()) {
+            return;
+        }
         webview::BridgeMessage bridgeMessage;
         bridgeMessage.version = object.value(QStringLiteral("version")).toInt(-1);
         bridgeMessage.type = object.value(QStringLiteral("type")).toString();
         bridgeMessage.payload = object.value(QStringLiteral("payload")).toObject();
         QString validationError;
-        if (self.state->policy->validateBridgeMessage(bridgeMessage, &validationError)) {
+        if (self.state->policy->validatePageToHostMessage(bridgeMessage, &validationError)) {
             self.state->callbacks.message(bridgeMessage);
         }
     }
@@ -732,7 +736,7 @@ void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion comp
     }
     QString validationError;
     if (!impl_->state->policy->allowsBridge(impl_->state->committedUrl)
-        || !impl_->state->policy->validateBridgeMessage(message, &validationError)) {
+        || !impl_->state->policy->validateHostToPageMessage(message, &validationError)) {
         if (completion) {
             completion({ MessageError::Rejected,
                 validationError.isEmpty() ? QStringLiteral("The current document is not authorized for bridge messages.")

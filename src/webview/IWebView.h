@@ -11,7 +11,6 @@ namespace webview
 class IWebView
 {
 public:
-    using MessageCompletion = std::function<void(const MessageResult&)>;
     using InitializationCompletion = std::function<void(const InitializationResult&)>;
 
     virtual ~IWebView() = default;

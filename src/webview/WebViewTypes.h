@@ -148,6 +148,8 @@ struct MessageResult {
     QString detail;
 };
 
+using MessageCompletion = std::function<void(const MessageResult&)>;
+
 struct WebsiteDataResult {
     bool success = true;
     QString error;

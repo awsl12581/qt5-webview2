@@ -2,17 +2,18 @@
 
 #include "webview/WebViewTypes.h"
 
+#include <QHash>
+#include <QJsonValue>
 #include <QSet>
 #include <QStringList>
-
-#include <QHash>
 
 #include <memory>
 
 namespace webview
 {
 struct BridgeMessageSchema {
-    QSet<QString> requiredPayloadKeys;
+    QHash<QString, QJsonValue::Type> requiredPayloadFields;
+    bool allowAdditionalPayloadFields = false;
 };
 
 struct WebViewPolicyConfig {
@@ -20,7 +21,8 @@ struct WebViewPolicyConfig {
     QStringList allowedFileRoots;
     QSet<QString> trustedDevelopmentOrigins;
     QSet<QString> trustedHttpsOrigins;
-    QHash<QString, BridgeMessageSchema> bridgeSchemas;
+    QHash<QString, BridgeMessageSchema> pageToHostSchemas;
+    QHash<QString, BridgeMessageSchema> hostToPageSchemas;
     int maximumBridgeMessageBytes = 64 * 1024;
 };
 
@@ -33,7 +35,8 @@ public:
     virtual NavigationDecision decideNavigation(const NavigationRequest& request) const;
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
     virtual bool allowsBridge(const QUrl& committedUrl) const;
-    virtual bool validateBridgeMessage(const BridgeMessage& message, QString* error) const;
+    virtual bool validatePageToHostMessage(const BridgeMessage& message, QString* error = nullptr) const;
+    virtual bool validateHostToPageMessage(const BridgeMessage& message, QString* error = nullptr) const;
     virtual PermissionDecision decidePermission(const PermissionRequest& request) const;
     virtual DownloadDecision decideDownload(const DownloadRequest& request) const;
 

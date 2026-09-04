@@ -423,7 +423,7 @@ public:
                                     const QUrl source = QUrl(QString::fromWCharArray(rawSource ? rawSource : L""));
                                     CoTaskMemFree(rawJson);
                                     CoTaskMemFree(rawSource);
-                                    if (json.toUtf8().size() > 1024 * 1024 || state->committedUrl.isEmpty()) return S_OK;
+                                    if (state->committedUrl.isEmpty()) return S_OK;
                                     QJsonObject object;
                                     QString error;
                                     if (state->bridgeOrigin != normalizedOrigin(source)
@@ -433,11 +433,13 @@ public:
                                         || !parseMessage(json, &object, &error)
                                         || object.value(QStringLiteral("documentToken")).toString() != state->documentToken) return S_OK;
                                     object = object.value(QStringLiteral("message")).toObject();
+                                    if (!object.value(QStringLiteral("type")).isString()
+                                        || !object.value(QStringLiteral("payload")).isObject()) return S_OK;
                                     BridgeMessage message;
                                     message.version = object.value(QStringLiteral("version")).toInt();
                                     message.type = object.value(QStringLiteral("type")).toString();
                                     message.payload = object.value(QStringLiteral("payload")).toObject();
-                                    if (!state->policy->validateBridgeMessage(message, &error)) return S_OK;
+                                    if (!state->policy->validatePageToHostMessage(message, &error)) return S_OK;
                                     if (state->callbacks.message) state->callbacks.message(message);
                                     return S_OK;
                                 }).Get(), &webMessageToken);
@@ -687,6 +689,16 @@ bool WebView2View::isClosed() const { return impl_->state->lifetime.isClosed(); 
 void WebView2View::sendMessage(const BridgeMessage& message, MessageCompletion completion)
 {
     if (!impl_->webview) { if (completion) completion({ MessageError::Closed, QStringLiteral("WebView2 controller is unavailable.") }); return; }
+    QString validationError;
+    if (!impl_->state->policy->allowsBridge(impl_->state->committedUrl)
+        || !impl_->state->policy->validateHostToPageMessage(message, &validationError)) {
+        if (completion) {
+            completion({ MessageError::Rejected,
+                validationError.isEmpty() ? QStringLiteral("The current document is not authorized for bridge messages.")
+                                          : validationError });
+        }
+        return;
+    }
     const QJsonObject object { { QStringLiteral("version"), message.version }, { QStringLiteral("type"), message.type }, { QStringLiteral("payload"), message.payload } };
     const auto json = QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)).toStdWString();
     const HRESULT hr = impl_->webview->PostWebMessageAsJson(json.c_str());
