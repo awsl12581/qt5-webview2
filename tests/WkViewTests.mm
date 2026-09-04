@@ -3,6 +3,8 @@
 
 #include <QApplication>
 #include <QEventLoop>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QVBoxLayout>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -104,6 +106,7 @@ int main(int argc, char** argv)
     QApplication application(argc, argv);
 
     webview::WebViewPolicyConfig config;
+    config.allowedAppHosts.insert(QStringLiteral("bridge-test"));
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
     config.bridgeSchemas.insert(
         QStringLiteral("hello"), { QSet<QString> { QStringLiteral("message") } });
@@ -167,7 +170,19 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body></html>)HTML");
-    view->loadDocument(html, QUrl(QStringLiteral("https://trusted.example/index.html")));
+    QTemporaryDir bridgeRoot;
+    assert(bridgeRoot.isValid());
+    QFile bridgeEntry(bridgeRoot.filePath(QStringLiteral("index.html")));
+    assert(bridgeEntry.open(QIODevice::WriteOnly));
+    assert(bridgeEntry.write(html.toUtf8()) == html.toUtf8().size());
+    bridgeEntry.close();
+    webview::WebApplicationOptions bridgeApplicationOptions;
+    bridgeApplicationOptions.id = QStringLiteral("bridge-test");
+    bridgeApplicationOptions.source = webview::LocalBundle { bridgeRoot.path() };
+    bridgeApplicationOptions.bridgeAccess = webview::BridgeAccess::Allowed;
+    auto bridgeApplication = session->createApplication(std::move(bridgeApplicationOptions));
+    assert(bridgeApplication);
+    view->open(bridgeApplication);
     timeout.start(10000);
     loop.exec();
 
