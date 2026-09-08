@@ -6,6 +6,11 @@
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
+#include <QWindow>
+
+#ifdef Q_OS_WIN
+#include <dwmapi.h>
+#endif
 
 namespace samples::demo
 {
@@ -19,8 +24,12 @@ public:
             config.allowedAppHosts.insert(QStringLiteral("demo"));
             config.pageToHostSchemas.insert(QStringLiteral("hello"),
                 { { { QStringLiteral("message"), QJsonValue::String } } });
+            config.pageToHostSchemas.insert(QStringLiteral("window"),
+                { { { QStringLiteral("action"), QJsonValue::String } } });
             config.hostToPageSchemas.insert(QStringLiteral("ack"),
                 { { { QStringLiteral("message"), QJsonValue::String } } });
+            config.hostToPageSchemas.insert(QStringLiteral("window-state"),
+                { { { QStringLiteral("maximized"), QJsonValue::Bool } } });
             return config;
         }())
     {
@@ -62,6 +71,13 @@ private:
 DemoWindow::DemoWindow()
 {
     setWindowFlag(Qt::FramelessWindowHint);
+#ifdef Q_OS_WIN
+    const auto hwnd = reinterpret_cast<HWND>(winId());
+    const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
+    const MARGINS shadow { 1, 1, 1, 1 };
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+    DwmExtendFrameIntoClientArea(hwnd, &shadow);
+#endif
     setWindowTitle(QStringLiteral("System WebView Demo"));
     resize(1000, 700);
     tabs_ = new QTabWidget(this);
@@ -109,6 +125,21 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         }
     };
     callbacks.message = [this, page](const webview::BridgeMessage& message) {
+        if (message.type == QStringLiteral("window")) {
+            const auto action = message.payload.value(QStringLiteral("action")).toString();
+            if (action == QStringLiteral("drag") && windowHandle()) {
+                windowHandle()->startSystemMove();
+            } else if (action == QStringLiteral("minimize")) {
+                showMinimized();
+            } else if (action == QStringLiteral("maximize")) {
+                const bool maximize = !isMaximized();
+                maximize ? showMaximized() : showNormal();
+                page->sendMessage({ 1, QStringLiteral("window-state"), QJsonObject { { "maximized", maximize } } });
+            } else if (action == QStringLiteral("close")) {
+                close();
+            }
+            return;
+        }
         status_->setText(QStringLiteral("Page: %1").arg(message.payload.value("message").toString()));
         page->sendMessage({ 1, QStringLiteral("ack"), QJsonObject { { "message", "Native received your message." } } });
     };

@@ -8,3 +8,6 @@ target_include_directories(system_webview_demo PRIVATE "${PROJECT_SOURCE_DIR}/sr
 target_compile_definitions(system_webview_demo PRIVATE
     SYSTEM_WEBVIEW_RESOURCE_DIR="${SYSTEM_WEBVIEW_RESOURCE_DIR}")
 target_link_libraries(system_webview_demo PRIVATE system_webview::system_webview)
+if(WIN32)
+    target_link_libraries(system_webview_demo PRIVATE dwmapi)
+endif()

@@ -1,105 +1,143 @@
+<div align="center">
+
 # System WebView
 
-A Qt 5 host for operating-system WebViews. The current backend uses macOS `WKWebView`; the public session, page, and policy contracts are designed to map to WebView2 and WebKit2GTK without exposing native types.
+A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
-Build with Homebrew Qt 5:
+<p>
+  <a href="https://en.cppreference.com/w/cpp/17"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&amp;logoColor=white" alt="C++17"></a>
+  <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/Qt-5.15-41CD52?logo=qt&amp;logoColor=white" alt="Qt 5.15"></a>
+  <img src="https://img.shields.io/badge/Windows-WebView2-0078D4?logo=windows&amp;logoColor=white" alt="Windows WebView2">
+  <img src="https://img.shields.io/badge/macOS-WKWebView-000000?logo=apple&amp;logoColor=white" alt="macOS WKWebView">
+</p>
 
-```sh
-cmake --preset default-debug
-cmake --build --preset default-debug
-ctest --preset default-debug
-./build/debug/samples/demo/system_webview_demo
+**English** | [简体中文](README.zh-CN.md)
+
+</div>
+
+<p align="center">
+  <img src="docs/image.png" alt="System WebView demo">
+</p>
+
+System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code deals only with Qt values and the public C++ interfaces.
+
+## What it provides
+
+- Persistent and ephemeral browser sessions
+- Local bundles, development servers, and remote origins
+- Schema-checked JSON messages between C++ and the page
+- Navigation, popup, permission, download, and file-selection policy hooks
+- Native view attachment and resize handling inside Qt widgets
+- CMake package installation through `system_webview::system_webview`
+
+The demo also shows a frameless window whose title bar and controls live in the web page. On Windows, DWM supplies the rounded corners and desktop shadow.
+
+## Platform support
+
+| Platform | Backend | Toolchain | Notes |
+| --- | --- | --- | --- |
+| Windows AMD64 | Microsoft WebView2 | MSVC v143, Qt 5.15 | Requires the WebView2 Evergreen Runtime |
+| Windows ARM64 | Microsoft WebView2 | MSVC, Qt 5.15 | Uses the `arm64-windows` vcpkg triplet |
+| macOS | WKWebView | Apple Clang, Qt 5.15 | Uses the system WebKit framework |
+
+Linux is not implemented. WebKit2GTK is documented as a future mapping only.
+
+## Build on Windows
+
+The presets expect a sibling vcpkg checkout at `../vcpkg`. Install Qt and the WebView2 SDK for your architecture first:
+
+```powershell
+..\vcpkg\vcpkg install qt5-base:x64-windows webview2:x64-windows
 ```
 
-## Install and consume from CMake
+For ARM64, replace `x64-windows` with `arm64-windows`.
 
-The default install prefix is the repository's `install/` directory. It can
-be overridden in the normal CMake way with `-DCMAKE_INSTALL_PREFIX=...`:
+Open an MSVC developer prompt that matches the target architecture, then configure, build, and test:
+
+```powershell
+cmake --preset windows-msvc-amd64-debug
+cmake --build --preset windows-msvc-amd64-debug
+ctest --preset windows-msvc-amd64-debug --output-on-failure
+```
+
+Run the demo:
+
+```powershell
+.\build\windows-msvc-amd64-debug\samples\demo\system_webview_demo.exe
+```
+
+The vcpkg package supplies the WebView2 SDK and Loader. The target computer still needs a matching Microsoft Edge WebView2 Evergreen Runtime.
+
+## Build on macOS
+
+The macOS presets expect Homebrew Qt 5 at `/opt/homebrew/opt/qt@5`:
+
+```sh
+brew install cmake ninja qt@5
+cmake --preset macos-appleclang-debug
+cmake --build --preset macos-appleclang-debug
+ctest --preset macos-appleclang-debug --output-on-failure
+./build/macos-appleclang-debug/samples/demo/system_webview_demo
+```
+
+Tests that create a real WKWebView need a logged-in GUI session with access to WindowServer.
+
+## Use the library
+
+Create one session, register an application source, and attach a view to a Qt widget:
+
+```cpp
+webview::WebViewPolicyConfig policyConfig;
+policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
+
+webview::WebViewSessionOptions sessionOptions;
+sessionOptions.mode = webview::SessionMode::Ephemeral;
+
+auto session = webview::createWebViewSession(
+    std::move(sessionOptions),
+    webview::createDefaultWebViewPolicy(std::move(policyConfig)));
+
+webview::WebApplicationOptions appOptions;
+appOptions.id = QStringLiteral("dashboard");
+appOptions.source = webview::LocalBundle { QStringLiteral("/path/to/vite/dist") };
+appOptions.bridgeAccess = webview::BridgeAccess::Allowed;
+
+auto application = session->createApplication(std::move(appOptions));
+auto view = session->createWebView(parentWidget);
+view->open(application, QStringLiteral("/orders/42"));
+view->attachNativeView();
+```
+
+`LocalBundle` is intended for packaged web assets such as a Vite `dist` directory. Use `DevelopmentServer` for a local development URL and `RemoteOrigin` for a deployed site. Development HTTP origins must be listed in `trustedDevelopmentOrigins`.
+
+Keep the session alive for as long as any of its applications or views are in use. A `WebViewPtr` also owns the native view lifecycle, so detach and close it before destruction when your host container requires explicit cleanup.
+
+## Install for another CMake project
+
+The repository defaults to an `install/` prefix. You can choose another prefix with the normal CMake option:
 
 ```sh
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release \
-  -DSYSTEM_WEBVIEW_BUILD_SAMPLES=OFF
+  -DSYSTEM_WEBVIEW_BUILD_SAMPLES=OFF \
+  -DCMAKE_INSTALL_PREFIX=/path/to/system-webview
 cmake --build build/release
 cmake --install build/release
 ```
 
-This creates an install tree containing `include/`, `lib/`, and
-`lib/cmake/system_webview/`. A consumer can then use the installed target:
+Consume the installed package like this:
 
 ```cmake
 find_package(system_webview CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE system_webview::system_webview)
 ```
 
-Configure the consumer with `-DCMAKE_PREFIX_PATH=/path/to/system-webview/install`.
+Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the consumer.
 
-The real WKWebView page integration test needs access to macOS WindowServer. In a headless or restricted sandbox, run the core and session suites there and run `webview_macos_view_tests` in a logged-in GUI session.
+## Documentation
 
-## Windows ARM64 and AMD64
+- [Architecture and lifecycle](docs/ARCHITECTURE.md)
+- [Platform behavior matrix](docs/platform-version-and-behavior-matrix.md)
+- [Architecture decisions](docs/adr/README.md)
+- [Design specifications](docs/specs/)
 
-Open a matching VS 2026 developer prompt from PowerShell. Use `-arch=arm64 -host_arch=arm64` for ARM64, or `-arch=amd64 -host_arch=amd64` for AMD64:
-
-```powershell
-cmd.exe /k '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=arm64'
-```
-
-For AMD64, replace the architecture arguments with:
-
-```powershell
-cmd.exe /k '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64'
-```
-
-Configure and build from that prompt:
-
-```bat
-cmake --preset windows-msvc-arm64-debug
-cmake --build --preset windows-msvc-arm64-debug
-cmake --preset windows-msvc-arm64-release
-cmake --build --preset windows-msvc-arm64-release
-
-cmake --preset windows-msvc-amd64-debug
-cmake --build --preset windows-msvc-amd64-debug
-cmake --preset windows-msvc-amd64-release
-cmake --build --preset windows-msvc-amd64-release
-```
-
-Run the application demo from its sample directory (the similarly named
-`webview_windows_runtime_probe.exe` is an automated test and intentionally shows
-an empty host window):
-
-```powershell
-.\build\windows-msvc-amd64-debug\samples\demo\system_webview_demo.exe
-```
-
-The ARM64 presets use the `arm64-windows` triplet and the AMD64 presets use `x64-windows`. Both use the sibling vcpkg checkout for Qt, WebView2, and their dependencies:
-
-```powershell
-vcpkg install qt5-base:arm64-windows webview2:arm64-windows
-vcpkg install qt5-base:x64-windows webview2:x64-windows
-```
-
-vcpkg supplies the WebView2 SDK/Loader and linked Qt dependencies. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; a Runtime matching the target architecture remains an application deployment prerequisite.
-
-`webview_core_tests` and `webview_windows_contract_tests` are compile/integration evidence. `webview_windows_runtime_probe` is GUI Runtime evidence only when it reaches each named scenario in an interactive desktop session and exits successfully. A missing Runtime, missing DLL, controller timeout, or restricted desktop must be reported with the failed scope and manual rerun command, not as E2E success.
-
-The library requires explicit profile ownership:
-
-```cpp
-webview::WebViewPolicyConfig config;
-config.allowedAppHosts.insert(QStringLiteral("dashboard"));
-auto policy = webview::createDefaultWebViewPolicy(std::move(config));
-webview::WebViewSessionOptions options;
-options.mode = webview::SessionMode::Ephemeral;
-auto session = webview::createWebViewSession(std::move(options), std::move(policy));
-webview::WebApplicationOptions app;
-app.id = QStringLiteral("dashboard");
-app.source = webview::LocalBundle { QStringLiteral("/path/to/vite/dist") };
-auto dashboard = session->createApplication(std::move(app));
-auto view = session->createWebView(parent);
-view->attachNativeView();
-view->open(dashboard, QStringLiteral("/orders/42"));
-```
-
-`LocalBundle` is the normal production source for a Vite `dist` directory. During development, use `DevelopmentServer { QUrl("http://127.0.0.1:5173") }`; a deployed site uses `RemoteOrigin`. All three sources use `view->open(application, route)`. The demo retains one session for all tabs and maps the allowlisted `https://example.com/` popup to a `QTabWidget` tab. See [the architecture guide](docs/ARCHITECTURE.md) for lifecycle, bridge, cleanup, platform mappings, and migration semantics.
-
-For a development server, add its exact origin to `WebViewPolicyConfig::trustedDevelopmentOrigins`; HTTP remains denied for every other origin.
+The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

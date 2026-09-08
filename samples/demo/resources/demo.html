@@ -1,29 +1,213 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>System WebView</title>
 <style>
-  html, body { min-height: 100%; margin: 0; }
-  body { box-sizing: border-box; font: 16px -apple-system, sans-serif; padding: 3rem; }
-  button { padding: .6rem 1rem; }
+  :root {
+    color-scheme: light;
+    font-family: Inter, "Segoe UI", "PingFang SC", sans-serif;
+    color: #182230;
+    background: #f4f6f8;
+  }
+  * { box-sizing: border-box; letter-spacing: 0; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  body {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #cfd6dd;
+    border-radius: 10px;
+    background: #f8fafb;
+    box-shadow: inset 0 1px #ffffffb3;
+  }
+  button { font: inherit; }
+  .titlebar {
+    display: flex;
+    flex: 0 0 46px;
+    align-items: stretch;
+    background: #ffffff;
+    border-bottom: 1px solid #dfe3e8;
+    user-select: none;
+  }
+  .drag-region {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+  }
+  .app-mark {
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    border-radius: 6px;
+    background: #1668dc;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .app-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .runtime { color: #697586; font-size: 12px; }
+  .window-controls { display: flex; }
+  .window-control {
+    width: 46px;
+    height: 46px;
+    border: 0;
+    background: transparent;
+    color: #344054;
+    cursor: default;
+    font-size: 17px;
+  }
+  .window-control:hover { background: #eef1f4; }
+  .window-control.close:hover { background: #c42b1c; color: #ffffff; }
+  .shell { display: grid; min-height: 0; flex: 1; grid-template-columns: 190px 1fr; }
+  nav {
+    padding: 18px 12px;
+    background: #eef1f4;
+    border-right: 1px solid #dfe3e8;
+  }
+  .nav-label { margin: 0 10px 10px; color: #697586; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .nav-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #344054;
+    text-align: left;
+  }
+  .nav-item.active { background: #ffffff; color: #1254a1; font-weight: 600; box-shadow: 0 1px 2px #18223014; }
+  .nav-icon { width: 18px; color: #1668dc; text-align: center; }
+  main { min-width: 0; overflow: auto; padding: 34px 38px; background: #f8fafb; }
+  .content { max-width: 880px; margin: 0 auto; }
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  h1 { margin: 0; font-size: 26px; line-height: 1.25; }
+  .subtitle { margin: 7px 0 0; color: #697586; font-size: 14px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 9px;
+    border: 1px solid #b7e2c7;
+    border-radius: 6px;
+    background: #eefbf3;
+    color: #176b3a;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #25a55f; }
+  .panels { display: grid; margin-top: 28px; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel { min-width: 0; padding: 22px; border: 1px solid #dfe3e8; border-radius: 7px; background: #ffffff; }
+  .panel h2 { margin: 0; font-size: 15px; }
+  .panel p { min-height: 42px; margin: 9px 0 20px; color: #697586; font-size: 13px; line-height: 1.6; }
+  .action {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 14px;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #243447;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .action:hover { background: #f4f6f8; }
+  .action.primary { border-color: #1668dc; background: #1668dc; color: #ffffff; }
+  .action.primary:hover { background: #1254a1; }
+  .status-line {
+    display: flex;
+    margin-top: 14px;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-left: 3px solid #e6a700;
+    background: #fff9e8;
+    color: #664d00;
+    font-size: 13px;
+  }
+  @media (max-width: 720px) {
+    .runtime, nav { display: none; }
+    .shell { grid-template-columns: 1fr; }
+    main { padding: 24px 18px; }
+    .panels { grid-template-columns: 1fr; }
+    .window-control { width: 42px; }
+  }
+  body.maximized { border: 0; border-radius: 0; }
 </style>
-<h1>System WebView</h1>
-<p id="status">Ready</p>
-<button id="send">Send JSON to native</button>
-<button id="new-tab">Open a new tab</button>
+<header class="titlebar">
+  <div class="drag-region" id="drag-region">
+    <span class="app-mark">W</span>
+    <span class="app-name">System WebView</span>
+    <span class="runtime">Qt 5 + WebView2</span>
+  </div>
+  <div class="window-controls">
+    <button class="window-control" data-window="minimize" title="最小化" aria-label="最小化">&#8722;</button>
+    <button class="window-control" data-window="maximize" title="最大化或还原" aria-label="最大化或还原">&#9633;</button>
+    <button class="window-control close" data-window="close" title="关闭" aria-label="关闭">&#215;</button>
+  </div>
+</header>
+<div class="shell">
+  <nav aria-label="主导航">
+    <p class="nav-label">Workspace</p>
+    <button class="nav-item active"><span class="nav-icon">&#9673;</span>概览</button>
+    <button class="nav-item"><span class="nav-icon">&#8644;</span>消息桥</button>
+    <button class="nav-item"><span class="nav-icon">&#9881;</span>运行环境</button>
+  </nav>
+  <main>
+    <div class="content">
+      <div class="page-head">
+        <div>
+          <h1>WebView 控制台</h1>
+          <p class="subtitle">System WebView 本地应用会话</p>
+        </div>
+        <span class="badge"><span class="dot"></span>运行正常</span>
+      </div>
+      <section class="panels">
+        <article class="panel">
+          <h2>原生消息</h2>
+          <p>向 Qt 主机发送结构化 JSON 消息，并接收响应。</p>
+          <button class="action primary" id="send"><span>&#8593;</span>发送消息</button>
+        </article>
+        <article class="panel">
+          <h2>新窗口策略</h2>
+          <p>打开受策略允许的外部页面，验证窗口创建流程。</p>
+          <button class="action" id="new-tab"><span>&#8599;</span>打开示例页</button>
+        </article>
+      </section>
+      <div class="status-line"><strong>状态</strong><span id="status">已就绪</span></div>
+    </div>
+  </main>
+</div>
 <script>
+  const post = (type, payload) => window.systemWebView.postMessage({ version: 1, type, payload });
+  document.querySelector('#drag-region').onmousedown = event => {
+    if (event.button === 0) post('window', { action: 'drag' });
+  };
+  document.querySelector('#drag-region').ondblclick = () => post('window', { action: 'maximize' });
+  document.querySelectorAll('[data-window]').forEach(button => {
+    button.onclick = () => post('window', { action: button.dataset.window });
+  });
   document.querySelector('#send').onclick = () => {
-    window.systemWebView.postMessage({
-      version: 1,
-      type: 'hello',
-      payload: { message: 'Hello from WKWebView' }
-    });
+    post('hello', { message: 'Hello from System WebView' });
+    document.querySelector('#status').textContent = '消息已发送';
   };
   document.querySelector('#new-tab').onclick = () => {
     window.open('https://example.com/', '_blank');
   };
   window.addEventListener('system-webview-message', event => {
+    if (event.detail.type === 'window-state') {
+      document.body.classList.toggle('maximized', event.detail.payload.maximized);
+      return;
+    }
     document.querySelector('#status').textContent = event.detail.payload.message;
   });
 </script>
