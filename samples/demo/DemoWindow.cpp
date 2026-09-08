@@ -61,11 +61,14 @@ private:
 
 DemoWindow::DemoWindow()
 {
+    setWindowFlag(Qt::FramelessWindowHint);
     setWindowTitle(QStringLiteral("System WebView Demo"));
     resize(1000, 700);
     tabs_ = new QTabWidget(this);
     tabs_->setDocumentMode(true);
+    tabs_->setTabBarAutoHide(true);
     tabs_->setTabsClosable(true);
+    tabs_->setStyleSheet(QStringLiteral("QTabWidget::pane { border: 0; }"));
     connect(tabs_, &QTabWidget::tabCloseRequested, tabs_, [this](int index) {
         if (tabs_->count() > 1) {
             delete tabs_->widget(index);
@@ -74,15 +77,22 @@ DemoWindow::DemoWindow()
     setCentralWidget(tabs_);
     status_ = new QLabel(QStringLiteral("Waiting for page message"), this);
     statusBar()->addWidget(status_);
+    statusBar()->hide();
 
     webview::WebViewSessionOptions options;
     options.mode = webview::SessionMode::Ephemeral;
     session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
     webview::WebApplicationOptions app;
     app.id = QStringLiteral("demo");
-    app.source = webview::LocalBundle { QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR) };
+    app.source = webview::LocalBundle {
+        QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR), QStringLiteral("demo.html")
+    };
     app.bridgeAccess = webview::BridgeAccess::Allowed;
     const auto application = session_->createApplication(std::move(app));
+    if (!application) {
+        status_->setText(QStringLiteral("Failed to create demo application"));
+        return;
+    }
     auto webView = session_->createWebView();
     webView->open(application);
     addTab(std::move(webView), QStringLiteral("Home"));
@@ -93,6 +103,11 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     auto* tab = new WebViewTab(std::move(webView), tabs_);
     auto* page = tab->webView();
     webview::WebViewHostCallbacks callbacks;
+    callbacks.load = [this](const webview::LoadEvent& event) {
+        if (event.state == webview::LoadState::Failed) {
+            status_->setText(QStringLiteral("Load failed: %1").arg(event.error));
+        }
+    };
     callbacks.message = [this, page](const webview::BridgeMessage& message) {
         status_->setText(QStringLiteral("Page: %1").arg(message.payload.value("message").toString()));
         page->sendMessage({ 1, QStringLiteral("ack"), QJsonObject { { "message", "Native received your message." } } });
@@ -101,6 +116,11 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
     };
     page->setHostCallbacks(std::move(callbacks));
+    page->whenInitialized([this](const webview::InitializationResult& result) {
+        if (result.state == webview::InitializationState::Failed) {
+            status_->setText(QStringLiteral("Initialization failed: %1").arg(result.error));
+        }
+    });
     const int index = tabs_->addTab(tab, title);
     tabs_->setCurrentIndex(index);
     tabs_->widget(index)->layout()->activate();

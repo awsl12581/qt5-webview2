@@ -11,14 +11,14 @@
 The two backends share the same public C++ API, but they do not have identical runtime guarantees.
 
 - macOS is the established backend. Its session and page integration tests are intended to run in a logged-in macOS WindowServer session.
-- Windows is compiled for ARM64 and uses WebView2. Its production code includes the controller, profile, navigation, bridge, resource, popup, and download paths, but GUI E2E was explicitly not run on 2026-08-16. Do not report static checks, builds, or contract tests as successful Windows page E2E.
-- The Windows preset uses vcpkg classic mode. The sibling vcpkg checkout must contain the `qt5-base:arm64-windows` and `webview2:arm64-windows` packages, including the WebView2 SDK and Loader DLL. It does not install the Microsoft Edge WebView2 Evergreen Runtime required on the target device.
+- Windows is compiled for ARM64 or AMD64 and uses WebView2. Its production code includes the controller, profile, navigation, bridge, resource, popup, and download paths, but GUI E2E was explicitly not run on 2026-08-16. Do not report static checks, builds, or contract tests as successful Windows page E2E.
+- The Windows presets use vcpkg classic mode for Qt and WebView2. The sibling vcpkg checkout must contain the matching `qt5-base` and `webview2` packages (`arm64-windows` for ARM64 or `x64-windows` for AMD64). These dependencies do not install the Microsoft Edge WebView2 Evergreen Runtime required on the target device.
 
 ## Version Requirements
 
 | Area | macOS WKWebView | Windows WebView2 | Resulting behavior |
 | --- | --- | --- | --- |
-| Base backend | macOS with WebKit/Cocoa available | Windows ARM64, MSVC, WebView2 SDK/Loader and Evergreen Runtime | Backend selection is compile-time through CMake. |
+| Base backend | macOS with WebKit/Cocoa available | Windows ARM64/AMD64, MSVC, WebView2 SDK/Loader and Evergreen Runtime | Backend selection is compile-time through CMake. |
 | Native-to-page bridge API | macOS 11.0+: `callAsyncJavaScript` | `PostWebMessageAsJson` from the WebView2 Runtime | macOS returns `Unsupported` for outbound bridge delivery below 11.0. Windows requires a functioning controller. |
 | Download destination | macOS 11.3+: `WKDownloadDelegate` destination callback | WebView2 `ICoreWebView2_4` download-starting event and deferral | macOS reports `DownloadTarget` unsupported below 11.3. Windows exposes target selection in code but needs Runtime E2E verification. |
 | Camera and microphone | macOS 12.0+ | WebView2 permission event; policy maps camera/microphone | macOS reports both unsupported below 12.0. Windows reports no capability support for these permissions even though the policy handler exists. |

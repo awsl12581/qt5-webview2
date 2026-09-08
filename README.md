@@ -35,12 +35,18 @@ Configure the consumer with `-DCMAKE_PREFIX_PATH=/path/to/system-webview/install
 
 The real WKWebView page integration test needs access to macOS WindowServer. In a headless or restricted sandbox, run the core and session suites there and run `webview_macos_view_tests` in a logged-in GUI session.
 
-## Windows ARM64
+## Windows ARM64 and AMD64
 
-Open a VS 2026 ARM64 developer prompt from PowerShell:
+Open a matching VS 2026 developer prompt from PowerShell. Use `-arch=arm64 -host_arch=arm64` for ARM64, or `-arch=amd64 -host_arch=amd64` for AMD64:
 
 ```powershell
 cmd.exe /k '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=arm64 -host_arch=arm64'
+```
+
+For AMD64, replace the architecture arguments with:
+
+```powershell
+cmd.exe /k '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64'
 ```
 
 Configure and build from that prompt:
@@ -50,15 +56,29 @@ cmake --preset windows-msvc-arm64-debug
 cmake --build --preset windows-msvc-arm64-debug
 cmake --preset windows-msvc-arm64-release
 cmake --build --preset windows-msvc-arm64-release
+
+cmake --preset windows-msvc-amd64-debug
+cmake --build --preset windows-msvc-amd64-debug
+cmake --preset windows-msvc-amd64-release
+cmake --build --preset windows-msvc-amd64-release
 ```
 
-The Windows presets use the `arm64-windows` triplet and expect a sibling vcpkg checkout with the required packages already installed:
+Run the application demo from its sample directory (the similarly named
+`webview_windows_runtime_probe.exe` is an automated test and intentionally shows
+an empty host window):
+
+```powershell
+.\build\windows-msvc-amd64-debug\samples\demo\system_webview_demo.exe
+```
+
+The ARM64 presets use the `arm64-windows` triplet and the AMD64 presets use `x64-windows`. Both use the sibling vcpkg checkout for Qt, WebView2, and their dependencies:
 
 ```powershell
 vcpkg install qt5-base:arm64-windows webview2:arm64-windows
+vcpkg install qt5-base:x64-windows webview2:x64-windows
 ```
 
-vcpkg supplies the WebView2 SDK/Loader and linked Qt dependencies. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; an ARM64-compatible Runtime remains an application deployment prerequisite.
+vcpkg supplies the WebView2 SDK/Loader and linked Qt dependencies. This does not install the Microsoft Edge WebView2 Evergreen Runtime on the target machine; a Runtime matching the target architecture remains an application deployment prerequisite.
 
 `webview_core_tests` and `webview_windows_contract_tests` are compile/integration evidence. `webview_windows_runtime_probe` is GUI Runtime evidence only when it reaches each named scenario in an interactive desktop session and exits successfully. A missing Runtime, missing DLL, controller timeout, or restricted desktop must be reported with the failed scope and manual rerun command, not as E2E success.
 

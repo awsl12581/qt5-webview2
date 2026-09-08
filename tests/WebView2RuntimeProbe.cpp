@@ -53,6 +53,7 @@ public:
     explicit RuntimeProbe(QApplication& application)
         : application(application)
     {
+        parent.setWindowTitle(QStringLiteral("WebView2 Runtime Probe (not the demo)"));
         parent.resize(640, 480);
         parent.show();
     }
