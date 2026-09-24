@@ -2,6 +2,10 @@
 
 # System WebView
 
+> Last modified: 2026-09-24 04:37 CEST
+> Document version: v2
+> Change: Added the public API reference link and standard document metadata.
+
 A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
 <p>
@@ -135,9 +139,17 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 
 ## Documentation
 
-- [Architecture and lifecycle](docs/ARCHITECTURE.md)
-- [Platform behavior matrix](docs/platform-version-and-behavior-matrix.md)
+- [Public API quick reference](docs/references/api-reference.md)
+- [Architecture and lifecycle](docs/arch/architecture.md)
+- [Platform behavior matrix](docs/references/platform-version-and-behavior-matrix.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Design specifications](docs/specs/)
+
+## Version history
+
+| Version | Date | Change |
+| --- | --- | --- |
+| v1 | Existing document | Initial project README. |
+| v2 | 2026-09-24 04:37 CEST | Added the public API reference link and standard metadata. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

@@ -2,6 +2,10 @@
 
 # System WebView
 
+> 最后修改时间：2026-09-24 04:37 CEST
+> 文档版本：v2
+> 修改说明：增加公开接口速查链接，并补充统一文档元数据。
+
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
 <p>
@@ -135,9 +139,17 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 
 ## 更多文档
 
-- [架构与生命周期](docs/ARCHITECTURE.md)
-- [平台行为矩阵](docs/platform-version-and-behavior-matrix.md)
+- [公开接口速查](docs/references/api-reference.md)
+- [架构与生命周期](docs/arch/architecture.md)
+- [平台行为矩阵](docs/references/platform-version-and-behavior-matrix.md)
 - [架构决策记录](docs/adr/README.md)
 - [设计规格](docs/specs/)
+
+## 版本修改记录
+
+| 版本 | 修改时间 | 修改内容 |
+| --- | --- | --- |
+| v1 | 创建时 | 初始项目说明。 |
+| v2 | 2026-09-24 04:37 CEST | 增加公开接口速查链接，并补充统一文档元数据。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

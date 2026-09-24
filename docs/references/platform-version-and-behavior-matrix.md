@@ -1,5 +1,9 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
+> Last modified: 2026-09-24 04:37 CEST
+> Document version: v2
+> Change: Added standard metadata and a version history without changing the recorded platform evidence.
+
 > Snapshot date: 2026-08-16
 >
 > Source revision: `7259eee` (`test(windows): record non-UI regression evidence`)
@@ -101,8 +105,16 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 ## Relevant Sources
 
 - `README.md` for Windows build prerequisites and deployment boundary.
-- `docs/ARCHITECTURE.md` for session, bridge, lifecycle, and platform mapping semantics.
+- `docs/arch/architecture.md` for session, bridge, lifecycle, and platform mapping semantics.
 - `src/platform/macos/WkWebView.mm` and `src/platform/macos/WkWebViewSession.mm` for macOS availability checks and behavior.
 - `src/platform/windows/WebView2View.cpp` and `src/platform/windows/WebView2Session.cpp` for Windows runtime behavior.
 - `tests/WkSessionTests.mm`, `tests/WkViewTests.mm`, `tests/WebView2ContractTests.cpp`, and `tests/WebView2RuntimeProbe.cpp` for current verification coverage.
 - `issues/2026-08-16_13-33-03-windows-webview2-followups/2026-08-16_13-33-03-windows-webview2-followups.csv` for dated Windows evidence and the explicit UI-E2E scope decision.
+
+## Version history
+
+| Version | Date | Change |
+| --- | --- | --- |
+| v1 | Existing document | Initial platform version and behavior matrix. |
+| v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
+

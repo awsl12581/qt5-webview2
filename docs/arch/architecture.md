@@ -1,5 +1,9 @@
 # System WebView Architecture
 
+> Last modified: 2026-09-24 04:37 CEST
+> Document version: v2
+> Change: Added standard metadata and a version history while preserving the architecture description.
+
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
 The public headers under `src/webview` expose Qt value types and C++ interfaces only. Native WebKit, WebView2, and WebKitGTK types stay below `src/platform`.
@@ -87,3 +91,11 @@ Views in one macOS session share its website data store and assigned `WKProcessP
 The session API is a source-breaking replacement. Remove calls to old session factory names, former standalone view factories, page-level bridge or popup setters, and concrete `WkWebView` casts. There are no forwarding overloads or deprecation shims. Migration consists of constructing `WebViewSessionOptions`, retaining one session per login/profile boundary, creating views from it, inserting each widget into its final host layout, attaching the view, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view.
 
 `navigate(QUrl)` remains available for ordinary browser navigation. `loadDocument` remains available only when its base URL passes navigation policy; it is not an application deployment API and follows the same committed-origin bridge checks as network navigation.
+
+## Version history
+
+| Version | Date | Change |
+| --- | --- | --- |
+| v1 | Existing document | Initial architecture description. |
+| v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
+
