@@ -3,6 +3,7 @@
 
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "internal/HttpStatus.h"
 #include "internal/ResourceMapping.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
@@ -410,7 +411,7 @@ public:
                                 const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
                                 CoTaskMemFree(rawUri);
                                 QString mime = QStringLiteral("text/html");
-                                int status = 200;
+                                int status = httpStatus::kOk;
                                 qint64 totalSize = 0;
                                 qint64 offset = 0;
                                 qint64 length = 0;
@@ -429,8 +430,12 @@ public:
                                     const std::wstring headers =
                                         L"Content-Type: text/html\r\nContent-Length: " + std::to_wstring(bytes.size()) + L"\r\n";
                                     Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
-                                    if (SUCCEEDED(
-                                            environment->CreateWebResourceResponse(stream.Get(), 200, L"OK", headers.c_str(), &response))
+                                    if (SUCCEEDED(environment->CreateWebResourceResponse(
+                                            stream.Get(),
+                                            httpStatus::kOk,
+                                            L"OK",
+                                            headers.c_str(),
+                                            &response))
                                         && response) {
                                         args->put_Response(response.Get());
                                     }
@@ -489,14 +494,14 @@ public:
                                     }
                                     std::wstring errorHeaders =
                                         L"Content-Length: 0\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
-                                    if (status == 416) {
+                                    if (status == httpStatus::kRangeNotSatisfiable) {
                                         errorHeaders += L"Content-Range: bytes */" + std::to_wstring(totalSize) + L"\r\n";
                                     }
-                                    const wchar_t* errorStatus = status == 403   ? L"Forbidden"
-                                                                 : status == 404 ? L"Not Found"
-                                                                 : status == 410 ? L"Gone"
-                                                                 : status == 416 ? L"Range Not Satisfiable"
-                                                                                 : L"Read Error";
+                                    const wchar_t* errorStatus = status == httpStatus::kForbidden             ? L"Forbidden"
+                                                                 : status == httpStatus::kNotFound            ? L"Not Found"
+                                                                 : status == httpStatus::kGone                ? L"Gone"
+                                                                 : status == httpStatus::kRangeNotSatisfiable ? L"Range Not Satisfiable"
+                                                                                                              : L"Read Error";
                                     Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> errorResponse;
                                     if (SUCCEEDED(environment->CreateWebResourceResponse(
                                             empty.Get(),
@@ -525,17 +530,17 @@ public:
                                         headerText += L"Content-Security-Policy: " + policy.toStdWString() + L"\r\n";
                                     }
                                 }
-                                if (status == 206) {
+                                if (status == httpStatus::kPartialContent) {
                                     headerText += L"Content-Range: bytes " + std::to_wstring(offset) + L"-"
                                                   + std::to_wstring(offset + length - 1) + L"/" + std::to_wstring(totalSize) + L"\r\n";
                                 }
-                                const wchar_t* statusText = status == 206   ? L"Partial Content"
-                                                            : status == 403 ? L"Forbidden"
-                                                            : status == 404 ? L"Not Found"
-                                                            : status == 410 ? L"Gone"
-                                                            : status == 416 ? L"Range Not Satisfiable"
-                                                            : status >= 500 ? L"Read Error"
-                                                                            : L"OK";
+                                const wchar_t* statusText = status == httpStatus::kPartialContent        ? L"Partial Content"
+                                                            : status == httpStatus::kForbidden           ? L"Forbidden"
+                                                            : status == httpStatus::kNotFound            ? L"Not Found"
+                                                            : status == httpStatus::kGone                ? L"Gone"
+                                                            : status == httpStatus::kRangeNotSatisfiable ? L"Range Not Satisfiable"
+                                                            : status >= httpStatus::kInternalServerError ? L"Read Error"
+                                                                                                         : L"OK";
                                 Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
                                 if (SUCCEEDED(
                                         environment

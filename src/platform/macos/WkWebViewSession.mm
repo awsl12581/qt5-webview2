@@ -5,6 +5,7 @@
 
 #include "internal/Application.h"
 #include "internal/Diagnostics.h"
+#include "internal/HttpStatus.h"
 #include "internal/ResourceMapping.h"
 
 #include <QFile>
@@ -59,7 +60,7 @@
 
     QString path;
     QString mimeType;
-    int status = published ? resource.status : 200;
+    int status = published ? resource.status : webview::httpStatus::kOk;
     qint64 totalSize = resource.totalSize;
     qint64 offset = resource.offset;
     qint64 length = resource.length;
@@ -101,11 +102,11 @@
             const auto first = match.captured(1);
             const auto last = match.captured(2);
             if (!match.hasMatch() || (first.isEmpty() && last.isEmpty()))
-                status = 416;
+                status = webview::httpStatus::kRangeNotSatisfiable;
             else if (first.isEmpty()) {
                 const auto suffix = last.toLongLong(&lastOk);
                 if (!lastOk || suffix <= 0)
-                    status = 416;
+                    status = webview::httpStatus::kRangeNotSatisfiable;
                 else {
                     offset = qMax<qint64>(0, totalSize - suffix);
                     length = totalSize - offset;
@@ -115,16 +116,16 @@
                 offset = first.toLongLong(&firstOk);
                 const auto end = last.isEmpty() ? totalSize - 1 : last.toLongLong(&lastOk);
                 if (!firstOk || (!last.isEmpty() && !lastOk) || offset > end || end >= totalSize)
-                    status = 416;
+                    status = webview::httpStatus::kRangeNotSatisfiable;
                 else
                     length = end - offset + 1;
             }
-            if (status != 416)
-                status = 206;
+            if (status != webview::httpStatus::kRangeNotSatisfiable)
+                status = webview::httpStatus::kPartialContent;
         }
     }
 
-    if (!published && status != 416) {
+    if (!published && status != webview::httpStatus::kRangeNotSatisfiable) {
         auto file = std::make_unique<QFile>(path);
         if (!file->open(QIODevice::ReadOnly) || !file->seek(offset)) {
             [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
@@ -134,7 +135,8 @@
     }
     NSMutableDictionary* headers = [NSMutableDictionary dictionaryWithDictionary:@{
         @"Content-Type" : [NSString stringWithUTF8String:mimeType.toUtf8().constData()],
-        @"Content-Length" : [NSString stringWithFormat:@"%lld", static_cast<long long>(status == 416 ? 0 : length)],
+        @"Content-Length" :
+            [NSString stringWithFormat:@"%lld", static_cast<long long>(status == webview::httpStatus::kRangeNotSatisfiable ? 0 : length)],
         @"Cache-Control" : @"no-store",
         @"Content-Disposition" : @"inline",
         @"Accept-Ranges" : acceptRanges ? @"bytes" : @"none"
@@ -145,11 +147,11 @@
             headers[@"Content-Security-Policy"] = [NSString stringWithUTF8String:policy.toUtf8().constData()];
         }
     }
-    if (status == 206) {
+    if (status == webview::httpStatus::kPartialContent) {
         headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset),
             static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
     }
-    else if (status == 416) {
+    else if (status == webview::httpStatus::kRangeNotSatisfiable) {
         headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
     }
     auto* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL
@@ -157,7 +159,7 @@
                                                 HTTPVersion:@"HTTP/1.1"
                                                headerFields:headers];
     [task didReceiveResponse:response];
-    if (status == 200 || status == 206) {
+    if (status == webview::httpStatus::kOk || status == webview::httpStatus::kPartialContent) {
         auto* device = qobject_cast<QFile*>(body.get());
         QByteArray buffer(256 * 1024, Qt::Uninitialized);
         qint64 remaining = length;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <system_webview/system_webview.h>
+#include <QtGlobal>
 
 #include <atomic>
 

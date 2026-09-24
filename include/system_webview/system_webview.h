@@ -40,7 +40,6 @@
 #define SYSTEM_WEBVIEW_API
 #endif
 
-#include <QByteArray>
 #include <QHash>
 #include <QIODevice>
 #include <QJsonObject>
@@ -49,13 +48,12 @@
 #include <QString>
 #include <QStringList>
 #include <QUrl>
-#include <QVector>
 
 #include <functional>
 #include <memory>
-#include <utility>
 #include <variant>
 
+class QByteArray;
 class QWidget;
 
 namespace webview

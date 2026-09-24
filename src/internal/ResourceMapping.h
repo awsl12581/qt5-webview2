@@ -2,6 +2,8 @@
 
 #include <system_webview/system_webview.h>
 
+#include <QVector>
+
 namespace webview
 {
 struct ResourceMapping
