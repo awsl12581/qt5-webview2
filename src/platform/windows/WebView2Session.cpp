@@ -218,7 +218,8 @@ WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions optio
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
         QVector<ResourceMapping> candidate = *impl_->resourceMappings;
-        candidate.push_back({ application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback });
+        candidate.push_back(
+            { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback, bundle->externalNetworkAccess });
         if (!validateResourceMappings(&candidate, &error)
             || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty()) {
             return { };

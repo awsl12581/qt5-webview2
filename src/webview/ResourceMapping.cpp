@@ -113,4 +113,16 @@ QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, Q
         return { };
     }
 }
+
+QString localBundleContentSecurityPolicy(ExternalNetworkAccess access)
+{
+    if (access == ExternalNetworkAccess::Allowed) {
+        return { };
+    }
+    return QStringLiteral(
+        "default-src 'self' data: blob:; connect-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; "
+        "style-src 'self' 'unsafe-inline'; object-src 'none'; "
+        "base-uri 'self'; form-action 'self'");
+}
 } // namespace webview

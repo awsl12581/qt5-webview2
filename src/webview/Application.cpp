@@ -38,6 +38,13 @@ WebApplicationPtr createApplication(WebApplicationOptions options, QString* erro
             }
             return { };
         }
+        if (bundle->externalNetworkAccess != ExternalNetworkAccess::Denied
+            && bundle->externalNetworkAccess != ExternalNetworkAccess::Allowed) {
+            if (error) {
+                *error = QStringLiteral("LocalBundle external network access is invalid.");
+            }
+            return { };
+        }
     }
     else {
         const bool developmentServer = std::holds_alternative<DevelopmentServer>(options.source);

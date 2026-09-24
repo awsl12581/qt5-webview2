@@ -384,6 +384,7 @@ public:
                                 qint64 length = 0;
                                 std::shared_ptr<void> lease;
                                 QString filePath;
+                                const ResourceMapping* mapping = nullptr;
                                 const auto inlineDocument = inlineDocuments->constFind(url.toString(QUrl::FullyEncoded));
                                 if (inlineDocument != inlineDocuments->cend()) {
                                     const auto& bytes = inlineDocument.value();
@@ -428,7 +429,7 @@ public:
                                     resourceResponse.body.reset();
                                 }
                                 else {
-                                    const auto* mapping = findResourceMapping(*mappings, url);
+                                    mapping = findResourceMapping(*mappings, url);
                                     QString error;
                                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT context { };
                                     args->get_ResourceContext(&context);
@@ -486,6 +487,12 @@ public:
                                 std::wstring headerText =
                                     L"Content-Type: " + mime.toStdWString() + L"\r\nContent-Length: " + std::to_wstring(length)
                                     + L"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
+                                if (mapping && mime == QStringLiteral("text/html")) {
+                                    const auto policy = localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
+                                    if (!policy.isEmpty()) {
+                                        headerText += L"Content-Security-Policy: " + policy.toStdWString() + L"\r\n";
+                                    }
+                                }
                                 if (status == 206) {
                                     headerText += L"Content-Range: bytes " + std::to_wstring(offset) + L"-"
                                                   + std::to_wstring(offset + length - 1) + L"/" + std::to_wstring(totalSize) + L"\r\n";

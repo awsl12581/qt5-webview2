@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-09-24 17:57 CST
-> 文档版本：v7
-> 修改说明：同步头文件中的使用说明，并简化能力查询和回调注册命名。
+> 最后修改时间：2026-09-24 18:17 CST
+> 文档版本：v9
+> 修改说明：增加本地页面的外部网络访问控制，并说明默认拒绝行为。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -13,6 +13,7 @@
 该头文件包含 `IWebViewSession`、`IWebView`、`WebViewPolicy`、配置结构、事件和枚举。项目构建动态库；
 `SYSTEM_WEBVIEW_API` 在 Windows 上切换 `dllexport` 和 `dllimport`，在支持符号可见性的其他工具链上导出标注的 API。
 `WebViewBridge`、`WebResourceManager` 和 `WebViewPolicy` 使用 PImpl 保存库内状态，公开对象布局不包含这些实现字段。
+所有公开枚举均为 `enum class ... : int`，头文件在每个枚举项旁说明其语义。
 
 `src/` 下的头文件属于库内部实现，不安装给使用方。
 
@@ -43,7 +44,7 @@ WebViewSessionPtr createWebViewSession(
 相关配置：
 
 ```cpp
-enum class SessionMode { Persistent, Ephemeral };
+enum class SessionMode : int { Persistent, Ephemeral };
 
 struct WebViewSessionOptions {
     SessionMode mode = SessionMode::Ephemeral;
@@ -89,12 +90,14 @@ struct WebsiteDataResult {
 ## 页面来源
 
 ```cpp
-enum class BridgeAccess { Denied, Allowed };
+enum class BridgeAccess : int { Denied, Allowed };
+enum class ExternalNetworkAccess : int { Denied, Allowed };
 
 struct LocalBundle {
     QString directory;
     QString entryDocument = QStringLiteral("index.html");
     bool spaFallback = true;
+    ExternalNetworkAccess externalNetworkAccess = ExternalNetworkAccess::Denied;
 };
 
 struct DevelopmentServer { QUrl url; };
@@ -116,6 +119,10 @@ struct WebApplicationOptions {
 | `RemoteOrigin` | 已部署的 HTTPS 页面 | 使用桥接时必须加入 `trustedHttpsOrigins` |
 
 只有 `bridgeAccess == Allowed` 且当前来源受策略信任时，页面桥接才可用。
+
+`LocalBundle` 默认使用 `ExternalNetworkAccess::Denied`。后端会在本地 HTML 响应中加入内容安全策略，阻止页面向外部来源发起 `fetch`、XHR、WebSocket、子资源加载和表单提交。同一 `app://` 来源可以正常使用；策略还为需要内嵌数据的资源类型保留了 `data:` 或 `blob:`。确实需要访问外部网络时，应显式设置 `ExternalNetworkAccess::Allowed`。
+
+这个选项不决定顶层导航。链接跳转、重定向和新窗口仍由 `WebViewPolicy` 处理。`DevelopmentServer` 和 `RemoteOrigin` 的响应头由对应服务器管理，不受此选项影响。
 
 ## IWebView
 
@@ -158,14 +165,14 @@ public:
 ## 初始化与加载状态
 
 ```cpp
-enum class InitializationState { Initializing, Ready, Failed, Closed };
+enum class InitializationState : int { Initializing, Ready, Failed, Closed };
 
 struct InitializationResult {
     InitializationState state = InitializationState::Ready;
     QString error;
 };
 
-enum class LoadState { Started, Redirected, Committed, Finished, Failed };
+enum class LoadState : int { Started, Redirected, Committed, Finished, Failed };
 
 struct LoadEvent {
     LoadState state = LoadState::Started;
@@ -205,7 +212,7 @@ struct FileSelectionRequest {
     bool allowsDirectories = false;
 };
 
-enum class FileSelectionStatus { Selected, Cancelled, Closed, InvalidResult };
+enum class FileSelectionStatus : int { Selected, Cancelled, Closed, InvalidResult };
 
 struct FileSelectionResult {
     FileSelectionStatus status = FileSelectionStatus::Cancelled;
@@ -226,14 +233,14 @@ struct DownloadRequest {
     QString suggestedFileName;
 };
 
-enum class DownloadHandling { Cancel, BrowserDefault, TargetPath };
+enum class DownloadHandling : int { Cancel, BrowserDefault, TargetPath };
 
 struct DownloadTarget {
     DownloadHandling handling = DownloadHandling::Cancel;
     QString filePath;
 };
 
-enum class DownloadResolutionStatus { Resolved, Cancelled, Closed, InvalidResult };
+enum class DownloadResolutionStatus : int { Resolved, Cancelled, Closed, InvalidResult };
 
 struct DownloadResolution {
     DownloadResolutionStatus status = DownloadResolutionStatus::Cancelled;
@@ -249,7 +256,7 @@ using DownloadCompletion = std::function<void(DownloadResolution)>;
 页面和 C++ 通过 `WebViewBridge` 收发结构化消息：
 
 ```cpp
-enum class BridgeMessageKind { Event, Request, Response };
+enum class BridgeMessageKind : int { Event, Request, Response };
 
 struct BridgeMessage {
     int version = 1;
@@ -388,12 +395,12 @@ WebViewPolicyPtr createDefaultWebViewPolicy(WebViewPolicyConfig config = {});
 相关决策类型：
 
 ```cpp
-enum class NavigationDecision { Allow, Cancel, OpenExternally };
-enum class NewWindowDecision { Allow, Cancel };
-enum class PermissionDecision { Allow, Deny, Unsupported };
-enum class DownloadDecision { Allow, Cancel };
+enum class NavigationDecision : int { Allow, Cancel, OpenExternally };
+enum class NewWindowDecision : int { Allow, Cancel };
+enum class PermissionDecision : int { Allow, Deny, Unsupported };
+enum class DownloadDecision : int { Allow, Cancel };
 
-enum class PermissionKind {
+enum class PermissionKind : int {
     Camera, Microphone, Location, Notifications, Clipboard, FilePicker
 };
 
@@ -418,7 +425,7 @@ struct PermissionRequest {
 ## 能力查询
 
 ```cpp
-enum class WebViewCapability {
+enum class WebViewCapability : int {
     PersistentProfile,
     PrivateProfile,
     FileSelection,
@@ -501,3 +508,5 @@ int main(int argc, char* argv[])
 | v5 | 2026-09-24 12:56 CST | 补充资源释放消息、活动读取的容量核算及删除失败重试。 |
 | v6 | 2026-09-24 17:29 CST | 统一公开头文件路径，并说明动态库导出和 PImpl 边界。 |
 | v7 | 2026-09-24 17:57 CST | 同步头文件中的使用说明，并简化能力查询和回调注册命名。 |
+| v8 | 2026-09-24 18:05 CST | 说明公开枚举的固定底层类型，并同步枚举声明。 |
+| v9 | 2026-09-24 18:17 CST | 增加本地页面的外部网络访问控制，并说明默认拒绝行为。 |

@@ -65,6 +65,7 @@
     bool acceptRanges = resource.acceptRanges;
     std::shared_ptr<void> lease = std::move(resource.lease);
     std::unique_ptr<QIODevice> body = std::move(resource.body);
+    const webview::ResourceMapping* mapping = nullptr;
     if (published) {
         mimeType = resource.mimeType;
         if (auto* file = qobject_cast<QFile*>(body.get()))
@@ -72,7 +73,7 @@
         body.reset();
     }
     else {
-        const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
+        mapping = webview::findResourceMapping(state->resourceMappings, url);
         QString errorText;
         const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
         const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
@@ -130,23 +131,25 @@
         }
         body = std::move(file);
     }
-    NSDictionary* headers = @{
+    NSMutableDictionary* headers = [NSMutableDictionary dictionaryWithDictionary:@{
         @"Content-Type" : [NSString stringWithUTF8String:mimeType.toUtf8().constData()],
         @"Content-Length" : [NSString stringWithFormat:@"%lld", static_cast<long long>(status == 416 ? 0 : length)],
         @"Cache-Control" : @"no-store",
         @"Content-Disposition" : @"inline",
         @"Accept-Ranges" : acceptRanges ? @"bytes" : @"none"
-    };
+    }];
+    if (mapping && mimeType == QStringLiteral("text/html")) {
+        const auto policy = webview::localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
+        if (!policy.isEmpty()) {
+            headers[@"Content-Security-Policy"] = [NSString stringWithUTF8String:policy.toUtf8().constData()];
+        }
+    }
     if (status == 206) {
-        NSMutableDictionary* rangeHeaders = [headers mutableCopy];
-        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset),
+        headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset),
             static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
-        headers = rangeHeaders;
     }
     else if (status == 416) {
-        NSMutableDictionary* rangeHeaders = [headers mutableCopy];
-        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
-        headers = rangeHeaders;
+        headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
     }
     auto* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL
                                                  statusCode:status
@@ -242,7 +245,8 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
     if (!application || impl_->applicationIds.contains(application->id()))
         return { };
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
-        ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback };
+        ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback,
+            bundle->externalNetworkAccess };
         QVector<ResourceMapping> candidate = impl_->state->resourceMappings;
         candidate.push_back(std::move(mapping));
         if (!validateResourceMappings(&candidate, &error)

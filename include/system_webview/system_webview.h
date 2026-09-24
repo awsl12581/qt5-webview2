@@ -67,21 +67,21 @@ class WebApplication;
 /// Immutable application source registered with a session.
 using WebApplicationPtr = std::shared_ptr<const WebApplication>;
 
-enum class LoadState
+enum class LoadState : int
 {
-    Started,
-    Redirected,
-    Committed,
-    Finished,
-    Failed
+    Started,    ///< The main-frame navigation has started.
+    Redirected, ///< The navigation received a server-side redirect.
+    Committed,  ///< The destination document has begun loading into the view.
+    Finished,   ///< The destination document finished loading successfully.
+    Failed      ///< The navigation stopped with LoadEvent::error set.
 };
 
-enum class InitializationState
+enum class InitializationState : int
 {
-    Initializing,
-    Ready,
-    Failed,
-    Closed
+    Initializing, ///< Native browser state is still being created.
+    Ready,        ///< The session or view can accept operations.
+    Failed,       ///< Initialization ended permanently; see InitializationResult::error.
+    Closed        ///< The session or view has been shut down.
 };
 
 struct InitializationResult
@@ -99,11 +99,11 @@ struct LoadEvent
     bool isMainFrame = true;
 };
 
-enum class NavigationDecision
+enum class NavigationDecision : int
 {
-    Allow,
-    Cancel,
-    OpenExternally
+    Allow,         ///< Continue navigation in the current view.
+    Cancel,        ///< Cancel navigation without handing the URL to the host.
+    OpenExternally ///< Cancel in-view navigation and invoke onOpenExternal.
 };
 
 struct NavigationRequest
@@ -120,60 +120,66 @@ struct NewWindowRequest
     bool isUserInitiated = false;
 };
 
-enum class NewWindowDecision
+enum class NewWindowDecision : int
 {
-    Allow,
-    Cancel
+    Allow, ///< Create a child view and transfer it through onNewWindow.
+    Cancel ///< Suppress the requested popup.
 };
 
-enum class PermissionDecision
+enum class PermissionDecision : int
 {
-    Allow,
-    Deny,
-    Unsupported
+    Allow,      ///< Grant the requested browser permission.
+    Deny,       ///< Deny a permission supported by the backend.
+    Unsupported ///< The portable backend cannot represent this permission.
 };
 
-enum class PermissionKind
+enum class PermissionKind : int
 {
-    Camera,
-    Microphone,
-    Location,
-    Notifications,
-    Clipboard,
-    FilePicker
+    Camera,        ///< Video-capture device access.
+    Microphone,    ///< Audio-capture device access.
+    Location,      ///< Geolocation access.
+    Notifications, ///< System notification access.
+    Clipboard,     ///< Page clipboard access beyond ordinary editing operations.
+    FilePicker     ///< Host-mediated local file or directory selection.
 };
 
-enum class DownloadDecision
+enum class DownloadDecision : int
 {
-    Allow,
-    Cancel
+    Allow, ///< Ask onResolveDownload how the download should be handled.
+    Cancel ///< Cancel the download before consulting the host.
 };
 
-/// Optional platform features that can be queried with IWebViewSession::supports().
-enum class WebViewCapability
+/// Optional platform features queried with IWebViewSession::supports().
+enum class WebViewCapability : int
 {
-    PersistentProfile,
-    PrivateProfile,
-    FileSelection,
-    DownloadDefault,
-    DownloadTarget,
-    Camera,
-    Microphone,
-    Location,
-    Notifications,
-    Clipboard
+    PersistentProfile, ///< Website data can persist across session instances.
+    PrivateProfile,    ///< Website data can be isolated in a non-persistent profile.
+    FileSelection,     ///< File-picker requests can be delegated to the host.
+    DownloadDefault,   ///< Downloads can use the browser's default destination.
+    DownloadTarget,    ///< The host can provide an explicit download path.
+    Camera,            ///< Camera permission requests can be represented.
+    Microphone,        ///< Microphone permission requests can be represented.
+    Location,          ///< Geolocation permission requests can be represented.
+    Notifications,     ///< Notification permission requests can be represented.
+    Clipboard          ///< Clipboard permission requests can be represented.
 };
 
-enum class SessionMode
+enum class SessionMode : int
 {
-    Persistent,
-    Ephemeral
+    Persistent, ///< Reuse persistent website data managed by the backend.
+    Ephemeral   ///< Keep website data in a non-persistent private session.
 };
 
-enum class BridgeAccess
+enum class BridgeAccess : int
 {
-    Denied,
-    Allowed
+    Denied, ///< Do not expose the native bridge to this application.
+    Allowed ///< Expose the bridge only while policy also trusts the origin.
+};
+
+enum class ExternalNetworkAccess : int
+{
+    Denied, ///< Add a host policy that restricts external connections and resources.
+    Allowed ///< Do not add the host-provided external network restriction.
 };
 
 struct LocalBundle
@@ -184,6 +190,8 @@ struct LocalBundle
     QString entryDocument = QStringLiteral("index.html");
     /// Fall back to entryDocument for routes without a matching file.
     bool spaFallback = true;
+    /// Controls external subresources, fetch, XHR, WebSocket, and form targets.
+    ExternalNetworkAccess externalNetworkAccess = ExternalNetworkAccess::Denied;
 };
 
 struct DevelopmentServer
@@ -236,12 +244,12 @@ struct FileSelectionRequest
     bool allowsDirectories = false;
 };
 
-enum class FileSelectionStatus
+enum class FileSelectionStatus : int
 {
-    Selected,
-    Cancelled,
-    Closed,
-    InvalidResult
+    Selected,     ///< paths contains the host-approved selection.
+    Cancelled,    ///< The user or host cancelled selection.
+    Closed,       ///< The view closed before selection completed.
+    InvalidResult ///< The host returned paths that failed validation.
 };
 
 struct FileSelectionResult
@@ -253,11 +261,11 @@ struct FileSelectionResult
 
 using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
 
-enum class DownloadHandling
+enum class DownloadHandling : int
 {
-    Cancel,
-    BrowserDefault,
-    TargetPath
+    Cancel,         ///< Cancel the download.
+    BrowserDefault, ///< Let the browser choose its default destination.
+    TargetPath      ///< Save to DownloadTarget::filePath.
 };
 
 struct DownloadTarget
@@ -266,12 +274,12 @@ struct DownloadTarget
     QString filePath;
 };
 
-enum class DownloadResolutionStatus
+enum class DownloadResolutionStatus : int
 {
-    Resolved,
-    Cancelled,
-    Closed,
-    InvalidResult
+    Resolved,     ///< target contains the host's chosen handling.
+    Cancelled,    ///< The user or host cancelled the download.
+    Closed,       ///< The view closed before the host resolved the download.
+    InvalidResult ///< The host returned an unusable target.
 };
 
 struct DownloadResolution
@@ -303,11 +311,11 @@ struct WebViewHostCallbacks
     std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
 };
 
-enum class BridgeMessageKind
+enum class BridgeMessageKind : int
 {
-    Event,
-    Request,
-    Response
+    Event,   ///< Fire-and-forget notification; requestId and error are empty.
+    Request, ///< Request expecting one response with the same requestId.
+    Response ///< Success payload or error for an earlier request.
 };
 
 struct BridgeMessage

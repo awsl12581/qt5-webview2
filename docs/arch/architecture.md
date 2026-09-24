@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> Last modified: 2026-09-24 17:57 CST
-> Document version: v7
-> Change: Updated capability queries and host callback names to match the public API.
+> Last modified: 2026-09-24 18:17 CST
+> Document version: v9
+> Change: Documented host-enforced external network isolation for local bundles.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -11,6 +11,7 @@ WebView2, or WebKitGTK types. The CMake target is a shared library with hidden s
 implemented public classes and factory functions; on Windows it selects `dllexport` while building and `dllimport` for consumers.
 Public classes with library-owned state use PImpl, so changes to bridge, resource-manager, and policy internals do not change their public
 object layout. Pure interfaces and value types remain direct declarations.
+Public scoped enums explicitly use `int` as their underlying type, keeping their representation stable across the shared-library boundary.
 
 ## Ownership model
 
@@ -59,6 +60,8 @@ The default policy permits HTTPS navigation. `app://` hosts, `file://` roots, an
 `IWebViewSession::supports` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, explicit download destinations require macOS 11.3, and file selection is host-owned. Browser-default downloads, location, notifications, and clipboard are unsupported rather than being silently granted.
 
 File selection and download destinations are host decisions. The backend requests a result through `onSelectFiles` or `onResolveDownload`; it does not create a system dialog or choose a local directory. Popup ownership is also the result: the backend transfers a child `WebViewPtr` by value, and the host accepts by retaining it in a tab or window before the callback returns. Applications are created by a session and opened by a view. `LocalBundle` serves a Vite `dist` directory through a private native resource path; the `app://` origin, directory lookup, MIME handling, and traversal checks are backend details.
+
+Local bundles default to `ExternalNetworkAccess::Denied`. The native resource handler adds a response-level Content Security Policy to local HTML. Connections and form targets are limited to the bundle origin; subresource directives retain `data:` or `blob:` only where local applications need them. Applications must explicitly choose `Allowed` to remove this host-provided policy. Top-level navigation remains a separate `WebViewPolicy` decision. Development and remote pages own their server response headers and do not use this local-bundle setting.
 
 Bridge authority belongs to the current committed main-frame document. The application must explicitly request bridge access and its origin must also be trusted by policy. Untrusted pages, pre-commit documents, cross-origin navigations, and an origin different from the committed page are rejected.
 
@@ -112,3 +115,5 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v5 | 2026-09-24 12:56 CST | Documented the shared page script, built-in resource control, snapshot accounting, and deletion retry. |
 | v6 | 2026-09-24 17:29 CST | Documented the single public header, explicit shared-library exports, and PImpl ABI boundaries. |
 | v7 | 2026-09-24 17:57 CST | Updated capability queries and host callback names to match the public API. |
+| v8 | 2026-09-24 18:05 CST | Fixed the public enum underlying type and documented every enum value. |
+| v9 | 2026-09-24 18:17 CST | Documented host-enforced external network isolation for local bundles. |

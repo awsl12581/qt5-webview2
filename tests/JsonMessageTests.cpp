@@ -396,6 +396,11 @@ int main()
         webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/orders/42")), &mappingError, true)
         == QFileInfo(indexFile.fileName()).canonicalFilePath());
     assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.js")), &mappingError, true).isEmpty());
+    const auto deniedNetworkPolicy = webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Denied);
+    assert(deniedNetworkPolicy.contains(QStringLiteral("default-src 'self'")));
+    assert(deniedNetworkPolicy.contains(QStringLiteral("connect-src 'self'")));
+    assert(deniedNetworkPolicy.contains(QStringLiteral("form-action 'self'")));
+    assert(webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Allowed).isEmpty());
     QTemporaryDir outsideRoot;
     assert(outsideRoot.isValid());
     const auto outsideFile = outsideRoot.filePath(QStringLiteral("secret.txt"));
@@ -419,7 +424,13 @@ int main()
     bundleOptions.source = webview::LocalBundle { selectedRoot.path() };
     const auto bundleApplication = webview::createApplication(std::move(bundleOptions), &mappingError);
     assert(bundleApplication);
+    assert(std::get<webview::LocalBundle>(bundleApplication->source()).externalNetworkAccess == webview::ExternalNetworkAccess::Denied);
     assert(bundleApplication->urlForRoute(QStringLiteral("orders/42")) == QUrl(QStringLiteral("app://demo-app/orders/42")));
+    webview::WebApplicationOptions invalidNetworkAccess;
+    invalidNetworkAccess.id = QStringLiteral("invalid-network-access");
+    invalidNetworkAccess.source =
+        webview::LocalBundle { selectedRoot.path(), QStringLiteral("index.html"), true, static_cast<webview::ExternalNetworkAccess>(-1) };
+    assert(!webview::createApplication(std::move(invalidNetworkAccess), &mappingError));
     webview::WebApplicationOptions devOptions;
     devOptions.id = QStringLiteral("demo-dev");
     devOptions.source = webview::DevelopmentServer { QUrl(QStringLiteral("http://127.0.0.1:5173")) };
