@@ -1,12 +1,16 @@
 # System WebView Architecture
 
-> Last modified: 2026-09-24 12:56 CST
-> Document version: v5
-> Change: Documented the shared page script and resource release accounting.
+> Last modified: 2026-09-24 17:57 CST
+> Document version: v7
+> Change: Updated capability queries and host callback names to match the public API.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
-The public headers under `src/webview` expose Qt value types and C++ interfaces only. Native WebKit, WebView2, and WebKitGTK types stay below `src/platform`.
+`include/system_webview/system_webview.h` is the only public header. It exposes Qt value types and C++ interfaces but no native WebKit,
+WebView2, or WebKitGTK types. The CMake target is a shared library with hidden symbols by default. `SYSTEM_WEBVIEW_API` exports only the
+implemented public classes and factory functions; on Windows it selects `dllexport` while building and `dllimport` for consumers.
+Public classes with library-owned state use PImpl, so changes to bridge, resource-manager, and policy internals do not change their public
+object layout. Pure interfaces and value types remain direct declarations.
 
 ## Ownership model
 
@@ -52,9 +56,9 @@ The host owns native attachment timing. It adds `view->widget()` to the final ta
 
 The default policy permits HTTPS navigation. `app://` hosts, `file://` roots, and HTTP development origins each require explicit allowlisting. `trustedDevelopmentOrigins` accepts exact origins such as `http://127.0.0.1:5173`; it does not enable arbitrary HTTP. Malformed URLs, `javascript:`, unknown schemes, popups, downloads, media capture, and other permissions are rejected by default. An `OpenExternally` decision cancels in-view navigation and invokes the host only when an external handler exists.
 
-`IWebViewSession::capabilitySupport` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, browser-default downloads require macOS 11.3, and file selection is host-owned. Location, notifications, clipboard, and explicit download destinations currently report `Unsupported` rather than being silently granted.
+`IWebViewSession::supports` reports whether the current backend can represent a capability. On macOS, camera and microphone require macOS 12, explicit download destinations require macOS 11.3, and file selection is host-owned. Browser-default downloads, location, notifications, and clipboard are unsupported rather than being silently granted.
 
-File selection and download destinations are host decisions. The backend requests a result through `selectFiles` or `resolveDownload`; it does not create a system dialog or choose a local directory. Popup ownership is also the result: the backend transfers a child `WebViewPtr` by value, and the host accepts by retaining it in a tab or window before the callback returns. Applications are created by a session and opened by a view. `LocalBundle` serves a Vite `dist` directory through a private native resource path; the `app://` origin, directory lookup, MIME handling, and traversal checks are backend details.
+File selection and download destinations are host decisions. The backend requests a result through `onSelectFiles` or `onResolveDownload`; it does not create a system dialog or choose a local directory. Popup ownership is also the result: the backend transfers a child `WebViewPtr` by value, and the host accepts by retaining it in a tab or window before the callback returns. Applications are created by a session and opened by a view. `LocalBundle` serves a Vite `dist` directory through a private native resource path; the `app://` origin, directory lookup, MIME handling, and traversal checks are backend details.
 
 Bridge authority belongs to the current committed main-frame document. The application must explicitly request bridge access and its origin must also be trusted by policy. Untrusted pages, pre-commit documents, cross-origin navigations, and an origin different from the committed page are rejected.
 
@@ -106,4 +110,5 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v3 | 2026-09-24 12:10 CST | Documented the centralized bridge, removal of the old message API, and streamed published resources. |
 | v4 | 2026-09-24 12:26 CST | Clarified page events, raw message limits, resource expiry, and platform boundaries. |
 | v5 | 2026-09-24 12:56 CST | Documented the shared page script, built-in resource control, snapshot accounting, and deletion retry. |
-
+| v6 | 2026-09-24 17:29 CST | Documented the single public header, explicit shared-library exports, and PImpl ABI boundaries. |
+| v7 | 2026-09-24 17:57 CST | Updated capability queries and host callback names to match the public API. |

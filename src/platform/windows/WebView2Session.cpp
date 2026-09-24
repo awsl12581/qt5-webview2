@@ -304,21 +304,20 @@ void WebView2Session::clearWebsiteData(ClearCompletion completion)
     impl_->clearBrowsingData(COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_SITE, std::move(completion));
 }
 
-CapabilitySupport WebView2Session::capabilitySupport(WebViewCapability capability) const
+bool WebView2Session::supports(WebViewCapability capability) const
 {
     if (capability == WebViewCapability::FileSelection) {
         // TODO(webview2-file-selection): revisit when WebView2 exposes a host chooser event.
-        return CapabilitySupport::Unsupported;
+        return false;
     }
     if (capability == WebViewCapability::PersistentProfile || capability == WebViewCapability::DownloadDefault
         || capability == WebViewCapability::DownloadTarget) {
-        return CapabilitySupport::Supported;
+        return true;
     }
     if (capability == WebViewCapability::PrivateProfile) {
         Microsoft::WRL::ComPtr<ICoreWebView2Environment10> environment10;
-        return impl_->async->environment && SUCCEEDED(impl_->async->environment.As(&environment10)) ? CapabilitySupport::Supported
-                                                                                                    : CapabilitySupport::Unsupported;
+        return impl_->async->environment && SUCCEEDED(impl_->async->environment.As(&environment10));
     }
-    return CapabilitySupport::Unsupported;
+    return false;
 }
 } // namespace webview

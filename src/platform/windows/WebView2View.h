@@ -1,8 +1,7 @@
 #pragma once
 
 #include "internal/ResourceMapping.h"
-#include "webview/IWebView.h"
-#include "webview/WebViewPolicy.h"
+#include <system_webview/system_webview.h>
 
 #include <functional>
 #include <memory>

@@ -1,4 +1,4 @@
-#include "webview/WebResourceManager.h"
+#include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
 #include <QDateTime>

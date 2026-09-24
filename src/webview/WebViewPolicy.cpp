@@ -1,5 +1,5 @@
-#include "webview/WebViewPolicy.h"
 #include "internal/ResourceMapping.h"
+#include <system_webview/system_webview.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -98,10 +98,36 @@ bool isWithinRoot(const QString& filePath, const QString& rootPath)
 
 namespace webview
 {
+class WebViewPolicy::Impl
+{
+public:
+    explicit Impl(WebViewPolicyConfig value)
+        : config(std::move(value))
+    {
+    }
+
+    WebViewPolicyConfig config;
+};
+
 WebViewPolicy::WebViewPolicy(WebViewPolicyConfig config)
-    : config_(std::move(config))
+    : impl_(std::make_unique<Impl>(std::move(config)))
 {
 }
+
+WebViewPolicy::WebViewPolicy(const WebViewPolicy& other)
+    : impl_(std::make_unique<Impl>(*other.impl_))
+{
+}
+
+WebViewPolicy& WebViewPolicy::operator=(const WebViewPolicy& other)
+{
+    if (this != &other) {
+        impl_ = std::make_unique<Impl>(*other.impl_);
+    }
+    return *this;
+}
+
+WebViewPolicy::~WebViewPolicy() = default;
 
 NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& request) const
 {
@@ -113,14 +139,15 @@ NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& requ
     if (scheme == QStringLiteral("https")) {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("http") && config_.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString())) {
+    if (scheme == QStringLiteral("http")
+        && impl_->config.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString())) {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("app") && config_.allowedAppHosts.contains(request.url.host().toLower())) {
+    if (scheme == QStringLiteral("app") && impl_->config.allowedAppHosts.contains(request.url.host().toLower())) {
         return NavigationDecision::Allow;
     }
     if (scheme == QStringLiteral("file")) {
-        for (const auto& root : config_.allowedFileRoots) {
+        for (const auto& root : impl_->config.allowedFileRoots) {
             if (isWithinRoot(request.url.toLocalFile(), root)) {
                 return NavigationDecision::Allow;
             }
@@ -138,26 +165,26 @@ bool WebViewPolicy::allowsBridge(const QUrl& committedUrl) const
 {
     const auto scheme = committedUrl.scheme().toLower();
     if (scheme == QStringLiteral("app")) {
-        return config_.allowedAppHosts.contains(committedUrl.host().toLower());
+        return impl_->config.allowedAppHosts.contains(committedUrl.host().toLower());
     }
     const auto origin = webview::normalizedOrigin(committedUrl).toString();
-    return (scheme == QStringLiteral("https") && config_.trustedHttpsOrigins.contains(origin))
-           || (scheme == QStringLiteral("http") && config_.trustedDevelopmentOrigins.contains(origin));
+    return (scheme == QStringLiteral("https") && impl_->config.trustedHttpsOrigins.contains(origin))
+           || (scheme == QStringLiteral("http") && impl_->config.trustedDevelopmentOrigins.contains(origin));
 }
 
 bool WebViewPolicy::validatePageToHostMessage(const BridgeMessage& message, QString* error) const
 {
-    return validateMessage(message, config_.pageToHostSchemas, config_.maximumBridgeMessageBytes, error);
+    return validateMessage(message, impl_->config.pageToHostSchemas, impl_->config.maximumBridgeMessageBytes, error);
 }
 
 bool WebViewPolicy::validateHostToPageMessage(const BridgeMessage& message, QString* error) const
 {
-    return validateMessage(message, config_.hostToPageSchemas, config_.maximumBridgeMessageBytes, error);
+    return validateMessage(message, impl_->config.hostToPageSchemas, impl_->config.maximumBridgeMessageBytes, error);
 }
 
 int WebViewPolicy::maximumBridgeMessageBytes() const
 {
-    return config_.maximumBridgeMessageBytes;
+    return impl_->config.maximumBridgeMessageBytes;
 }
 
 PermissionDecision WebViewPolicy::decidePermission(const PermissionRequest&) const
@@ -172,7 +199,7 @@ DownloadDecision WebViewPolicy::decideDownload(const DownloadRequest&) const
 
 const WebViewPolicyConfig& WebViewPolicy::config() const
 {
-    return config_;
+    return impl_->config;
 }
 
 WebViewPolicyPtr createDefaultWebViewPolicy(WebViewPolicyConfig config)

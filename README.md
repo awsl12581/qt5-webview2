@@ -2,9 +2,9 @@
 
 # System WebView
 
-> Last modified: 2026-09-24 04:37 CEST
-> Document version: v2
-> Change: Added the public API reference link and standard document metadata.
+> Last modified: 2026-09-24 17:29 CST
+> Document version: v3
+> Change: Documented the single public header and shared-library build.
 
 A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
@@ -91,6 +91,8 @@ Tests that create a real WKWebView need a logged-in GUI session with access to W
 Create one session, register an application source, and attach a view to a Qt widget:
 
 ```cpp
+#include <system_webview/system_webview.h>
+
 webview::WebViewPolicyConfig policyConfig;
 policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
 
@@ -135,7 +137,8 @@ find_package(system_webview CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE system_webview::system_webview)
 ```
 
-Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the consumer.
+Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the consumer. Include the public API with
+`#include <system_webview/system_webview.h>`. The package builds a shared library; deploy its runtime library with the application.
 
 ## Documentation
 
@@ -151,5 +154,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | --- | --- | --- |
 | v1 | Existing document | Initial project README. |
 | v2 | 2026-09-24 04:37 CEST | Added the public API reference link and standard metadata. |
+| v3 | 2026-09-24 17:29 CST | Documented the single public header and shared-library build. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

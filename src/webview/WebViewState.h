@@ -1,10 +1,8 @@
 #pragma once
 
 #include "webview/DocumentLifetime.h"
-#include "webview/IWebView.h"
-#include "webview/WebResourceManager.h"
-#include "webview/WebViewBridge.h"
-#include "webview/WebViewPolicy.h"
+
+#include <system_webview/system_webview.h>
 
 #include <functional>
 #include <memory>

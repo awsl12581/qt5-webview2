@@ -1,11 +1,18 @@
 #pragma once
 
-#include "webview/WebViewTypes.h"
+#include <system_webview/system_webview.h>
 
 #include <atomic>
 
 namespace webview
 {
+enum class DocumentError
+{
+    None,
+    Closed,
+    NavigationChanged
+};
+
 class DocumentLifetime
 {
 public:

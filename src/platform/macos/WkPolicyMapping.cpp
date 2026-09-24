@@ -1,7 +1,5 @@
 #include "platform/macos/WkPolicyMapping.h"
 
-#include "webview/WebViewPolicy.h"
-
 namespace webview
 {
 NativePermissionDecision mapPermissionDecision(PermissionDecision decision)

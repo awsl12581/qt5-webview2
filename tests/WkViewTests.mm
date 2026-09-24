@@ -1,5 +1,4 @@
-#include "webview/IWebView.h"
-#include "webview/WebViewFactory.h"
+#include <system_webview/system_webview.h>
 
 #include <QApplication>
 #include <QEventLoop>
@@ -128,15 +127,15 @@ int main(int argc, char** argv)
     QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
 
     webview::WebViewHostCallbacks callbacks;
-    callbacks.load = [&](const webview::LoadEvent& event) {
+    callbacks.onLoad = [&](const webview::LoadEvent& event) {
         events.push_back(event);
         if (event.state == webview::LoadState::Finished || event.state == webview::LoadState::Failed) {
             loop.quit();
         }
     };
-    callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
+    callbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
     view->setHostCallbacks(std::move(callbacks));
-    view->bridge().on(QStringLiteral("hello"), [&](const QJsonObject& payload) {
+    view->bridge().setEventHandler(QStringLiteral("hello"), [&](const QJsonObject& payload) {
         ++messageCount;
         if (payload.contains(QStringLiteral("executed"))) {
             hostileReturned = true;
@@ -323,7 +322,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     auto raceView = session->createWebView();
     int raceCallbacks = 0;
     webview::WebViewHostCallbacks raceCallbacksConfig;
-    raceCallbacksConfig.load = [&](const webview::LoadEvent&) { ++raceCallbacks; };
+    raceCallbacksConfig.onLoad = [&](const webview::LoadEvent&) { ++raceCallbacks; };
     raceView->setHostCallbacks(std::move(raceCallbacksConfig));
     raceView->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort())));
     raceView->close();
@@ -342,7 +341,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     auto failureView = session->createWebView();
     std::vector<webview::LoadEvent> failureEvents;
     webview::WebViewHostCallbacks failureCallbacks;
-    failureCallbacks.load = [&](const webview::LoadEvent& event) {
+    failureCallbacks.onLoad = [&](const webview::LoadEvent& event) {
         failureEvents.push_back(event);
         if (event.state == webview::LoadState::Finished || event.state == webview::LoadState::Failed) {
             loop.quit();
@@ -363,7 +362,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     webview::WebViewPtr popup;
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
-    popupCallbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
+    popupCallbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
         assert(child->initializationState() == webview::InitializationState::Ready);
         auto* layout = new QVBoxLayout(&popupHost);
         layout->setContentsMargins(0, 0, 0, 0);

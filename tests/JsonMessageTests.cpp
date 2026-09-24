@@ -2,10 +2,8 @@
 #include "internal/ResourceMapping.h"
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
-#include "webview/WebResourceManager.h"
-#include "webview/WebViewBridge.h"
-#include "webview/WebViewPolicy.h"
 #include "webview/WebViewState.h"
+#include <system_webview/system_webview.h>
 
 #include <QDir>
 #include <QFile>
@@ -39,7 +37,7 @@ int main()
     auto* transportProbe = transport.get();
     webview::WebViewBridge bridge(std::move(transport));
     bool eventReceived = false;
-    bridge.on(QStringLiteral("notify"), [&](const QJsonObject& payload) {
+    bridge.setEventHandler(QStringLiteral("notify"), [&](const QJsonObject& payload) {
         eventReceived = payload.value(QStringLiteral("value")).toInt() == 7;
     });
     bridge.receive(QJsonDocument(
@@ -77,7 +75,7 @@ int main()
                                      { "error", "" } })
                        .toJson(QJsonDocument::Compact));
     assert(callCompleted);
-    bridge.onRequest(QStringLiteral("sum"), [](const QJsonObject& payload, webview::WebViewBridge::Reply reply) {
+    bridge.setRequestHandler(QStringLiteral("sum"), [](const QJsonObject& payload, webview::WebViewBridge::Reply reply) {
         reply({ { "result", payload.value("left").toInt() + payload.value("right").toInt() } }, { });
     });
     bridge.receive(QJsonDocument(
@@ -189,6 +187,11 @@ int main()
     config.hostToPageSchemas.insert(QStringLiteral("pong"), { { { QStringLiteral("accepted"), QJsonValue::Bool } } });
     config.maximumBridgeMessageBytes = 128;
     const webview::WebViewPolicy policy(std::move(config));
+    webview::WebViewPolicy copiedPolicy(policy);
+    webview::WebViewPolicy assignedPolicy;
+    assignedPolicy = policy;
+    assert(copiedPolicy.allowsBridge(QUrl(QStringLiteral("app://ui/page"))));
+    assert(assignedPolicy.maximumBridgeMessageBytes() == 128);
 
     const auto navigation = [&policy](const QString& url) {
         return policy.decideNavigation({ QUrl(url), true, true, false });
@@ -270,7 +273,7 @@ int main()
     wireLimitState->committedUrl = QUrl(QStringLiteral("app://ui/index.html"));
     wireLimitState->bindBridgePolicy();
     bool oversizedMessageReceived = false;
-    wireLimitState->bridge->on(QStringLiteral("notify"), [&](const QJsonObject&) { oversizedMessageReceived = true; });
+    wireLimitState->bridge->setEventHandler(QStringLiteral("notify"), [&](const QJsonObject&) { oversizedMessageReceived = true; });
     const QByteArray compactMessage = QJsonDocument(
                                           QJsonObject { { "version", 1 },
                                                         { "kind", "event" },

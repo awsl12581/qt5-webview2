@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-09-24 04:37 CEST
-> 文档版本：v2
-> 修改说明：增加公开接口速查链接，并补充统一文档元数据。
+> 最后修改时间：2026-09-24 17:29 CST
+> 文档版本：v3
+> 修改说明：说明单一公开头文件和动态库构建方式。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
@@ -91,6 +91,8 @@ ctest --preset macos-appleclang-debug --output-on-failure
 创建会话，注册页面来源，再把视图挂载到 Qt 控件中：
 
 ```cpp
+#include <system_webview/system_webview.h>
+
 webview::WebViewPolicyConfig policyConfig;
 policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
 
@@ -135,7 +137,8 @@ find_package(system_webview CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE system_webview::system_webview)
 ```
 
-配置使用方项目时，把 `CMAKE_PREFIX_PATH` 指向上面的安装目录。
+配置使用方项目时，把 `CMAKE_PREFIX_PATH` 指向上面的安装目录。公开接口统一通过
+`#include <system_webview/system_webview.h>` 引入。项目构建动态库，发布应用时需要一并部署对应的运行库文件。
 
 ## 更多文档
 
@@ -151,5 +154,6 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | --- | --- | --- |
 | v1 | 创建时 | 初始项目说明。 |
 | v2 | 2026-09-24 04:37 CEST | 增加公开接口速查链接，并补充统一文档元数据。 |
+| v3 | 2026-09-24 17:29 CST | 说明单一公开头文件和动态库构建方式。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

@@ -1,6 +1,6 @@
 #include "webview/HostCompletion.h"
-#include "webview/WebViewFactory.h"
 #include "webview/WebViewState.h"
+#include <system_webview/system_webview.h>
 
 #include <QApplication>
 #include <QEventLoop>
@@ -20,7 +20,7 @@ void testUnsupportedFileSelectionIsExplicit()
 {
     auto session = webview::createWebViewSession({ });
     assert(session);
-    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection) == webview::CapabilitySupport::Unsupported);
+    assert(!session->supports(webview::WebViewCapability::FileSelection));
 }
 
 void testHostCompletionGuardIsThreadSafe()

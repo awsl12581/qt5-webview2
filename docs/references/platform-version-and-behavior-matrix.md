@@ -1,8 +1,8 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
-> Last modified: 2026-09-24 04:37 CEST
-> Document version: v2
-> Change: Added standard metadata and a version history without changing the recorded platform evidence.
+> Last modified: 2026-09-24 17:57 CST
+> Document version: v3
+> Change: Updated public API names without changing the recorded platform evidence.
 
 > Snapshot date: 2026-08-16
 >
@@ -41,9 +41,9 @@ The two backends share the same public C++ API, but they do not have identical r
 | PrivateProfile | Supported | Supported only after the Runtime exposes `ICoreWebView2Environment10` | Windows can report Unsupported while the asynchronous environment is not ready. |
 | ResourceMapping | Supported | Supported after session initialization is Ready | Windows requires WebView2 custom-scheme support and has not completed GUI fetch verification. |
 | FileSelection | Supported | Unsupported | Windows has no chooser shim or native file dialog fallback. |
-| DownloadDefault | Unsupported | Supported | On Windows the host must still provide `resolveDownload`; otherwise the event is cancelled. |
+| DownloadDefault | Unsupported | Supported | On Windows the host must still provide `onResolveDownload`; otherwise the event is cancelled. |
 | DownloadTarget | macOS 11.3+ | Supported | Windows validates that the target is absolute and its parent directory exists. |
-| Camera / Microphone | macOS 12.0+ | Unsupported in `capabilitySupport` | Windows has policy-event wiring but intentionally does not advertise a portable capability. |
+| Camera / Microphone | macOS 12.0+ | `supports()` returns false | Windows has policy-event wiring but intentionally does not advertise a portable capability. |
 | Location / Notifications / Clipboard | Unsupported | Unsupported | Both backends fail closed at the portable capability layer. |
 
 ## Observable Runtime Behavior
@@ -56,7 +56,7 @@ The two backends share the same public C++ API, but they do not have identical r
 | Navigation events | WK delegate preserves one ID across Started, Redirected, Committed, Finished, or Failed | WebView2 Runtime navigation IDs are forwarded from NavigationStarting, ContentLoading, and NavigationCompleted | Windows event sequence not GUI-E2E verified. |
 | Incoming bridge | Requires current committed trusted origin, current document token, and a native main-frame check | Requires source-origin comparison, current document token, size and schema validation | WebView2 event args do not expose a main-frame flag. A hostile same-origin frame that obtains the top-level token is outside the Windows guarantee. |
 | Outgoing bridge | Validates current bridge authority and uses `callAsyncJavaScript`; reports close/navigation invalidation | Posts JSON directly to the WebView2 page | Windows delivery path is implemented but not Runtime E2E verified. |
-| `setHtml` | Calls `loadHTMLString` with the requested base URL | Stores the HTML as an in-memory `app://` response and navigates to that URL | `app://` base URLs require a configured mapping on both platforms. Windows page/resource behavior remains unverified. |
+| `loadDocument` | Calls `loadHTMLString` with the requested base URL | Stores the HTML as an in-memory `app://` response and navigates to that URL | `app://` base URLs require a configured mapping on both platforms. Windows page/resource behavior remains unverified. |
 | Popup | WKUIDelegate transfers a child `WebViewPtr` to the host | New-window deferral creates a child and transfers it after initialization | Windows popup UI flow not executed. |
 | Download | Host resolves a destination through WKDownloadDelegate | Host resolution is protected by a deferral and one-shot completion guard | Windows download UI flow not executed. |
 
@@ -117,4 +117,4 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 | --- | --- | --- |
 | v1 | Existing document | Initial platform version and behavior matrix. |
 | v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
-
+| v3 | 2026-09-24 17:57 CST | Updated public API names without changing the recorded platform evidence. |

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${0:a}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLANG_FORMAT="${CLANG_FORMAT:-/opt/homebrew/opt/llvm/bin/clang-format}"
-SOURCES=(${(f)"$(find "$PROJECT_ROOT/src" "$PROJECT_ROOT/tests" "$PROJECT_ROOT/samples" \( -name '*.cpp' -o -name '*.h' -o -name '*.mm' \) | sort)"})
+SOURCES=(${(f)"$(find "$PROJECT_ROOT/include" "$PROJECT_ROOT/src" "$PROJECT_ROOT/tests" "$PROJECT_ROOT/samples" \( -name '*.cpp' -o -name '*.h' -o -name '*.mm' \) | sort)"})
 CHECK_ONLY=false
 
 for arg in "$@"; do

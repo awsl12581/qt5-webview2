@@ -1,6 +1,6 @@
 #pragma once
 
-#include "webview/WebViewTypes.h"
+#include <system_webview/system_webview.h>
 
 #include <atomic>
 #include <memory>

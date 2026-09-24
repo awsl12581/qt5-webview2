@@ -561,7 +561,7 @@ public:
                                 args->get_IsUserInitiated(&userInitiated);
                                 const NewWindowRequest request { url, userInitiated != FALSE };
                                 const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
-                                if (decision != NewWindowDecision::Allow || !state->callbacks.newWindow) {
+                                if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow) {
                                     args->put_Handled(TRUE);
                                     if (deferral) {
                                         deferral->Complete();
@@ -616,8 +616,8 @@ public:
                                                 auto* readyChild = static_cast<WebView2View*>(childHolder->get());
                                                 argsRef->put_NewWindow(readyChild->impl_->webview.Get());
                                                 argsRef->put_Handled(TRUE);
-                                                if (state->callbacks.newWindow) {
-                                                    state->callbacks.newWindow(request, std::move(*childHolder));
+                                                if (state->callbacks.onNewWindow) {
+                                                    state->callbacks.onNewWindow(request, std::move(*childHolder));
                                                 }
                                             }
                                             else {
@@ -672,7 +672,7 @@ public:
                                                                     state->committedUrl,
                                                                     suggestedName };
                                     if (!state->policy || state->policy->decideDownload(request) != DownloadDecision::Allow
-                                        || !state->callbacks.resolveDownload) {
+                                        || !state->callbacks.onResolveDownload) {
                                         args->put_Cancel(TRUE);
                                         return S_OK;
                                     }
@@ -691,7 +691,7 @@ public:
                                     if (const auto owner = weakOwner.lock()) {
                                         owner->pendingActions.push_back(pending);
                                     }
-                                    state->callbacks.resolveDownload(
+                                    state->callbacks.onResolveDownload(
                                         request,
                                         [guard, argsRef, deferral, pending, weakOwner](DownloadResolution resolution) mutable {
                                             const auto access = guard->claim();
@@ -762,8 +762,8 @@ public:
                                 }
                                 if (decision == NavigationDecision::OpenExternally) {
                                     args->put_Cancel(TRUE);
-                                    if (state->callbacks.openExternal) {
-                                        state->callbacks.openExternal(url);
+                                    if (state->callbacks.onOpenExternal) {
+                                        state->callbacks.onOpenExternal(url);
                                     }
                                     return S_OK;
                                 }

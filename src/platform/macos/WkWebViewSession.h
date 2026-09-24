@@ -1,7 +1,6 @@
 #pragma once
 
-#include "webview/IWebViewSession.h"
-#include "webview/WebViewPolicy.h"
+#include <system_webview/system_webview.h>
 
 #include <memory>
 
@@ -20,7 +19,7 @@ public:
     void clearCache(ClearCompletion completion) override;
     void clearCookies(ClearCompletion completion) override;
     void clearWebsiteData(ClearCompletion completion) override;
-    CapabilitySupport capabilitySupport(WebViewCapability capability) const override;
+    bool supports(WebViewCapability capability) const override;
 
 private:
     class Impl;

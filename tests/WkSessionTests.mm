@@ -1,4 +1,4 @@
-#include "webview/WebViewFactory.h"
+#include <system_webview/system_webview.h>
 
 #include <QApplication>
 #include <QEventLoop>
@@ -51,20 +51,20 @@ int main(int argc, char** argv)
     bundle.source = webview::LocalBundle { profile.path() };
     assert(session->createApplication(bundle));
     assert(!session->createApplication(std::move(bundle)));
-    assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile) == webview::CapabilitySupport::Supported);
-    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PersistentProfile) == webview::CapabilitySupport::Supported);
-    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile) == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::PrivateProfile) == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection) == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Location) == webview::CapabilitySupport::Unsupported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Notifications) == webview::CapabilitySupport::Unsupported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Clipboard) == webview::CapabilitySupport::Unsupported);
+    assert(session->supports(webview::WebViewCapability::PersistentProfile));
+    assert(ephemeral->supports(webview::WebViewCapability::PersistentProfile));
+    assert(ephemeral->supports(webview::WebViewCapability::PrivateProfile));
+    assert(session->supports(webview::WebViewCapability::PrivateProfile));
+    assert(session->supports(webview::WebViewCapability::FileSelection));
+    assert(!session->supports(webview::WebViewCapability::Location));
+    assert(!session->supports(webview::WebViewCapability::Notifications));
+    assert(!session->supports(webview::WebViewCapability::Clipboard));
     if (@available(macOS 12.0, *)) {
-        assert(session->capabilitySupport(webview::WebViewCapability::Camera) == webview::CapabilitySupport::Supported);
-        assert(session->capabilitySupport(webview::WebViewCapability::Microphone) == webview::CapabilitySupport::Supported);
+        assert(session->supports(webview::WebViewCapability::Camera));
+        assert(session->supports(webview::WebViewCapability::Microphone));
     }
     if (@available(macOS 11.3, *)) {
-        assert(session->capabilitySupport(webview::WebViewCapability::DownloadTarget) == webview::CapabilitySupport::Supported);
+        assert(session->supports(webview::WebViewCapability::DownloadTarget));
     }
 
     assert(waitForClear([&](auto completion) { session->clearCache(std::move(completion)); }));

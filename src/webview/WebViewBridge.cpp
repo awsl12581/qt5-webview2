@@ -1,5 +1,5 @@
-#include "webview/WebViewBridge.h"
 #include "internal/BridgePageScript.h"
+#include <system_webview/system_webview.h>
 
 #include <QJsonDocument>
 #include <QJsonParseError>
@@ -206,7 +206,7 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
     }
 }
 
-void WebViewBridge::on(const QString& type, EventHandler handler)
+void WebViewBridge::setEventHandler(const QString& type, EventHandler handler)
 {
     if (handler) {
         impl_->handlers.insert(type, std::move(handler));
@@ -216,7 +216,7 @@ void WebViewBridge::on(const QString& type, EventHandler handler)
     }
 }
 
-void WebViewBridge::onRequest(const QString& type, RequestHandler handler)
+void WebViewBridge::setRequestHandler(const QString& type, RequestHandler handler)
 {
     if (handler) {
         impl_->requestHandlers.insert(type, std::move(handler));

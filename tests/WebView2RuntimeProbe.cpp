@@ -1,5 +1,4 @@
-#include "webview/IWebView.h"
-#include "webview/WebViewFactory.h"
+#include <system_webview/system_webview.h>
 
 #include <QApplication>
 #include <QTemporaryDir>
@@ -139,8 +138,7 @@ private:
     void createController()
     {
         const auto current = cases[caseIndex];
-        if (current.mode == webview::SessionMode::Ephemeral
-            && session->capabilitySupport(webview::WebViewCapability::PrivateProfile) != webview::CapabilitySupport::Supported) {
+        if (current.mode == webview::SessionMode::Ephemeral && !session->supports(webview::WebViewCapability::PrivateProfile)) {
             fail(QStringLiteral("WebView2 Runtime does not expose InPrivate controller options."));
             return;
         }

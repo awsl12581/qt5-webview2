@@ -1,7 +1,6 @@
 #pragma once
 
-#include "webview/IWebView.h"
-#include "webview/WebViewPolicy.h"
+#include <system_webview/system_webview.h>
 
 #include <memory>
 

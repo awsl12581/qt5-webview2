@@ -216,7 +216,7 @@ public:
                forNavigationAction:(WKNavigationAction*)navigationAction
                     windowFeatures:(WKWindowFeatures*)windowFeatures
 {
-    if (!self.state || self.state->lifetime.isClosed() || !self.owner || !self.state->callbacks.newWindow) {
+    if (!self.state || self.state->lifetime.isClosed() || !self.owner || !self.state->callbacks.onNewWindow) {
         return nil;
     }
     const QUrl url(QString::fromUtf8(navigationAction.request.URL.absoluteString.UTF8String));
@@ -257,7 +257,7 @@ public:
                { webview::PermissionKind::FilePicker,
                    webview::normalizedOrigin(QUrl(QString::fromUtf8(frame.request.URL.absoluteString.UTF8String))) })
             != webview::NativePermissionDecision::Grant
-        || !self.state->callbacks.selectFiles) {
+        || !self.state->callbacks.onSelectFiles) {
         completionHandler(nil);
         return;
     }
@@ -290,7 +290,7 @@ public:
             },
             Qt::QueuedConnection);
     };
-    self.state->callbacks.selectFiles(request, completion);
+    self.state->callbacks.onSelectFiles(request, completion);
 }
 @end
 
@@ -306,7 +306,7 @@ public:
                { QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)), currentState->committedUrl,
                    QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)), QString::fromUtf8(suggestedFilename.UTF8String) })
             != webview::DownloadDecision::Allow
-        || !currentState->callbacks.resolveDownload || !context) {
+        || !currentState->callbacks.onResolveDownload || !context) {
         completionHandler(nil);
         return;
     }
@@ -332,7 +332,7 @@ public:
             },
             Qt::QueuedConnection);
     };
-    currentState->callbacks.resolveDownload(request, completion);
+    currentState->callbacks.onResolveDownload(request, completion);
 }
 @end
 
@@ -371,7 +371,7 @@ public:
             decisionHandler(
                 self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
                             == webview::DownloadDecision::Allow
-                        && self.state->callbacks.resolveDownload
+                        && self.state->callbacks.onResolveDownload
                     ? WKNavigationActionPolicyDownload
                     : WKNavigationActionPolicyCancel);
             return;
@@ -397,8 +397,8 @@ public:
         decisionHandler(WKNavigationActionPolicyAllow);
         return;
     }
-    if (decision == webview::NavigationDecision::OpenExternally && self.state->callbacks.openExternal) {
-        self.state->callbacks.openExternal(url);
+    if (decision == webview::NavigationDecision::OpenExternally && self.state->callbacks.onOpenExternal) {
+        self.state->callbacks.onOpenExternal(url);
     }
     if (isMainFrame) {
         self.state->explicitMainFrameNavigationPending = false;
@@ -424,7 +424,7 @@ public:
         decisionHandler(
             self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
                         == webview::DownloadDecision::Allow
-                    && self.state->callbacks.resolveDownload
+                    && self.state->callbacks.onResolveDownload
                 ? WKNavigationResponsePolicyDownload
                 : WKNavigationResponsePolicyCancel);
     }
@@ -626,8 +626,8 @@ void WkWebView::navigate(const QUrl& url)
 {
     impl_->state->runWhenReady([this, url](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
-            if (impl_->state->callbacks.load) {
-                impl_->state->callbacks.load({ LoadState::Failed, url, result.error, ++impl_->state->navigationId, true });
+            if (impl_->state->callbacks.onLoad) {
+                impl_->state->callbacks.onLoad({ LoadState::Failed, url, result.error, ++impl_->state->navigationId, true });
             }
             return;
         }
@@ -641,8 +641,8 @@ void WkWebView::loadDocument(const QString& html, const QUrl& baseUrl)
 {
     impl_->state->runWhenReady([this, html, baseUrl](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
-            if (impl_->state->callbacks.load) {
-                impl_->state->callbacks.load({ LoadState::Failed, baseUrl, result.error, ++impl_->state->navigationId, true });
+            if (impl_->state->callbacks.onLoad) {
+                impl_->state->callbacks.onLoad({ LoadState::Failed, baseUrl, result.error, ++impl_->state->navigationId, true });
             }
             return;
         }
@@ -735,14 +735,14 @@ void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
 
 void* WkWebView::createPopup(void* configuration, const NewWindowRequest& request)
 {
-    if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.newWindow || !impl_->sessionState || !impl_->sessionState->valid) {
+    if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.onNewWindow || !impl_->sessionState || !impl_->sessionState->valid) {
         return nullptr;
     }
     WebViewPtr child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, configuration, impl_->state->policy, impl_->sessionState));
     auto* concreteChild = static_cast<WkWebView*>(child.get());
     auto* nativeView = concreteChild->impl_->view;
     const std::weak_ptr<WebViewState> childState = concreteChild->impl_->state;
-    impl_->state->callbacks.newWindow(request, std::move(child));
+    impl_->state->callbacks.onNewWindow(request, std::move(child));
     const auto acceptedState = childState.lock();
     if (!acceptedState || acceptedState->lifetime.isClosed()) {
         return nullptr;

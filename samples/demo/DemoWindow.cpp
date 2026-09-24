@@ -1,7 +1,5 @@
 #include "DemoWindow.h"
 
-#include "webview/WebViewFactory.h"
-
 #include <QLabel>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -113,12 +111,12 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     auto* tab = new WebViewTab(std::move(webView), tabs_);
     auto* page = tab->webView();
     webview::WebViewHostCallbacks callbacks;
-    callbacks.load = [this](const webview::LoadEvent& event) {
+    callbacks.onLoad = [this](const webview::LoadEvent& event) {
         if (event.state == webview::LoadState::Failed) {
             status_->setText(QStringLiteral("Load failed: %1").arg(event.error));
         }
     };
-    page->bridge().on(QStringLiteral("window"), [this, page](const QJsonObject& payload) {
+    page->bridge().setEventHandler(QStringLiteral("window"), [this, page](const QJsonObject& payload) {
         const auto action = payload.value(QStringLiteral("action")).toString();
         if (action == QStringLiteral("drag") && windowHandle()) {
             windowHandle()->startSystemMove();
@@ -135,11 +133,11 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
             close();
         }
     });
-    page->bridge().on(QStringLiteral("hello"), [this, page](const QJsonObject& payload) {
+    page->bridge().setEventHandler(QStringLiteral("hello"), [this, page](const QJsonObject& payload) {
         status_->setText(QStringLiteral("Page: %1").arg(payload.value("message").toString()));
         page->bridge().emitEvent(QStringLiteral("ack"), { { "message", "Native received your message." } });
     });
-    callbacks.newWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
+    callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
         addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
     };
     page->setHostCallbacks(std::move(callbacks));

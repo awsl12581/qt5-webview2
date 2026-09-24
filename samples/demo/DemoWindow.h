@@ -2,8 +2,7 @@
 
 #include <QMainWindow>
 
-#include "webview/IWebView.h"
-#include "webview/IWebViewSession.h"
+#include <system_webview/system_webview.h>
 
 class QLabel;
 class QTabWidget;

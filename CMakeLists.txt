@@ -18,7 +18,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 
-add_library(system_webview STATIC
+add_library(system_webview SHARED
+    include/system_webview/system_webview.h
     src/webview/Application.cpp
     src/webview/WebViewBridge.cpp
     src/webview/WebResourceManager.cpp
@@ -31,10 +32,16 @@ add_library(system_webview STATIC
 )
 add_library(system_webview::system_webview ALIAS system_webview)
 target_include_directories(system_webview PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(system_webview PUBLIC Qt5::Widgets)
 target_compile_features(system_webview PUBLIC cxx_std_17)
+target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
+set_target_properties(system_webview PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    OBJCXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
 
 if(APPLE)
     target_sources(system_webview PRIVATE src/webview/PathSecurity.cpp)
@@ -50,9 +57,8 @@ else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
 
-install(DIRECTORY src/webview/
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/webview"
-    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY include/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 install(TARGETS system_webview
     EXPORT system_webviewTargets
@@ -87,24 +93,43 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(webview_core_tests tests/JsonMessageTests.cpp)
-    target_link_libraries(webview_core_tests PRIVATE system_webview)
+    add_executable(webview_core_tests
+        tests/JsonMessageTests.cpp
+        src/webview/Application.cpp
+        src/webview/WebViewBridge.cpp
+        src/webview/WebResourceManager.cpp
+        src/webview/JsonMessage.cpp
+        src/webview/HostCompletion.cpp
+        src/webview/ResourceMapping.cpp
+        src/webview/WebViewPolicy.cpp
+        src/webview/WebViewState.cpp)
+    target_include_directories(webview_core_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
+    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets)
     add_test(NAME webview_core_tests COMMAND webview_core_tests)
 
     if(APPLE)
+        target_sources(webview_core_tests PRIVATE src/webview/PathSecurity.cpp)
         add_executable(webview_macos_session_tests tests/WkSessionTests.mm)
+        target_include_directories(webview_macos_session_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(webview_macos_session_tests PRIVATE system_webview)
         add_test(NAME webview_macos_session_tests COMMAND webview_macos_session_tests)
 
         add_executable(webview_macos_view_tests tests/WkViewTests.mm)
+        target_include_directories(webview_macos_view_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(webview_macos_view_tests PRIVATE system_webview Qt5::Network)
         add_test(NAME webview_macos_view_tests COMMAND webview_macos_view_tests)
     elseif(WIN32)
+        target_sources(webview_core_tests PRIVATE src/platform/windows/PathSecurity.cpp)
         add_executable(webview_windows_contract_tests tests/WebView2ContractTests.cpp)
+        target_include_directories(webview_windows_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(webview_windows_contract_tests PRIVATE system_webview Qt5::Network)
         add_test(NAME webview_windows_contract_tests COMMAND webview_windows_contract_tests)
 
         add_executable(webview_windows_runtime_probe tests/WebView2RuntimeProbe.cpp)
+        target_include_directories(webview_windows_runtime_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(webview_windows_runtime_probe PRIVATE system_webview Qt5::Network)
         add_test(NAME webview_windows_runtime_probe COMMAND webview_windows_runtime_probe)
     endif()

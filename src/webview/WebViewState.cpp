@@ -131,7 +131,7 @@ void WebViewState::close()
 void WebViewState::bindBridgePolicy()
 {
     const std::weak_ptr<WebViewState> weak = shared_from_this();
-    bridge->on(QStringLiteral("release-resource"), [weak](const QJsonObject& payload) {
+    bridge->setEventHandler(QStringLiteral("release-resource"), [weak](const QJsonObject& payload) {
         if (const auto state = weak.lock()) {
             state->resources->release(payload.value(QStringLiteral("token")).toString());
         }
@@ -195,8 +195,8 @@ void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOr
 
 void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url, const QString& error)
 {
-    if (!lifetime.isClosed() && callbacks.load) {
-        callbacks.load({ loadState, url, error, eventNavigationId, true });
+    if (!lifetime.isClosed() && callbacks.onLoad) {
+        callbacks.onLoad({ loadState, url, error, eventNavigationId, true });
     }
 }
 } // namespace webview

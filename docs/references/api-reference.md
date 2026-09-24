@@ -1,18 +1,20 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-09-24 12:56 CST
-> 文档版本：v5
-> 修改说明：补充内置资源控制消息、快照容量核算和删除重试。
+> 最后修改时间：2026-09-24 17:57 CST
+> 文档版本：v7
+> 修改说明：同步头文件中的使用说明，并简化能力查询和回调注册命名。
 
-本文整理 `include/webview/` 中供应用调用的接口。最常用的入口只有一个：
+公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
 ```cpp
-#include <webview/WebViewFactory.h>
+#include <system_webview/system_webview.h>
 ```
 
-该头文件同时引入 `IWebViewSession`、`IWebView` 和 `WebViewPolicy`。配置结构、事件和枚举定义在 `WebViewTypes.h` 中。
+该头文件包含 `IWebViewSession`、`IWebView`、`WebViewPolicy`、配置结构、事件和枚举。项目构建动态库；
+`SYSTEM_WEBVIEW_API` 在 Windows 上切换 `dllexport` 和 `dllimport`，在支持符号可见性的其他工具链上导出标注的 API。
+`WebViewBridge`、`WebResourceManager` 和 `WebViewPolicy` 使用 PImpl 保存库内状态，公开对象布局不包含这些实现字段。
 
-`DocumentLifetime.h`、`HostCompletion.h`、`JsonMessage.h`、`PathSecurity.h` 和 `WebViewState.h` 是库内部实现，不建议应用直接引用。
+`src/` 下的头文件属于库内部实现，不安装给使用方。
 
 ## 所有权
 
@@ -30,7 +32,7 @@ using WebViewPolicyPtr = std::shared_ptr<const WebViewPolicy>;
 
 ## 创建 session
 
-头文件：`webview/WebViewFactory.h`
+头文件：`system_webview/system_webview.h`
 
 ```cpp
 WebViewSessionPtr createWebViewSession(
@@ -53,7 +55,7 @@ struct WebViewSessionOptions {
 
 ## IWebViewSession
 
-头文件：`webview/IWebViewSession.h`
+头文件：`system_webview/system_webview.h`
 
 ```cpp
 class IWebViewSession {
@@ -69,7 +71,7 @@ public:
     virtual void clearCache(ClearCompletion completion = {}) = 0;
     virtual void clearCookies(ClearCompletion completion = {}) = 0;
     virtual void clearWebsiteData(ClearCompletion completion = {}) = 0;
-    virtual CapabilitySupport capabilitySupport(WebViewCapability capability) const = 0;
+    virtual bool supports(WebViewCapability capability) const = 0;
 };
 ```
 
@@ -117,7 +119,7 @@ struct WebApplicationOptions {
 
 ## IWebView
 
-头文件：`webview/IWebView.h`
+头文件：`system_webview/system_webview.h`
 
 ```cpp
 class IWebView {
@@ -180,18 +182,18 @@ struct LoadEvent {
 
 ```cpp
 struct WebViewHostCallbacks {
-    std::function<void(const LoadEvent&)> load;
-    std::function<void(const QUrl&)> openExternal;
-    std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;
-    std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> selectFiles;
-    std::function<void(const DownloadRequest&, DownloadCompletion)> resolveDownload;
+    std::function<void(const LoadEvent&)> onLoad;
+    std::function<void(const QUrl&)> onOpenExternal;
+    std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
+    std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> onSelectFiles;
+    std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
 };
 ```
 
-- `load` 接收主页面加载状态。
-- `openExternal` 在策略返回 `OpenExternally` 时调用。
-- `newWindow` 把新建页面的所有权交给宿主。若接受该页面，必须在回调返回前保存传入的 `WebViewPtr`。
-- `selectFiles` 和 `resolveDownload` 由宿主完成用户交互，并各自调用 completion 一次。
+- `onLoad` 接收主页面加载状态。
+- `onOpenExternal` 在策略返回 `OpenExternally` 时调用。
+- `onNewWindow` 把新建页面的所有权交给宿主。若接受该页面，必须在回调返回前保存传入的 `WebViewPtr`。
+- `onSelectFiles` 和 `onResolveDownload` 由宿主完成用户交互，并各自调用 completion 一次。
 
 ### 文件选择
 
@@ -273,7 +275,7 @@ window.systemWebView.postMessage({
 C++ 注册事件、发事件或发起请求：
 
 ```cpp
-view->bridge().on(QStringLiteral("save-result"), [](const QJsonObject& payload) {
+view->bridge().setEventHandler(QStringLiteral("save-result"), [](const QJsonObject& payload) {
     qDebug() << payload;
 });
 
@@ -309,7 +311,7 @@ config.hostToPageSchemas.insert(
     { { { QStringLiteral("id"), QJsonValue::String } } });
 ```
 
-`onRequest(type, handler)` 注册页面可调用的 C++ 请求处理器。处理器通过 `Reply` 返回 payload 或错误。导航或关闭会取消未完成的 C++ 请求。
+`setEventHandler(type, handler)` 和 `setRequestHandler(type, handler)` 分别为每个类型设置唯一处理器；传入空处理器会移除已有处理器。请求处理器通过 `Reply` 返回 payload 或错误。导航或关闭会取消未完成的 C++ 请求。
 
 ## 大文件资源
 
@@ -339,7 +341,7 @@ window.systemWebView.postMessage({ type: "release-resource", payload: { token } 
 
 ## WebViewPolicy
 
-头文件：`webview/WebViewPolicy.h`
+头文件：`system_webview/system_webview.h`
 
 ```cpp
 struct BridgeMessageSchema {
@@ -360,7 +362,9 @@ struct WebViewPolicyConfig {
 class WebViewPolicy {
 public:
     explicit WebViewPolicy(WebViewPolicyConfig config = {});
-    virtual ~WebViewPolicy() = default;
+    WebViewPolicy(const WebViewPolicy& other);
+    WebViewPolicy& operator=(const WebViewPolicy& other);
+    virtual ~WebViewPolicy();
 
     virtual NavigationDecision decideNavigation(const NavigationRequest& request) const;
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
@@ -414,8 +418,6 @@ struct PermissionRequest {
 ## 能力查询
 
 ```cpp
-enum class CapabilitySupport { Supported, Unsupported };
-
 enum class WebViewCapability {
     PersistentProfile,
     PrivateProfile,
@@ -430,12 +432,12 @@ enum class WebViewCapability {
 };
 ```
 
-调用 `session->capabilitySupport(capability)`，不要根据操作系统名称推断功能。具体平台差异见 [平台行为矩阵](platform-version-and-behavior-matrix.md)。
+调用 `session->supports(capability)`，不要根据操作系统名称推断功能。具体平台差异见 [平台行为矩阵](platform-version-and-behavior-matrix.md)。
 
 ## 最小完整示例
 
 ```cpp
-#include <webview/WebViewFactory.h>
+#include <system_webview/system_webview.h>
 
 #include <QApplication>
 #include <QDebug>
@@ -472,7 +474,7 @@ int main(int argc, char* argv[])
     layout->addWidget(view->widget());
 
     webview::WebViewHostCallbacks callbacks;
-    callbacks.load = [](const webview::LoadEvent& event) {
+    callbacks.onLoad = [](const webview::LoadEvent& event) {
         if (event.state == webview::LoadState::Failed) {
             qWarning() << event.error;
         }
@@ -497,4 +499,5 @@ int main(int argc, char* argv[])
 | v3 | 2026-09-24 12:10 CST | 替换旧消息回调文档，增加 Bridge 请求/响应和大文件资源 API。 |
 | v4 | 2026-09-24 12:26 CST | 补齐页面端 `on()` API、消息大小校验和资源过期说明。 |
 | v5 | 2026-09-24 12:56 CST | 补充资源释放消息、活动读取的容量核算及删除失败重试。 |
-
+| v6 | 2026-09-24 17:29 CST | 统一公开头文件路径，并说明动态库导出和 PImpl 边界。 |
+| v7 | 2026-09-24 17:57 CST | 同步头文件中的使用说明，并简化能力查询和回调注册命名。 |
