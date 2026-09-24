@@ -124,9 +124,8 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
             status_->setText(QStringLiteral("Load failed: %1").arg(event.error));
         }
     };
-    callbacks.message = [this, page](const webview::BridgeMessage& message) {
-        if (message.type == QStringLiteral("window")) {
-            const auto action = message.payload.value(QStringLiteral("action")).toString();
+    page->bridge().on(QStringLiteral("window"), [this, page](const QJsonObject& payload) {
+            const auto action = payload.value(QStringLiteral("action")).toString();
             if (action == QStringLiteral("drag") && windowHandle()) {
                 windowHandle()->startSystemMove();
             } else if (action == QStringLiteral("minimize")) {
@@ -134,15 +133,15 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
             } else if (action == QStringLiteral("maximize")) {
                 const bool maximize = !isMaximized();
                 maximize ? showMaximized() : showNormal();
-                page->sendMessage({ 1, QStringLiteral("window-state"), QJsonObject { { "maximized", maximize } } });
+                page->bridge().emitEvent(QStringLiteral("window-state"), { { "maximized", maximize } });
             } else if (action == QStringLiteral("close")) {
                 close();
             }
-            return;
-        }
-        status_->setText(QStringLiteral("Page: %1").arg(message.payload.value("message").toString()));
-        page->sendMessage({ 1, QStringLiteral("ack"), QJsonObject { { "message", "Native received your message." } } });
-    };
+        });
+    page->bridge().on(QStringLiteral("hello"), [this, page](const QJsonObject& payload) {
+        status_->setText(QStringLiteral("Page: %1").arg(payload.value("message").toString()));
+        page->bridge().emitEvent(QStringLiteral("ack"), { { "message", "Native received your message." } });
+    });
     callbacks.newWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
         addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
     };

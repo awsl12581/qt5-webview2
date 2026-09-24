@@ -5,6 +5,7 @@
 
 #include <unordered_set>
 #include <atomic>
+#include <mutex>
 
 namespace webview
 {
@@ -15,5 +16,6 @@ struct WkSessionState {
     InitializationScheduler initialization;
     QVector<ResourceMapping> resourceMappings;
     std::unordered_set<WkWebView*> views;
+    std::mutex viewsMutex;
 };
 } // namespace webview

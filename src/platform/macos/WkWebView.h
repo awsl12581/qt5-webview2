@@ -28,11 +28,13 @@ public:
     void reload() override;
     void close() override;
     bool isClosed() const override;
-    void sendMessage(const BridgeMessage& message, MessageCompletion completion) override;
+    WebViewBridge& bridge() override;
+    WebResourceManager& resources() override;
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
     void* createPopup(void* configuration, const NewWindowRequest& request);
     std::shared_ptr<WebViewState> stateForHostCompletion() const;
+    bool ownsNativeView(void* nativeView) const;
 
 private:
     friend class WkWebViewSession;

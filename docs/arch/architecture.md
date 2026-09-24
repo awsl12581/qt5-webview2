@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> Last modified: 2026-09-24 04:37 CEST
-> Document version: v2
-> Change: Added standard metadata and a version history while preserving the architecture description.
+> Last modified: 2026-09-24 12:56 CST
+> Document version: v5
+> Change: Documented the shared page script and resource release accounting.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -62,13 +62,17 @@ On macOS, trusted pages send through `window.systemWebView.postMessage(message)`
 
 On Windows, the WebView2 SDK interface used by this backend exposes the message source URL but no direct main-frame flag on `ICoreWebView2WebMessageReceivedEventArgs`. The backend therefore does not describe its origin comparison as frame validation. It injects the current token into the top-level document, then requires that token together with the committed origin, message size, protocol version, type, and payload schema. Cross-origin frames fail the origin check; frames without the top-level token and stale documents fail the token check. A hostile same-origin frame that can obtain the top-level token is outside the guarantees of this SDK path.
 
-Messages use this envelope:
+Bridge messages use an event, request, or response envelope:
 
 ```json
-{"version":1,"type":"command-name","payload":{}}
+{"version":1,"kind":"event","type":"command-name","requestId":"","payload":{},"error":""}
 ```
 
-Policy sets the maximum serialized size, allowed message types, and required payload fields for each type. Dispatch is by an allowed type, never by an arbitrary native method name. Native-to-page messages are serialized with `QJsonDocument`; source text is not assembled from unescaped payload strings. A navigation or close invalidates pending JavaScript completion callbacks.
+`WebViewBridge` owns JSON encoding, schema validation, event dispatch, request ID matching, and pending request cancellation. The common `bridgePageScript()` builds the page-side event/request/response API; each backend supplies only its native send and receive expressions and document token. `IWebView::bridge()` is the application entry point. The page uses `window.systemWebView.postMessage()` for events, `on()` to receive typed messages, and `call()` for requests. Request listeners answer with the supplied `reply()` function. A navigation or close cancels pending native requests.
+
+Platform backends provide the native transport. Incoming messages pass main-frame, origin, and document-token checks before reaching `WebViewBridge`; the bridge then applies the directional policy schema and size limit. `sendMessage()` and `WebViewHostCallbacks::message` have been removed.
+
+Large local files use `IWebView::resources().publishFile()`. The manager creates a stable snapshot, binds its opaque `app://<application-id>/resource/<token>` URL to the current document, and serves validated byte ranges from a file stream. The JSON bridge carries the URL and metadata only. `WebView2View` adapts requests through WebView2 resource events; `WkWebView` uses `WKURLSchemeHandler` and sends bounded chunks. Each token expires after 30 minutes. The page clears its DOM reference before sending the built-in `release-resource` event; the host can also call `release(token)`. Release, navigation, close, and session teardown revoke tokens. Active readers hold snapshot leases, so their bytes remain counted against the capacity limit until deletion succeeds. Failed deletion is retried on a timer and at the next publication; expired entries are swept on publication.
 
 ## Backend mapping
 
@@ -79,6 +83,7 @@ Policy sets the maximum serialized size, allowed message types, and required pay
 | Lifecycle | `WKNavigationDelegate` | Navigation starting/source/content/completed events | policy decision, load-changed, and failure signals |
 | Popup | `WKUIDelegate` | `NewWindowRequested` | `create` signal |
 | Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source, top-level document token, and schema checks; no direct frame flag | script-message frame URI/origin checks |
+| Published resources | `WKURLSchemeHandler` and chunked file reads | `WebResourceRequested` and bounded `IStream` | not implemented |
 
 The macOS WKWebView and Windows WebView2 backends are implemented. WebKit2GTK remains a design mapping only. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
 
@@ -98,4 +103,7 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | --- | --- | --- |
 | v1 | Existing document | Initial architecture description. |
 | v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
+| v3 | 2026-09-24 12:10 CST | Documented the centralized bridge, removal of the old message API, and streamed published resources. |
+| v4 | 2026-09-24 12:26 CST | Clarified page events, raw message limits, resource expiry, and platform boundaries. |
+| v5 | 2026-09-24 12:56 CST | Documented the shared page script, built-in resource control, snapshot accounting, and deletion retry. |
 

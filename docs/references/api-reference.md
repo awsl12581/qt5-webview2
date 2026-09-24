@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-09-24 04:37 CEST
-> 文档版本：v2
-> 修改说明：补充统一文档元数据和版本记录，保留接口内容不变。
+> 最后修改时间：2026-09-24 12:56 CST
+> 文档版本：v5
+> 修改说明：补充内置资源控制消息、快照容量核算和删除重试。
 
 本文整理 `include/webview/` 中供应用调用的接口。最常用的入口只有一个：
 
@@ -137,9 +137,8 @@ public:
     virtual void reload() = 0;
     virtual void close() = 0;
     virtual bool isClosed() const = 0;
-    virtual void sendMessage(
-        const BridgeMessage& message,
-        MessageCompletion completion = {}) = 0;
+    virtual WebViewBridge& bridge() = 0;
+    virtual WebResourceManager& resources() = 0;
     virtual void setHostCallbacks(WebViewHostCallbacks callbacks) = 0;
 };
 ```
@@ -184,7 +183,6 @@ struct WebViewHostCallbacks {
     std::function<void(const LoadEvent&)> load;
     std::function<void(const QUrl&)> openExternal;
     std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;
-    std::function<void(const BridgeMessage&)> message;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> selectFiles;
     std::function<void(const DownloadRequest&, DownloadCompletion)> resolveDownload;
 };
@@ -193,7 +191,6 @@ struct WebViewHostCallbacks {
 - `load` 接收主页面加载状态。
 - `openExternal` 在策略返回 `OpenExternally` 时调用。
 - `newWindow` 把新建页面的所有权交给宿主。若接受该页面，必须在回调返回前保存传入的 `WebViewPtr`。
-- `message` 只接收已经通过来源、版本、大小和 schema 校验的页面消息。
 - `selectFiles` 和 `resolveDownload` 由宿主完成用户交互，并各自调用 completion 一次。
 
 ### 文件选择
@@ -247,23 +244,19 @@ using DownloadCompletion = std::function<void(DownloadResolution)>;
 
 ## 消息桥
 
-消息结构：
+页面和 C++ 通过 `WebViewBridge` 收发结构化消息：
 
 ```cpp
+enum class BridgeMessageKind { Event, Request, Response };
+
 struct BridgeMessage {
     int version = 1;
+    BridgeMessageKind kind = BridgeMessageKind::Event;
     QString type;
+    QString requestId;
     QJsonObject payload;
+    QString error;
 };
-
-enum class MessageError { None, Closed, NavigationChanged, Rejected, Unsupported };
-
-struct MessageResult {
-    MessageError error = MessageError::None;
-    QString detail;
-};
-
-using MessageCompletion = std::function<void(const MessageResult&)>;
 ```
 
 页面发送到 C++：
@@ -271,30 +264,38 @@ using MessageCompletion = std::function<void(const MessageResult&)>;
 ```js
 window.systemWebView.postMessage({
   version: 1,
+  kind: "event",
   type: "save",
   payload: { id: "42" }
 });
 ```
 
-C++ 发送到页面：
+C++ 注册事件、发事件或发起请求：
 
 ```cpp
-view->sendMessage(
-    { 1, QStringLiteral("saved"), QJsonObject { { "id", "42" } } },
-    [](const webview::MessageResult& result) {
-        if (result.error != webview::MessageError::None) {
-            qWarning() << result.detail;
-        }
+view->bridge().on(QStringLiteral("save-result"), [](const QJsonObject& payload) {
+    qDebug() << payload;
+});
+
+view->bridge().emitEvent(QStringLiteral("saved"), { { "id", "42" } });
+
+view->bridge().call(QStringLiteral("get-user"), { { "id", "42" } },
+    [](const QJsonObject& payload, const QString& error) {
+        if (!error.isEmpty()) qWarning() << error;
+        else qDebug() << payload;
     });
 ```
 
 页面接收 C++ 消息：
 
 ```js
-window.addEventListener("system-webview-message", event => {
-  console.log(event.detail.type, event.detail.payload);
+const stopListening = window.systemWebView.on("saved", payload => {
+  console.log(payload.id);
 });
+// stopListening() removes this listener.
 ```
+
+`on()` 对事件和请求都生效。C++ 发起请求时，处理器可通过第二个参数的 `reply(payload, error)` 应答。兼容的 `system-webview-message` DOM 事件仍会派发。
 
 每种消息类型都必须在对应方向的 schema 中注册：
 
@@ -307,6 +308,32 @@ config.hostToPageSchemas.insert(
     QStringLiteral("saved"),
     { { { QStringLiteral("id"), QJsonValue::String } } });
 ```
+
+`onRequest(type, handler)` 注册页面可调用的 C++ 请求处理器。处理器通过 `Reply` 返回 payload 或错误。导航或关闭会取消未完成的 C++ 请求。
+
+## 大文件资源
+
+大文件不放入消息 payload。`publishFile()` 在 view 已打开应用后创建稳定快照，并返回页面可读取的 opaque URL：
+
+```cpp
+const auto file = view->resources().publishFile(path, QStringLiteral("application/pdf"));
+if (!file.token.isEmpty()) {
+    view->bridge().emitEvent(QStringLiteral("show-file"), {
+        { "url", file.url.toString() },
+        { "mime", file.mimeType },
+        { "token", file.token }
+    });
+}
+```
+
+页面将 URL 用作 `img`、`video` 或 `iframe` 的资源地址。不再展示时先清除 DOM 引用，再通知原生端释放：
+
+```js
+frame.removeAttribute("src");
+window.systemWebView.postMessage({ type: "release-resource", payload: { token } });
+```
+
+`release-resource` 是内置的页面到宿主事件；宿主也可调用 `view->resources().release(token)`，并通过内置 `resource-revoked` 事件通知页面。这两种消息不需要在应用 schema 中重复注册。资源按当前 document 隔离，支持单段 Range；导航、view 关闭和 session 销毁会撤销该 document 的资源。每个 token 发布 30 分钟后过期，过期项在下一次发布时清理。发布的源文件由调用方拥有，manager 只删除自己创建的快照。活动读取持有快照租约，快照删除成功前仍计入总容量；删除失败会定时重试，也会在下一次发布时重试。
 
 默认不允许额外字段。确实需要扩展 payload 时，将 `BridgeMessageSchema::allowAdditionalPayloadFields` 设为 `true`。
 
@@ -467,4 +494,7 @@ int main(int argc, char* argv[])
 | --- | --- | --- |
 | v1 | 创建时 | 初始公开接口速查。 |
 | v2 | 2026-09-24 04:37 CEST | 补充统一文档元数据和版本记录。 |
+| v3 | 2026-09-24 12:10 CST | 替换旧消息回调文档，增加 Bridge 请求/响应和大文件资源 API。 |
+| v4 | 2026-09-24 12:26 CST | 补齐页面端 `on()` API、消息大小校验和资源过期说明。 |
+| v5 | 2026-09-24 12:56 CST | 补充资源释放消息、活动读取的容量核算及删除失败重试。 |
 

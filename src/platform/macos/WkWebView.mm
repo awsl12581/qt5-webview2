@@ -6,6 +6,7 @@
 #include "internal/Application.h"
 #include "webview/HostCompletion.h"
 #include "webview/WebViewState.h"
+#include "internal/BridgePageScript.h"
 #include "internal/ResourceMapping.h"
 
 #include <QEvent>
@@ -96,28 +97,12 @@ struct WkNavigationState {
 void installDocumentTransport(WebViewState& state, WKUserContentController* content)
 {
     state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    state.setResourceDocumentToken(state.documentToken);
     const auto escapedToken = QString::fromUtf8(
         QJsonDocument(QJsonArray { state.documentToken }).toJson(QJsonDocument::Compact));
     const auto tokenLiteral = escapedToken.mid(1, escapedToken.size() - 2);
-    const auto source = QStringLiteral(R"JS((() => {
-  const documentToken = %1;
-  const nativeHandler = window.webkit.messageHandlers.systemWebView;
-  const transport = Object.freeze({
-    postMessage(message) {
-      nativeHandler.postMessage({ documentToken, message });
-    }
-  });
-  Object.defineProperty(window, 'systemWebView', {
-    value: transport,
-    configurable: false,
-    enumerable: true,
-    writable: false
-  });
-  window.__systemWebViewReceive = function(message) {
-    window.dispatchEvent(new CustomEvent('system-webview-message', { detail: message }));
-  };
-})();)JS")
-                            .arg(tokenLiteral);
+    const auto source = bridgePageScript(tokenLiteral,
+        QStringLiteral("window.webkit.messageHandlers.systemWebView.postMessage"), {});
     [content removeAllUserScripts];
     auto* script = [[WKUserScript alloc] initWithSource:toNSString(source)
                                           injectionTime:WKUserScriptInjectionTimeAtDocumentStart
@@ -125,6 +110,34 @@ void installDocumentTransport(WebViewState& state, WKUserContentController* cont
     [content addUserScript:script];
     state.documentTransportPrepared = true;
 }
+
+class WkBridgeTransport final : public BridgeTransport
+{
+public:
+    explicit WkBridgeTransport(WKWebView* view) : view_(view) {}
+    bool send(const QByteArray& bytes) override
+    {
+        if (!view_) return false;
+        QJsonParseError error;
+        const auto document = QJsonDocument::fromJson(bytes, &error);
+        if (error.error != QJsonParseError::NoError || !document.isObject()) return false;
+        if (@available(macOS 11.0, *)) {
+        [view_ callAsyncJavaScript:@"window.__systemWebViewReceive(message);"
+                         arguments:@{ @"message" : foundationObject(document.object()) }
+                           inFrame:nil
+                      inContentWorld:[WKContentWorld pageWorld]
+                    completionHandler:^(id, NSError*) {}];
+        return true;
+        }
+        const auto json = QString::fromUtf8(bytes);
+        const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(json);
+        [view_ evaluateJavaScript:toNSString(script) completionHandler:^(id, NSError*) {}];
+        return true;
+    }
+    void invalidate() override { view_ = nil; }
+private:
+    WKWebView* __weak view_;
+};
 
 class WkWebView::Impl
 {
@@ -171,7 +184,7 @@ public:
 {
     const QUrl frameUrl(QString::fromUtf8(message.frameInfo.request.URL.absoluteString.UTF8String));
     if (![message.name isEqualToString:@(kBridgeName)] || !self.state || self.state->lifetime.isClosed()
-        || !self.state->callbacks.message || !message.frameInfo.mainFrame
+        || !message.frameInfo.mainFrame
         || self.state->bridgeOrigin != webview::normalizedOrigin(self.state->committedUrl)
         || !self.state->policy->allowsBridge(self.state->committedUrl)
         || webview::normalizedOrigin(frameUrl) != webview::normalizedOrigin(self.state->committedUrl)) {
@@ -191,14 +204,7 @@ public:
             || !object.value(QStringLiteral("payload")).isObject()) {
             return;
         }
-        webview::BridgeMessage bridgeMessage;
-        bridgeMessage.version = object.value(QStringLiteral("version")).toInt(-1);
-        bridgeMessage.type = object.value(QStringLiteral("type")).toString();
-        bridgeMessage.payload = object.value(QStringLiteral("payload")).toObject();
-        QString validationError;
-        if (self.state->policy->validatePageToHostMessage(bridgeMessage, &validationError)) {
-            self.state->callbacks.message(bridgeMessage);
-        }
+        self.state->bridge->receive(QJsonDocument(object).toJson(QJsonDocument::Compact), frameUrl);
     }
 }
 @end
@@ -386,7 +392,7 @@ public:
             self.state->explicitMainFrameNavigationPending = false;
             if (!isRedirect) {
                 self.state->provisionalMainFrameNavigation = false;
-                self.state->lifetime.invalidate();
+                self.state->invalidateDocument();
                 self.state->committedUrl = QUrl();
                 if (self.state->documentTransportPrepared) {
                     self.state->documentTransportPrepared = false;
@@ -461,6 +467,9 @@ public:
         return;
     }
     self.state->committedUrl = QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String));
+    if (!self.state->resourceOrigin.isEmpty()) {
+        self.state->setResourceContext(self.state->resourceOrigin, self.state->committedUrl, self.state->documentToken);
+    }
     self.state->emitLoad(webview::LoadState::Committed,
         self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId), self.state->committedUrl);
 }
@@ -519,6 +528,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
 {
     impl_->state = std::make_shared<WebViewState>();
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
+    impl_->state->bindBridgePolicy();
     impl_->sessionState = std::move(sessionState);
     impl_->container = new NativeViewHost(nullptr);
     auto* content = [[WKUserContentController alloc] init];
@@ -545,6 +555,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
     downloadDelegate->context = impl_->container;
     impl_->downloadDelegate = downloadDelegate;
     impl_->view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1, 1) configuration:nativeConfiguration];
+    impl_->state->bridge->setTransport(std::make_unique<WkBridgeTransport>(impl_->view));
     impl_->view.UIDelegate = uiDelegate;
     impl_->view.navigationDelegate = navigationDelegate;
     if (@available(macOS 11.3, *)) {
@@ -568,6 +579,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy,
         }
     };
     if (impl_->sessionState && impl_->sessionState->valid) {
+        std::lock_guard<std::mutex> lock(impl_->sessionState->viewsMutex);
         impl_->sessionState->views.insert(this);
         impl_->state->markReady();
     } else {
@@ -620,6 +632,8 @@ void WkWebView::open(WebApplicationPtr application, const QString& route)
     if (!application) return;
     impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed
         ? normalizedOrigin(application->origin()) : QUrl();
+    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(application->id()));
+    impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
     navigate(application->urlForRoute(route));
 }
 
@@ -662,7 +676,7 @@ void WkWebView::loadDocument(const QString& html, const QUrl& baseUrl)
                 QStringLiteral("The app origin has no configured resource mapping."));
             return;
         }
-        impl_->state->lifetime.invalidate();
+        impl_->state->invalidateDocument();
         impl_->state->committedUrl = QUrl();
         impl_->state->provisionalMainFrameNavigation = false;
         impl_->state->explicitMainFrameNavigationPending = true;
@@ -681,7 +695,7 @@ void WkWebView::stop()
 void WkWebView::reload()
 {
     if (!impl_->state->lifetime.isClosed()) {
-        impl_->state->lifetime.invalidate();
+        impl_->state->invalidateDocument();
         impl_->state->committedUrl = QUrl();
         impl_->state->provisionalMainFrameNavigation = false;
         impl_->state->explicitMainFrameNavigationPending = true;
@@ -704,6 +718,7 @@ void WkWebView::close()
     impl_->navigationState->navigationIds.clear();
     impl_->state->policy.reset();
     if (impl_->sessionState) {
+        std::lock_guard<std::mutex> lock(impl_->sessionState->viewsMutex);
         impl_->sessionState->views.erase(this);
     }
     [impl_->view stopLoading];
@@ -726,62 +741,8 @@ void WkWebView::close()
 
 bool WkWebView::isClosed() const { return impl_->state->lifetime.isClosed(); }
 
-void WkWebView::sendMessage(const BridgeMessage& message, MessageCompletion completion)
-{
-    if (impl_->state->lifetime.isClosed()) {
-        if (completion) {
-            completion({ MessageError::Closed, QStringLiteral("The web view is closed.") });
-        }
-        return;
-    }
-    QString validationError;
-    if (!impl_->state->policy->allowsBridge(impl_->state->committedUrl)
-        || !impl_->state->policy->validateHostToPageMessage(message, &validationError)) {
-        if (completion) {
-            completion({ MessageError::Rejected,
-                validationError.isEmpty() ? QStringLiteral("The current document is not authorized for bridge messages.")
-                                          : validationError });
-        }
-        return;
-    }
-    const QJsonObject envelope {
-        { QStringLiteral("version"), message.version },
-        { QStringLiteral("type"), message.type },
-        { QStringLiteral("payload"), message.payload },
-    };
-    const auto generation = impl_->state->lifetime.token();
-    const std::weak_ptr<WebViewState> weakState = impl_->state;
-    const auto completionHandler = ^(id, NSError* error) {
-                         if (!completion) {
-                             return;
-                         }
-                         const auto state = weakState.lock();
-                         if (!state || state->lifetime.resultFor(generation) == MessageError::Closed) {
-                             completion({ MessageError::Closed, QStringLiteral("The web view is closed.") });
-                             return;
-                         }
-                         if (state->lifetime.resultFor(generation) == MessageError::NavigationChanged) {
-                             completion({ MessageError::NavigationChanged,
-                                 QStringLiteral("The document changed before message delivery completed.") });
-                             return;
-                         }
-                         if (error) {
-                             completion({ MessageError::Rejected, QString::fromUtf8(error.localizedDescription.UTF8String) });
-                         } else {
-                             completion({ });
-                         }
-                     };
-    if (@available(macOS 11.0, *)) {
-        [impl_->view callAsyncJavaScript:@"window.__systemWebViewReceive(message);"
-                              arguments:@{ @"message" : foundationObject(envelope) }
-                                inFrame:nil
-                         inContentWorld:[WKContentWorld pageWorld]
-                       completionHandler:completionHandler];
-    } else if (completion) {
-        completion({ MessageError::Unsupported,
-            QStringLiteral("Native JavaScript argument binding requires macOS 11 or later.") });
-    }
-}
+WebViewBridge& WkWebView::bridge() { return *impl_->state->bridge; }
+WebResourceManager& WkWebView::resources() { return *impl_->state->resources; }
 
 void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
 {
@@ -812,6 +773,11 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
 std::shared_ptr<WebViewState> WkWebView::stateForHostCompletion() const
 {
     return impl_->state;
+}
+
+bool WkWebView::ownsNativeView(void* nativeView) const
+{
+    return static_cast<void*>(impl_->view) == nativeView;
 }
 
 } // namespace webview

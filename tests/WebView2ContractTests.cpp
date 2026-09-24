@@ -3,6 +3,13 @@
 #include "webview/WebViewState.h"
 
 #include <QApplication>
+#include <QEventLoop>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
+#include <QTimer>
+
+#include <windows.h>
 
 #include <cassert>
 #include <thread>
@@ -32,6 +39,41 @@ void testHostCompletionGuardIsThreadSafe()
     webview::HostCompletionGuard closedGuard(closedState);
     assert(closedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
 }
+
+void testSnapshotDeletionRetriesAfterFileUnlock()
+{
+    QTemporaryDir sourceDirectory;
+    assert(sourceDirectory.isValid());
+    QFile source(sourceDirectory.filePath(QStringLiteral("resource.bin")));
+    assert(source.open(QIODevice::WriteOnly));
+    assert(source.write("resource") == 8);
+    source.close();
+
+    auto state = std::make_shared<webview::WebViewState>();
+    const QUrl origin(QStringLiteral("https://trusted.example"));
+    state->setResourceContext(QUrl(QStringLiteral("app://resource-test")), origin, QStringLiteral("doc-1"));
+    const auto published = state->resources->publishFile(source.fileName());
+    assert(!published.token.isEmpty());
+    auto response = state->resources->open({ published.url, origin, QStringLiteral("doc-1") });
+    assert(response.status == 200);
+    const auto snapshotPath = qobject_cast<QFile*>(response.body.get())->fileName();
+    response.body.reset();
+    response.lease.reset();
+
+    const auto path = snapshotPath.toStdWString();
+    HANDLE lockedFile = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    assert(lockedFile != INVALID_HANDLE_VALUE);
+    state->resources->release(published.token);
+    assert(QFileInfo::exists(snapshotPath));
+    assert(state->resources->open({ published.url, origin, QStringLiteral("doc-1") }).status == 410);
+    CloseHandle(lockedFile);
+
+    QEventLoop loop;
+    QTimer::singleShot(1500, &loop, &QEventLoop::quit);
+    loop.exec();
+    assert(!QFileInfo::exists(snapshotPath));
+}
 }
 
 int main(int argc, char** argv)
@@ -39,5 +81,6 @@ int main(int argc, char** argv)
     QApplication application(argc, argv);
     testUnsupportedFileSelectionIsExplicit();
     testHostCompletionGuardIsThreadSafe();
+    testSnapshotDeletionRetriesAfterFileUnlock();
     return 0;
 }

@@ -134,23 +134,21 @@ int main(int argc, char** argv)
             loop.quit();
         }
     };
-    callbacks.message = [&](const webview::BridgeMessage& message) {
-        ++messageCount;
-        assert(message.type == QStringLiteral("hello"));
-        if (message.payload.contains(QStringLiteral("executed"))) {
-            hostileReturned = true;
-            hostileExecuted = message.payload.value(QStringLiteral("executed")).toBool();
-            hostileReturnedPayload = message.payload.value(QStringLiteral("message")).toString();
-            loop.quit();
-        } else {
-            assert(message.payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
-        }
-    };
     callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) {
         ++popupCount;
     };
     view->setHostCallbacks(std::move(callbacks));
-
+    view->bridge().on(QStringLiteral("hello"), [&](const QJsonObject& payload) {
+        ++messageCount;
+        if (payload.contains(QStringLiteral("executed"))) {
+            hostileReturned = true;
+            hostileExecuted = payload.value(QStringLiteral("executed")).toBool();
+            hostileReturnedPayload = payload.value(QStringLiteral("message")).toString();
+            loop.quit();
+        } else {
+            assert(payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
+        }
+    });
     const QString html = QStringLiteral(R"HTML(
 <!doctype html><html><body>
 <iframe srcdoc="<script>window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'frame'}})</script>"></iframe>
@@ -210,25 +208,10 @@ window.addEventListener('DOMContentLoaded', () => {
     rejectionLoop.exec();
     assert(events.size() == eventCount);
 
-    bool rejected = false;
-    view->sendMessage({ 1, QStringLiteral("unknown"), { } }, [&](const webview::MessageResult& result) {
-        rejected = result.error == webview::MessageError::Rejected;
-    });
-    assert(rejected);
-
     const QString hostilePayload = QStringLiteral("</script><script>window.__payloadExecuted=true</script>");
-    bool hostileDelivered = false;
-    view->sendMessage({ 1, QStringLiteral("hello"), { { QStringLiteral("message"), hostilePayload } } },
-        [&](const webview::MessageResult& result) {
-            assert(result.error == webview::MessageError::None);
-            hostileDelivered = true;
-            if (hostileReturned) {
-                loop.quit();
-            }
-        });
+    view->bridge().emitEvent(QStringLiteral("hello"), { { QStringLiteral("message"), hostilePayload } });
     timeout.start(10000);
     loop.exec();
-    assert(hostileDelivered);
     assert(hostileReturned);
     assert(hostileReturnedPayload == hostilePayload);
     assert(!hostileExecuted);
@@ -407,10 +390,10 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(policy->navigationRequests.size() == navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;
-    view->sendMessage({ 1, QStringLiteral("hello"), { } },
-        [&](const webview::MessageResult& result) { rootClosed = result.error == webview::MessageError::Closed; });
-    popup->sendMessage({ 1, QStringLiteral("hello"), { } },
-        [&](const webview::MessageResult& result) { popupClosed = result.error == webview::MessageError::Closed; });
+    view->bridge().call(QStringLiteral("hello"), {},
+        [&](const QJsonObject&, const QString& error) { rootClosed = !error.isEmpty(); });
+    popup->bridge().call(QStringLiteral("hello"), {},
+        [&](const QJsonObject&, const QString& error) { popupClosed = !error.isEmpty(); });
     assert(rootClosed);
     assert(popupClosed);
 
@@ -418,7 +401,7 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     view->close();
     assert(view->isClosed());
     bool closed = false;
-    view->sendMessage({ 1, QStringLiteral("hello"), { { QStringLiteral("message"), QStringLiteral("late") } } },
-        [&](const webview::MessageResult& result) { closed = result.error == webview::MessageError::Closed; });
+    view->bridge().call(QStringLiteral("hello"), { { QStringLiteral("message"), QStringLiteral("late") } },
+        [&](const QJsonObject&, const QString& error) { closed = !error.isEmpty(); });
     assert(closed);
 }

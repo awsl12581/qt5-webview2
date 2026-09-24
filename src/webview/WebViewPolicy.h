@@ -1,6 +1,7 @@
 #pragma once
 
 #include "webview/WebViewTypes.h"
+#include "webview/WebViewBridge.h"
 
 #include <QHash>
 #include <QJsonValue>
@@ -37,6 +38,7 @@ public:
     virtual bool allowsBridge(const QUrl& committedUrl) const;
     virtual bool validatePageToHostMessage(const BridgeMessage& message, QString* error = nullptr) const;
     virtual bool validateHostToPageMessage(const BridgeMessage& message, QString* error = nullptr) const;
+    int maximumBridgeMessageBytes() const;
     virtual PermissionDecision decidePermission(const PermissionRequest& request) const;
     virtual DownloadDecision decideDownload(const DownloadRequest& request) const;
 

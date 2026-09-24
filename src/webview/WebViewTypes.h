@@ -135,20 +135,7 @@ struct DownloadResolution {
 
 using DownloadCompletion = std::function<void(DownloadResolution)>;
 
-struct BridgeMessage {
-    int version = 1;
-    QString type;
-    QJsonObject payload;
-};
-
-enum class MessageError { None, Closed, NavigationChanged, Rejected, Unsupported };
-
-struct MessageResult {
-    MessageError error = MessageError::None;
-    QString detail;
-};
-
-using MessageCompletion = std::function<void(const MessageResult&)>;
+enum class DocumentError { None, Closed, NavigationChanged };
 
 struct WebsiteDataResult {
     bool success = true;
@@ -159,7 +146,6 @@ struct WebViewHostCallbacks {
     std::function<void(const LoadEvent&)> load;
     std::function<void(const QUrl&)> openExternal;
     std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;
-    std::function<void(const BridgeMessage&)> message;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> selectFiles;
     std::function<void(const DownloadRequest&, DownloadCompletion)> resolveDownload;
 };

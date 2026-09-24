@@ -27,12 +27,12 @@ public:
 
     bool isClosed() const { return closed_.load(); }
 
-    MessageError resultFor(quint64 token) const
+    DocumentError resultFor(quint64 token) const
     {
         if (closed_.load()) {
-            return MessageError::Closed;
+            return DocumentError::Closed;
         }
-        return token == token_.load() ? MessageError::None : MessageError::NavigationChanged;
+        return token == token_.load() ? DocumentError::None : DocumentError::NavigationChanged;
     }
 
 private:

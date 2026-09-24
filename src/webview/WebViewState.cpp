@@ -119,7 +119,64 @@ void WebViewState::runWhenReady(std::function<void(const InitializationResult&)>
 void WebViewState::close()
 {
     lifetime.close();
+    if (bridge) bridge->invalidate();
+    if (resources) resources->releaseAll();
     initialization_.close();
+}
+
+void WebViewState::bindBridgePolicy()
+{
+    const std::weak_ptr<WebViewState> weak = shared_from_this();
+    bridge->on(QStringLiteral("release-resource"), [weak](const QJsonObject& payload) {
+        if (const auto state = weak.lock()) state->resources->release(payload.value(QStringLiteral("token")).toString());
+    });
+    resources->setRevocationHandler([weak](const QString& token) {
+        if (const auto state = weak.lock()) {
+            state->bridge->emitEvent(QStringLiteral("resource-revoked"), { { QStringLiteral("token"), token } });
+        }
+    });
+    bridge->setValidator([weak](const BridgeMessage& message, bool outbound, int wireSize, QString* error) {
+        const auto state = weak.lock();
+        if (!state || state->lifetime.isClosed() || !state->policy
+            || !state->policy->allowsBridge(state->committedUrl)) {
+            if (error) *error = QStringLiteral("The current document is not authorized for bridge messages.");
+            return false;
+        }
+        if (wireSize > state->policy->maximumBridgeMessageBytes()) {
+            if (error) *error = QStringLiteral("Bridge message exceeds the configured size limit.");
+            return false;
+        }
+        if (message.type == QStringLiteral("release-resource")
+            || message.type == QStringLiteral("resource-revoked")) {
+            const bool allowed = message.kind == BridgeMessageKind::Event
+                && message.type == (outbound ? QStringLiteral("resource-revoked") : QStringLiteral("release-resource"))
+                && message.payload.size() == 1
+                && message.payload.value(QStringLiteral("token")).isString()
+                && !message.payload.value(QStringLiteral("token")).toString().isEmpty();
+            if (!allowed && error) *error = QStringLiteral("Invalid resource control message.");
+            return allowed;
+        }
+        return outbound || message.kind == BridgeMessageKind::Response
+            ? state->policy->validateHostToPageMessage(message, error)
+            : state->policy->validatePageToHostMessage(message, error);
+    });
+}
+
+void WebViewState::invalidateDocument()
+{
+    lifetime.invalidate();
+    if (bridge) bridge->cancelPending(QStringLiteral("The document changed."));
+    setResourceDocumentToken({});
+}
+
+void WebViewState::setResourceDocumentToken(const QString& token)
+{
+    if (resources) resources->setDocumentToken(token);
+}
+
+void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOrigin, const QString& token)
+{
+    if (resources) resources->setContext(origin, documentOrigin, token);
 }
 
 void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url,

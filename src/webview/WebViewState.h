@@ -3,6 +3,8 @@
 #include "webview/DocumentLifetime.h"
 #include "webview/IWebView.h"
 #include "webview/WebViewPolicy.h"
+#include "webview/WebViewBridge.h"
+#include "webview/WebResourceManager.h"
 
 #include <functional>
 #include <memory>
@@ -37,9 +39,12 @@ class WebViewState final : public std::enable_shared_from_this<WebViewState>
 {
 public:
     WebViewHostCallbacks callbacks;
+    std::shared_ptr<WebViewBridge> bridge = std::make_shared<WebViewBridge>();
+    std::shared_ptr<WebResourceManager> resources = std::make_shared<WebResourceManager>();
     WebViewPolicyPtr policy;
     QUrl committedUrl;
     QUrl bridgeOrigin;
+    QUrl resourceOrigin;
     QString documentToken;
     bool documentTransportPrepared = false;
     bool provisionalMainFrameNavigation = false;
@@ -52,6 +57,10 @@ public:
     void whenInitialized(IWebView::InitializationCompletion completion);
     void runWhenReady(std::function<void(const InitializationResult&)> operation);
     void close();
+    void bindBridgePolicy();
+    void invalidateDocument();
+    void setResourceDocumentToken(const QString& token);
+    void setResourceContext(const QUrl& origin, const QUrl& documentOrigin, const QString& token);
 
     void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { },
         const QString& error = { });

@@ -76,9 +76,9 @@ private:
             return false;
         }
         bool completionCalled = false;
-        retainedView->sendMessage({ 1, QStringLiteral("closed-probe"), {} },
-            [&completionCalled](const webview::MessageResult& result) {
-                completionCalled = result.error == webview::MessageError::Closed;
+        retainedView->bridge().call(QStringLiteral("closed-probe"), {},
+            [&completionCalled](const QJsonObject&, const QString& error) {
+                completionCalled = !error.isEmpty();
             });
         if (!completionCalled) {
             fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
@@ -222,9 +222,9 @@ private:
             return;
         }
         bool completionCalled = false;
-        retainedView->sendMessage({ 1, QStringLiteral("closed-probe"), {} },
-            [&completionCalled](const webview::MessageResult& result) {
-                completionCalled = result.error == webview::MessageError::Closed;
+        retainedView->bridge().call(QStringLiteral("closed-probe"), {},
+            [&completionCalled](const QJsonObject&, const QString& error) {
+                completionCalled = !error.isEmpty();
             });
         if (!completionCalled) {
             fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));

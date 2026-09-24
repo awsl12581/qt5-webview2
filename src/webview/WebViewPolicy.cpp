@@ -32,8 +32,12 @@ bool validateMessage(const webview::BridgeMessage& message,
 {
     const QJsonObject envelope {
         { QStringLiteral("version"), message.version },
+        { QStringLiteral("kind"), message.kind == webview::BridgeMessageKind::Request ? QStringLiteral("request")
+              : message.kind == webview::BridgeMessageKind::Response ? QStringLiteral("response") : QStringLiteral("event") },
         { QStringLiteral("type"), message.type },
+        { QStringLiteral("requestId"), message.requestId },
         { QStringLiteral("payload"), message.payload },
+        { QStringLiteral("error"), message.error },
     };
     const auto serialized = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
     QString detail;
@@ -44,7 +48,7 @@ bool validateMessage(const webview::BridgeMessage& message,
         detail = QStringLiteral("Unsupported bridge protocol version.");
     } else if (schema == schemas.cend()) {
         detail = QStringLiteral("Bridge message type is not allowed.");
-    } else {
+    } else if (!(message.kind == webview::BridgeMessageKind::Response && !message.error.isEmpty())) {
         for (auto field = schema->requiredPayloadFields.cbegin();
              field != schema->requiredPayloadFields.cend(); ++field) {
             const auto value = message.payload.value(field.key());
@@ -146,6 +150,11 @@ bool WebViewPolicy::validatePageToHostMessage(const BridgeMessage& message, QStr
 bool WebViewPolicy::validateHostToPageMessage(const BridgeMessage& message, QString* error) const
 {
     return validateMessage(message, config_.hostToPageSchemas, config_.maximumBridgeMessageBytes, error);
+}
+
+int WebViewPolicy::maximumBridgeMessageBytes() const
+{
+    return config_.maximumBridgeMessageBytes;
 }
 
 PermissionDecision WebViewPolicy::decidePermission(const PermissionRequest&) const

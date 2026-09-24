@@ -34,7 +34,8 @@ public:
     void reload() override;
     void close() override;
     bool isClosed() const override;
-    void sendMessage(const BridgeMessage& message, MessageCompletion completion) override;
+    WebViewBridge& bridge() override;
+    WebResourceManager& resources() override;
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
 private:

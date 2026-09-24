@@ -7,14 +7,19 @@
 #include "internal/Application.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QMimeDatabase>
+#include <QRegularExpression>
 #include <QSet>
+
+#include <vector>
 
 #import <WebKit/WebKit.h>
 
 @interface SystemWebViewSchemeHandler : NSObject <WKURLSchemeHandler> {
 @public
     std::shared_ptr<webview::WkSessionState> state;
+    NSMutableSet<NSValue*>* cancelledTasks;
 }
 @end
 
@@ -22,6 +27,7 @@
 - (void)webView:(WKWebView*)webView
     startURLSchemeTask:(id<WKURLSchemeTask>)task
 {
+    @synchronized (self) { [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]]; }
     if (!state || !state->valid) {
         [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
                                                    code:NSURLErrorCancelled
@@ -29,39 +35,142 @@
         return;
     }
     const QUrl url(QString::fromUtf8(task.request.URL.absoluteString.UTF8String));
-    const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
-    QString errorText;
-    const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
-    const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
-    const auto path = mapping
-        ? webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest) : QString();
-    if (path.isEmpty()) {
-        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
-                                                   code:NSURLErrorFileDoesNotExist
-                                               userInfo:@{ NSLocalizedDescriptionKey :
-                                                   [NSString stringWithUTF8String:errorText.toUtf8().constData()] }]];
-        return;
+    const QUrl documentUrl(QString::fromUtf8(task.request.mainDocumentURL.absoluteString.UTF8String));
+    webview::WebViewState* pageState = nullptr;
+    std::shared_ptr<webview::WebViewState> pageStateOwner;
+    {
+        std::lock_guard<std::mutex> lock(state->viewsMutex);
+        for (auto* view : state->views) {
+            if (view->ownsNativeView(static_cast<void*>(webView))) {
+                pageStateOwner = view->stateForHostCompletion();
+                pageState = pageStateOwner.get();
+                break;
+            }
+        }
     }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
-                                                   code:NSURLErrorNoPermissionsToReadFile
-                                               userInfo:nil]];
-        return;
+
+    webview::ResourceResponse resource;
+    const bool published = url.path().startsWith(QStringLiteral("/resource/"));
+    if (published && pageState) {
+        const auto range = [task.request valueForHTTPHeaderField:@"Range"];
+        resource = pageState->resources->open({ url, documentUrl, pageState->documentToken,
+            range ? QString::fromUtf8(range.UTF8String) : QString() });
     }
-    const auto bytes = file.readAll();
-    const auto mimeType = QMimeDatabase().mimeTypeForFile(path).name();
-    auto* response = [[NSURLResponse alloc] initWithURL:task.request.URL
-                                              MIMEType:[NSString stringWithUTF8String:mimeType.toUtf8().constData()]
-                                 expectedContentLength:bytes.size()
-                                      textEncodingName:nil];
+
+    QString path;
+    QString mimeType;
+    int status = published ? resource.status : 200;
+    qint64 totalSize = resource.totalSize;
+    qint64 offset = resource.offset;
+    qint64 length = resource.length;
+    bool acceptRanges = resource.acceptRanges;
+    std::shared_ptr<void> lease = std::move(resource.lease);
+    std::unique_ptr<QIODevice> body = std::move(resource.body);
+    if (published) {
+        mimeType = resource.mimeType;
+        if (auto* file = qobject_cast<QFile*>(body.get())) path = file->fileName();
+        body.reset();
+    } else {
+        const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
+        QString errorText;
+        const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
+        const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
+        path = mapping ? webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest) : QString();
+        if (path.isEmpty()) {
+            [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist
+                userInfo:@{ NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.toUtf8().constData()] }]];
+            return;
+        }
+        mimeType = QMimeDatabase().mimeTypeForFile(path).name();
+        totalSize = QFileInfo(path).size();
+        offset = 0;
+        length = totalSize;
+        acceptRanges = true;
+        const auto range = [task.request valueForHTTPHeaderField:@"Range"];
+        if (range) {
+            static const QRegularExpression pattern(QStringLiteral("^bytes=(\\d*)-(\\d*)$"));
+            const auto match = pattern.match(QString::fromUtf8(range.UTF8String));
+            bool firstOk = false, lastOk = false;
+            const auto first = match.captured(1);
+            const auto last = match.captured(2);
+            if (!match.hasMatch() || (first.isEmpty() && last.isEmpty())) status = 416;
+            else if (first.isEmpty()) {
+                const auto suffix = last.toLongLong(&lastOk);
+                if (!lastOk || suffix <= 0) status = 416;
+                else { offset = qMax<qint64>(0, totalSize - suffix); length = totalSize - offset; }
+            } else {
+                offset = first.toLongLong(&firstOk);
+                const auto end = last.isEmpty() ? totalSize - 1 : last.toLongLong(&lastOk);
+                if (!firstOk || (!last.isEmpty() && !lastOk) || offset > end || end >= totalSize) status = 416;
+                else length = end - offset + 1;
+            }
+            if (status != 416) status = 206;
+        }
+    }
+
+    if (!published && status != 416) {
+        auto file = std::make_unique<QFile>(path);
+        if (!file->open(QIODevice::ReadOnly) || !file->seek(offset)) {
+            [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
+            return;
+        }
+        body = std::move(file);
+    }
+    NSDictionary* headers = @{
+        @"Content-Type" : [NSString stringWithUTF8String:mimeType.toUtf8().constData()],
+        @"Content-Length" : [NSString stringWithFormat:@"%lld", static_cast<long long>(status == 416 ? 0 : length)],
+        @"Cache-Control" : @"no-store",
+        @"Content-Disposition" : @"inline",
+        @"Accept-Ranges" : acceptRanges ? @"bytes" : @"none"
+    };
+    if (status == 206) {
+        NSMutableDictionary* rangeHeaders = [headers mutableCopy];
+        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld",
+            static_cast<long long>(offset), static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
+        headers = rangeHeaders;
+    } else if (status == 416) {
+        NSMutableDictionary* rangeHeaders = [headers mutableCopy];
+        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
+        headers = rangeHeaders;
+    }
+    auto* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL statusCode:status
+        HTTPVersion:@"HTTP/1.1" headerFields:headers];
     [task didReceiveResponse:response];
-    [task didReceiveData:[NSData dataWithBytes:bytes.constData() length:bytes.size()]];
+    if (status == 200 || status == 206) {
+        auto* device = qobject_cast<QFile*>(body.get());
+        QByteArray buffer(256 * 1024, Qt::Uninitialized);
+        qint64 remaining = length;
+        while (device && remaining > 0) {
+            BOOL cancelled = NO;
+            @synchronized (self) {
+                cancelled = [cancelledTasks containsObject:[NSValue valueWithNonretainedObject:task]];
+                if (cancelled) [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
+            }
+            if (cancelled) return;
+            const auto count = device->read(buffer.data(), qMin<qint64>(buffer.size(), remaining));
+            if (count <= 0) {
+                [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil]];
+                return;
+            }
+            [task didReceiveData:[NSData dataWithBytes:buffer.constData() length:static_cast<NSUInteger>(count)]];
+            remaining -= count;
+        }
+    }
+    @synchronized (self) { [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]]; }
     [task didFinish];
+    Q_UNUSED(lease);
 }
 
 - (void)webView:(WKWebView*)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task
 {
+    @synchronized (self) { [cancelledTasks addObject:[NSValue valueWithNonretainedObject:task]]; }
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) cancelledTasks = [NSMutableSet set];
+    return self;
 }
 @end
 
@@ -129,11 +238,18 @@ WkWebViewSession::~WkWebViewSession()
 {
     impl_->state->valid = false;
     impl_->state->initialization.close();
-    const auto views = impl_->state->views;
+    std::vector<WkWebView*> views;
+    {
+        std::lock_guard<std::mutex> lock(impl_->state->viewsMutex);
+        views.assign(impl_->state->views.begin(), impl_->state->views.end());
+    }
     for (auto* view : views) {
         view->close();
     }
-    impl_->state->views.clear();
+    {
+        std::lock_guard<std::mutex> lock(impl_->state->viewsMutex);
+        impl_->state->views.clear();
+    }
     impl_->policy.reset();
 }
 
