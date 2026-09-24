@@ -1,4 +1,5 @@
 #include "internal/Application.h"
+#include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
@@ -9,12 +10,20 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QLoggingCategory>
 #include <QTemporaryDir>
 
 #include <cassert>
 
 namespace
 {
+QStringList capturedMessages;
+
+void captureMessage(QtMsgType, const QMessageLogContext& context, const QString& message)
+{
+    capturedMessages.push_back(QStringLiteral("%1|%2").arg(QString::fromLatin1(context.category), message));
+}
+
 class MemoryBridgeTransport final : public webview::BridgeTransport
 {
 public:
@@ -33,6 +42,43 @@ public:
 
 int main()
 {
+    const auto previousHandler = qInstallMessageHandler(captureMessage);
+    QLoggingCategory::setFilterRules(QStringLiteral("system_webview.*.debug=true\nsystem_webview.*.info=true"));
+    {
+        webview::WebViewState diagnosticState(webview::DiagnosticScope::View, 41);
+        bool runtimeFailureReceived = false;
+        diagnosticState.callbacks.onRuntimeFailure = [&](const webview::RuntimeFailureEvent& event) {
+            runtimeFailureReceived = event.kind == webview::RuntimeFailureKind::WebContentProcessTerminated;
+        };
+        diagnosticState.markReady();
+        diagnosticState.markReady();
+        diagnosticState.emitLoad(
+            webview::LoadState::Failed,
+            7,
+            QUrl(QStringLiteral("https://user:password@example.com/private?token=secret#fragment")),
+            QStringLiteral("failure with /private/path"));
+        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, QStringLiteral("terminated"), 9 });
+        assert(runtimeFailureReceived);
+        runtimeFailureReceived = false;
+        diagnosticState.close();
+        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, QStringLiteral("terminated"), 9 });
+        assert(!runtimeFailureReceived);
+    }
+    const auto diagnosticText = capturedMessages.join(QLatin1Char('\n'));
+    assert(diagnosticText.contains(QStringLiteral("event=view.created")));
+    assert(diagnosticText.contains(QStringLiteral("system_webview.lifecycle")));
+    assert(diagnosticText.contains(QStringLiteral("event=view.ready")));
+    assert(diagnosticText.count(QStringLiteral("event=view.ready")) == 1);
+    assert(diagnosticText.contains(QStringLiteral("event=navigation.failed")));
+    assert(diagnosticText.contains(QStringLiteral("event=view.closed")));
+    assert(diagnosticText.contains(QStringLiteral("session= 41")));
+    assert(diagnosticText.contains(QStringLiteral("origin= https://example.com")));
+    assert(!diagnosticText.contains(QStringLiteral("password")));
+    assert(!diagnosticText.contains(QStringLiteral("private")));
+    assert(!diagnosticText.contains(QStringLiteral("secret")));
+    qInstallMessageHandler(previousHandler);
+    QLoggingCategory::setFilterRules(QString());
+
     auto transport = std::make_unique<MemoryBridgeTransport>();
     auto* transportProbe = transport.get();
     webview::WebViewBridge bridge(std::move(transport));

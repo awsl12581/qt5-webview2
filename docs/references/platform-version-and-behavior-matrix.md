@@ -1,8 +1,8 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
-> Last modified: 2026-09-24 17:57 CST
-> Document version: v3
-> Change: Updated public API names without changing the recorded platform evidence.
+> Last modified: 2026-09-24 18:29 CST
+> Document version: v4
+> Change: Added diagnostic logging and native runtime-failure behavior.
 
 > Snapshot date: 2026-08-16
 >
@@ -30,6 +30,7 @@ The two backends share the same public C++ API, but they do not have identical r
 | Ephemeral profile | `WKWebsiteDataStore nonPersistentDataStore` | InPrivate controller options through `ICoreWebView2Environment10` | macOS is available immediately. Windows is Runtime-interface dependent and fails explicitly rather than silently using persistent storage. |
 | Persistent profile path | Public WKWebsiteDataStore APIs use the system default store; `profilePath` is not a physical storage placement guarantee | `profilePath` is the WebView2 user-data directory and is created/validated | Application code must not assume persistent data lives at the requested path on macOS. |
 | Resource mapping | `WKURLSchemeHandler` for `app://` | WebView2 custom-scheme registration plus `WebResourceRequested` | Both use the shared path-validation code. Windows resource loads are implemented but not GUI-E2E verified. |
+| Runtime failure | `webViewWebContentProcessDidTerminate:` | `ProcessFailed` plus environment browser-process-exit events | Both report typed failures and Critical diagnostics; Windows Runtime execution remains unverified. |
 
 ## Capability Matrix
 
@@ -59,6 +60,7 @@ The two backends share the same public C++ API, but they do not have identical r
 | `loadDocument` | Calls `loadHTMLString` with the requested base URL | Stores the HTML as an in-memory `app://` response and navigates to that URL | `app://` base URLs require a configured mapping on both platforms. Windows page/resource behavior remains unverified. |
 | Popup | WKUIDelegate transfers a child `WebViewPtr` to the host | New-window deferral creates a child and transfers it after initialization | Windows popup UI flow not executed. |
 | Download | Host resolves a destination through WKDownloadDelegate | Host resolution is protected by a deferral and one-shot completion guard | Windows download UI flow not executed. |
+| Diagnostics | Qt logging categories emit stable event codes and redacted origins | Same common categories, plus HRESULT and WebView2 process-kind values | The host owns filtering, persistence, rotation, and upload on both platforms. |
 
 ## Windows Evidence Timeline
 
@@ -101,6 +103,7 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 3. Do not equate `profilePath` on macOS with a physical storage location.
 4. Do not describe WebView2 origin comparison as a main-frame check.
 5. Do not claim Windows page workflows are verified until `webview_windows_runtime_probe` passes them in an interactive ARM64 desktop session with the Evergreen Runtime and all Release dependencies deployed.
+6. Treat Runtime callback wiring and a real observed browser-process failure as separate evidence levels.
 
 ## Relevant Sources
 
@@ -118,3 +121,4 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 | v1 | Existing document | Initial platform version and behavior matrix. |
 | v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
 | v3 | 2026-09-24 17:57 CST | Updated public API names without changing the recorded platform evidence. |
+| v4 | 2026-09-24 18:29 CST | Added diagnostic categories, runtime-failure callbacks, and dump ownership. |

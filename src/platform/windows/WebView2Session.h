@@ -23,6 +23,7 @@ public:
     void clearCache(ClearCompletion completion) override;
     void clearCookies(ClearCompletion completion) override;
     void clearWebsiteData(ClearCompletion completion) override;
+    void setHostCallbacks(WebViewSessionHostCallbacks callbacks) override;
     bool supports(WebViewCapability capability) const override;
 
 private:

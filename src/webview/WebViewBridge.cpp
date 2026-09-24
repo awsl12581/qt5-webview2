@@ -1,4 +1,5 @@
 #include "internal/BridgePageScript.h"
+#include "internal/Diagnostics.h"
 #include <system_webview/system_webview.h>
 
 #include <QJsonDocument>
@@ -140,6 +141,8 @@ public:
     QHash<QString, EventHandler> handlers;
     QHash<QString, RequestHandler> requestHandlers;
     Validator validator;
+    quint64 sessionDiagnosticId = 0;
+    quint64 viewDiagnosticId = 0;
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     bool valid = true;
 };
@@ -164,7 +167,10 @@ void WebViewBridge::emitEvent(const QString& type, const QJsonObject& payload)
     QString error;
     const auto bytes = encode(message);
     if (!impl_->validator || impl_->validator(message, true, bytes.size(), &error)) {
-        impl_->transport->send(bytes);
+        if (!impl_->transport->send(bytes)) {
+            qCWarning(systemWebViewBridge).noquote()
+                << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
+        }
     }
 }
 
@@ -182,6 +188,8 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
         impl_->pending.insert(requestId, { type, std::move(completion) });
     }
     if (!impl_->transport) {
+        qCDebug(systemWebViewBridge).noquote() << "event=bridge.transport_unavailable" << "session=" << impl_->sessionDiagnosticId
+                                               << "view=" << impl_->viewDiagnosticId;
         if (hasCompletion) {
             auto callback = impl_->pending.take(requestId);
             callback.completion({ }, QStringLiteral("Bridge transport is unavailable."));
@@ -199,6 +207,8 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
         return;
     }
     if (!impl_->transport->send(bytes)) {
+        qCWarning(systemWebViewBridge).noquote()
+            << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         auto callback = impl_->pending.take(requestId);
         if (callback.completion) {
             callback.completion({ }, QStringLiteral("Bridge transport rejected the message."));
@@ -214,6 +224,12 @@ void WebViewBridge::setEventHandler(const QString& type, EventHandler handler)
     else {
         impl_->handlers.remove(type);
     }
+}
+
+void WebViewBridge::setDiagnosticContext(quint64 sessionId, quint64 viewId)
+{
+    impl_->sessionDiagnosticId = sessionId;
+    impl_->viewDiagnosticId = viewId;
 }
 
 void WebViewBridge::setRequestHandler(const QString& type, RequestHandler handler)
@@ -246,6 +262,8 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
     }
     BridgeMessage envelope;
     if (!decode(message, &envelope)) {
+        qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
+                                               << "view=" << impl_->viewDiagnosticId << "reason=invalid_envelope";
         return;
     }
     QString validationError;
@@ -255,6 +273,8 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
     if (envelope.kind == BridgeMessageKind::Response) {
         const auto it = impl_->pending.find(envelope.requestId);
         if (it == impl_->pending.end() || it->type != envelope.type) {
+            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
+                                                   << "view=" << impl_->viewDiagnosticId << "reason=unexpected_response";
             return;
         }
         auto callback = std::move(it->completion);

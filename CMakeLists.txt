@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(system_webview VERSION 0.1.0 LANGUAGES CXX)
+project(system_webview VERSION 0.2.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -21,6 +21,7 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
     src/webview/Application.cpp
+    src/webview/Diagnostics.cpp
     src/webview/WebViewBridge.cpp
     src/webview/WebResourceManager.cpp
     src/webview/JsonMessage.cpp
@@ -96,6 +97,7 @@ if(BUILD_TESTING)
     add_executable(webview_core_tests
         tests/JsonMessageTests.cpp
         src/webview/Application.cpp
+        src/webview/Diagnostics.cpp
         src/webview/WebViewBridge.cpp
         src/webview/WebResourceManager.cpp
         src/webview/JsonMessage.cpp

@@ -1,6 +1,7 @@
 #include "platform/windows/WebView2Session.h"
 
 #include "internal/Application.h"
+#include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 #include "platform/windows/WebView2View.h"
 #include "webview/WebViewState.h"
@@ -43,10 +44,13 @@ class WebView2Session::Impl
 public:
     struct AsyncState
     {
-        std::shared_ptr<WebViewState> scheduler = std::make_shared<WebViewState>();
+        std::shared_ptr<WebViewState> scheduler = std::make_shared<WebViewState>(DiagnosticScope::Session);
         std::shared_ptr<WebViewState> profileScheduler = std::make_shared<WebViewState>();
         Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment;
+        Microsoft::WRL::ComPtr<ICoreWebView2Environment5> environment5;
         Microsoft::WRL::ComPtr<ICoreWebView2Profile2> profile;
+        EventRegistrationToken browserProcessExitedToken { };
+        WebViewSessionHostCallbacks callbacks;
         std::vector<std::function<void()>> closeCallbacks;
         bool closed = false;
     };
@@ -111,6 +115,37 @@ public:
                         return S_OK;
                     }
                     owner->environment = created;
+                    if (SUCCEEDED(owner->environment.As(&owner->environment5)) && owner->environment5) {
+                        owner->environment5->add_BrowserProcessExited(
+                            Microsoft::WRL::Callback<ICoreWebView2BrowserProcessExitedEventHandler>(
+                                [weak](ICoreWebView2Environment*, ICoreWebView2BrowserProcessExitedEventArgs* args) -> HRESULT {
+                                    const auto current = weak.lock();
+                                    if (!current || current->closed || !args) {
+                                        return S_OK;
+                                    }
+                                    COREWEBVIEW2_BROWSER_PROCESS_EXIT_KIND kind = COREWEBVIEW2_BROWSER_PROCESS_EXIT_KIND_NORMAL;
+                                    UINT32 processId = 0;
+                                    args->get_BrowserProcessExitKind(&kind);
+                                    args->get_BrowserProcessId(&processId);
+                                    if (kind != COREWEBVIEW2_BROWSER_PROCESS_EXIT_KIND_FAILED) {
+                                        return S_OK;
+                                    }
+                                    const RuntimeFailureEvent event {
+                                        RuntimeFailureKind::BrowserProcessTerminated,
+                                        QStringLiteral("The WebView2 browser process terminated unexpectedly."),
+                                        static_cast<qint64>(processId),
+                                    };
+                                    qCCritical(systemWebViewRuntime).noquote()
+                                        << "event=runtime.browser_process_terminated"
+                                        << "session=" << current->scheduler->diagnosticId << "process=" << processId;
+                                    if (current->callbacks.onRuntimeFailure) {
+                                        current->callbacks.onRuntimeFailure(event);
+                                    }
+                                    return S_OK;
+                                })
+                                .Get(),
+                            &owner->browserProcessExitedToken);
+                    }
                     owner->scheduler->markReady();
                     return S_OK;
                 })
@@ -183,6 +218,10 @@ WebView2Session::~WebView2Session()
 {
     if (impl_) {
         impl_->async->closed = true;
+        impl_->async->callbacks = { };
+        if (impl_->async->environment5) {
+            impl_->async->environment5->remove_BrowserProcessExited(impl_->async->browserProcessExitedToken);
+        }
         impl_->async->scheduler->close();
         impl_->async->profileScheduler->close();
         auto callbacks = std::move(impl_->async->closeCallbacks);
@@ -192,6 +231,7 @@ WebView2Session::~WebView2Session()
             }
         }
         impl_->async->profile.Reset();
+        impl_->async->environment5.Reset();
         impl_->async->environment.Reset();
     }
     if (impl_ && impl_->ownsApartment) {
@@ -303,6 +343,13 @@ void WebView2Session::clearCookies(ClearCompletion completion)
 void WebView2Session::clearWebsiteData(ClearCompletion completion)
 {
     impl_->clearBrowsingData(COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_SITE, std::move(completion));
+}
+
+void WebView2Session::setHostCallbacks(WebViewSessionHostCallbacks callbacks)
+{
+    if (!impl_->async->closed) {
+        impl_->async->callbacks = std::move(callbacks);
+    }
 }
 
 bool WebView2Session::supports(WebViewCapability capability) const

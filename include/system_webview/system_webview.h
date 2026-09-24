@@ -297,6 +297,22 @@ struct WebsiteDataResult
     QString error;
 };
 
+enum class RuntimeFailureKind : int
+{
+    WebContentProcessTerminated,   ///< The process rendering page content exited.
+    WebContentProcessUnresponsive, ///< The process rendering page content stopped responding.
+    BrowserProcessTerminated,      ///< The browser process shared by the session exited.
+    AuxiliaryProcessTerminated,    ///< A GPU, utility, plugin, or other helper process exited.
+    Unknown                        ///< The backend could not classify the failed process.
+};
+
+struct RuntimeFailureEvent
+{
+    RuntimeFailureKind kind = RuntimeFailureKind::Unknown;
+    QString reason;
+    qint64 nativeCode = 0;
+};
+
 struct WebViewHostCallbacks
 {
     /// Receives main-frame navigation state changes.
@@ -309,6 +325,14 @@ struct WebViewHostCallbacks
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> onSelectFiles;
     /// Must invoke the completion exactly once; an empty callback cancels download.
     std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
+    /// Reports a browser runtime failure affecting this view.
+    std::function<void(const RuntimeFailureEvent&)> onRuntimeFailure;
+};
+
+struct WebViewSessionHostCallbacks
+{
+    /// Reports a browser runtime failure affecting the session.
+    std::function<void(const RuntimeFailureEvent&)> onRuntimeFailure;
 };
 
 enum class BridgeMessageKind : int
@@ -369,6 +393,9 @@ public:
     void invalidate();
 
 private:
+    friend class WebViewState;
+    void setDiagnosticContext(quint64 sessionId, quint64 viewId);
+
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
@@ -419,6 +446,7 @@ public:
 
 private:
     friend class WebViewState;
+    void setDiagnosticContext(quint64 sessionId, quint64 viewId);
     void setRevocationHandler(std::function<void(const QString&)> handler);
     void setContext(const QUrl& resourceOrigin, const QUrl& documentOrigin, const QString& documentToken);
     void setDocumentToken(const QString& documentToken);
@@ -478,6 +506,7 @@ public:
     virtual void clearCache(ClearCompletion completion = { }) = 0;
     virtual void clearCookies(ClearCompletion completion = { }) = 0;
     virtual void clearWebsiteData(ClearCompletion completion = { }) = 0;
+    virtual void setHostCallbacks(WebViewSessionHostCallbacks callbacks) = 0;
     /// Query runtime support instead of inferring it from the operating system.
     virtual bool supports(WebViewCapability capability) const = 0;
 };

@@ -4,6 +4,7 @@
 
 #include "internal/Application.h"
 #include "internal/BridgePageScript.h"
+#include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
@@ -190,6 +191,10 @@ public:
         || self.state->bridgeOrigin != webview::normalizedOrigin(self.state->committedUrl)
         || !self.state->policy->allowsBridge(self.state->committedUrl)
         || webview::normalizedOrigin(frameUrl) != webview::normalizedOrigin(self.state->committedUrl)) {
+        if (self.state) {
+            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << self.state->sessionDiagnosticId
+                                                   << "view=" << self.state->diagnosticId << "reason=native_boundary";
+        }
         return;
     }
     NSError* error = nil;
@@ -222,6 +227,8 @@ public:
     const QUrl url(QString::fromUtf8(navigationAction.request.URL.absoluteString.UTF8String));
     const webview::NewWindowRequest request { url, navigationAction.navigationType == WKNavigationTypeLinkActivated };
     if (self.state->policy->decideNewWindow(request) != webview::NewWindowDecision::Allow) {
+        qCDebug(systemWebViewPolicy).noquote() << "event=policy.popup_denied" << "session=" << self.state->sessionDiagnosticId
+                                               << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(url);
         return nil;
     }
     return static_cast<WKWebView*>(self.owner->createPopup(configuration, request));
@@ -242,6 +249,10 @@ public:
             .arg(origin.port));
     const auto decision
         = webview::decideNativePermission(*self.state->policy, { permissionKind(type), webview::normalizedOrigin(originUrl) });
+    if (decision != webview::NativePermissionDecision::Grant) {
+        qCDebug(systemWebViewPolicy).noquote() << "event=policy.permission_denied" << "session=" << self.state->sessionDiagnosticId
+                                               << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(originUrl);
+    }
     decisionHandler(decision == webview::NativePermissionDecision::Grant ? WKPermissionDecisionGrant
             : decision == webview::NativePermissionDecision::Prompt      ? WKPermissionDecisionPrompt
                                                                          : WKPermissionDecisionDeny);
@@ -400,6 +411,8 @@ public:
     if (decision == webview::NavigationDecision::OpenExternally && self.state->callbacks.onOpenExternal) {
         self.state->callbacks.onOpenExternal(url);
     }
+    qCDebug(systemWebViewPolicy).noquote() << "event=navigation.rejected" << "session=" << self.state->sessionDiagnosticId
+                                           << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(url);
     if (isMainFrame) {
         self.state->explicitMainFrameNavigationPending = false;
         self.state->provisionalMainFrameNavigation = false;
@@ -501,6 +514,22 @@ public:
         self.state->provisionalMainFrameNavigation = false;
     }
 }
+
+- (void)webViewWebContentProcessDidTerminate:(WKWebView*)webView
+{
+    Q_UNUSED(webView);
+    if (!self.state || self.state->lifetime.isClosed()) {
+        return;
+    }
+    const webview::RuntimeFailureEvent event {
+        webview::RuntimeFailureKind::WebContentProcessTerminated,
+        QStringLiteral("The WKWebView content process terminated."),
+        0,
+    };
+    qCCritical(systemWebViewRuntime).noquote() << "event=runtime.web_content_terminated" << "session=" << self.state->sessionDiagnosticId
+                                               << "view=" << self.state->diagnosticId;
+    self.state->emitRuntimeFailure(event);
+}
 @end
 
 namespace webview {
@@ -513,7 +542,8 @@ WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr poli
 
 void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
 {
-    impl_->state = std::make_shared<WebViewState>();
+    const quint64 sessionDiagnosticId = sessionState ? sessionState->diagnosticId : 0;
+    impl_->state = std::make_shared<WebViewState>(DiagnosticScope::View, sessionDiagnosticId);
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
     impl_->state->bindBridgePolicy();
     impl_->sessionState = std::move(sessionState);

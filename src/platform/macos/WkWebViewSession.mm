@@ -4,6 +4,7 @@
 #include "platform/macos/WkWebView.h"
 
 #include "internal/Application.h"
+#include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 
 #include <QFile>
@@ -227,6 +228,8 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
     schemeHandler->state = impl_->state;
     impl_->schemeHandler = schemeHandler;
     impl_->state->initialization.markReady();
+    qCDebug(systemWebViewLifecycle).noquote() << "event=session.created" << "session=" << impl_->state->diagnosticId;
+    qCInfo(systemWebViewLifecycle).noquote() << "event=session.ready" << "session=" << impl_->state->diagnosticId;
 }
 
 InitializationState WkWebViewSession::initializationState() const { return impl_->state->initialization.state(); }
@@ -262,6 +265,7 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
 WkWebViewSession::~WkWebViewSession()
 {
     impl_->state->valid = false;
+    impl_->state->callbacks = { };
     impl_->state->initialization.close();
     std::vector<WkWebView*> views;
     {
@@ -276,6 +280,7 @@ WkWebViewSession::~WkWebViewSession()
         impl_->state->views.clear();
     }
     impl_->policy.reset();
+    qCDebug(systemWebViewLifecycle).noquote() << "event=session.closed" << "session=" << impl_->state->diagnosticId;
 }
 
 WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
@@ -324,6 +329,13 @@ void WkWebViewSession::clearCookies(ClearCompletion completion)
 void WkWebViewSession::clearWebsiteData(ClearCompletion completion)
 {
     clearData(*impl_->state, impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes], std::move(completion));
+}
+
+void WkWebViewSession::setHostCallbacks(WebViewSessionHostCallbacks callbacks)
+{
+    if (impl_->state->valid) {
+        impl_->state->callbacks = std::move(callbacks);
+    }
 }
 
 bool WkWebViewSession::supports(WebViewCapability capability) const

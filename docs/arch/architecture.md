@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> Last modified: 2026-09-24 18:17 CST
-> Document version: v9
-> Change: Documented host-enforced external network isolation for local bundles.
+> Last modified: 2026-09-24 18:29 CST
+> Document version: v10
+> Change: Documented diagnostic logging, runtime-failure callbacks, and crash-dump ownership.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -81,6 +81,18 @@ Platform backends provide the native transport. Incoming messages pass main-fram
 
 Large local files use `IWebView::resources().publishFile()`. The manager creates a stable snapshot, binds its opaque `app://<application-id>/resource/<token>` URL to the current document, and serves validated byte ranges from a file stream. The JSON bridge carries the URL and metadata only. `WebView2View` adapts requests through WebView2 resource events; `WkWebView` uses `WKURLSchemeHandler` and sends bounded chunks. Each token expires after 30 minutes. The page clears its DOM reference before sending the built-in `release-resource` event; the host can also call `release(token)`. Release, navigation, close, and session teardown revoke tokens. Active readers hold snapshot leases, so their bytes remain counted against the capacity limit until deletion succeeds. Failed deletion is retried on a timer and at the next publication; expired entries are swept on publication.
 
+## Diagnostics and runtime failures
+
+Operational results remain part of the typed API: initialization uses `InitializationResult`, navigation uses `LoadEvent`, and asynchronous operations use their completion result types. Diagnostics do not replace these contracts.
+
+The library emits internal diagnostics through six Qt logging categories: lifecycle, navigation, policy, bridge, resource, and runtime. Messages use stable event codes and process-local session/view/navigation IDs. Debug events are disabled by default. The host controls Qt filtering and installs any message handler needed for persistence, rotation, or upload. The library does not create log files.
+
+Native runtime failures have a separate typed path. View-scoped failures reach `WebViewHostCallbacks::onRuntimeFailure`; session-scoped browser-process failures reach `WebViewSessionHostCallbacks::onRuntimeFailure`. Closed objects suppress late callbacks. On macOS this path uses `webViewWebContentProcessDidTerminate:`. On Windows it uses WebView2 `ProcessFailed` and browser-process-exit events.
+
+Logs retain only origins and native status values. They exclude URL paths and credentials, bridge payloads and tokens, HTML, profile paths, local file paths, and download destinations. The complete category and event-code contract is maintained in `docs/guides/diagnostics.md`.
+
+Crash dumps remain a process-level host responsibility. The library does not install Crashpad, configure WER, intercept fatal signals, or search operating-system crash-report directories. Deployment tooling must retain matching PDB or dSYM files when dumps need symbolization.
+
 ## Backend mapping
 
 | Common concept | macOS WKWebView | Microsoft WebView2 | WebKit2GTK |
@@ -117,3 +129,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v7 | 2026-09-24 17:57 CST | Updated capability queries and host callback names to match the public API. |
 | v8 | 2026-09-24 18:05 CST | Fixed the public enum underlying type and documented every enum value. |
 | v9 | 2026-09-24 18:17 CST | Documented host-enforced external network isolation for local bundles. |
+| v10 | 2026-09-24 18:29 CST | Documented diagnostic logging, runtime-failure callbacks, redaction, and crash-dump ownership. |

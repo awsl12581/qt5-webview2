@@ -1,7 +1,25 @@
 #include "webview/WebViewState.h"
 
+#include <QDebug>
+
 namespace webview
 {
+WebViewState::WebViewState(DiagnosticScope scope, quint64 sessionId)
+    : diagnosticScope(scope)
+    , diagnosticId(scope == DiagnosticScope::None ? 0 : nextDiagnosticId())
+    , sessionDiagnosticId(sessionId)
+{
+    if (scope == DiagnosticScope::Session) {
+        sessionDiagnosticId = diagnosticId;
+        qCDebug(systemWebViewLifecycle).noquote() << "event=session.created" << "session=" << diagnosticId;
+    }
+    else if (scope == DiagnosticScope::View) {
+        qCDebug(systemWebViewLifecycle).noquote() << "event=view.created" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+    }
+    bridge->setDiagnosticContext(sessionDiagnosticId, diagnosticId);
+    resources->setDiagnosticContext(sessionDiagnosticId, diagnosticId);
+}
+
 InitializationState InitializationScheduler::state() const
 {
     return state_;
@@ -98,12 +116,31 @@ InitializationState WebViewState::initializationState() const
 
 void WebViewState::markReady()
 {
+    if (initialization_.state() != InitializationState::Initializing) {
+        return;
+    }
     initialization_.markReady();
+    if (diagnosticScope == DiagnosticScope::Session) {
+        qCInfo(systemWebViewLifecycle).noquote() << "event=session.ready" << "session=" << diagnosticId;
+    }
+    else if (diagnosticScope == DiagnosticScope::View) {
+        qCInfo(systemWebViewLifecycle).noquote() << "event=view.ready" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+    }
 }
 
 void WebViewState::failInitialization(QString error)
 {
+    if (initialization_.state() != InitializationState::Initializing) {
+        return;
+    }
     initialization_.fail(std::move(error));
+    if (diagnosticScope == DiagnosticScope::Session) {
+        qCWarning(systemWebViewLifecycle).noquote() << "event=session.initialization_failed" << "session=" << diagnosticId;
+    }
+    else if (diagnosticScope == DiagnosticScope::View) {
+        qCWarning(systemWebViewLifecycle).noquote()
+            << "event=view.initialization_failed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+    }
 }
 
 void WebViewState::whenInitialized(IWebView::InitializationCompletion completion)
@@ -118,6 +155,9 @@ void WebViewState::runWhenReady(std::function<void(const InitializationResult&)>
 
 void WebViewState::close()
 {
+    if (lifetime.isClosed()) {
+        return;
+    }
     lifetime.close();
     if (bridge) {
         bridge->invalidate();
@@ -126,6 +166,12 @@ void WebViewState::close()
         resources->releaseAll();
     }
     initialization_.close();
+    if (diagnosticScope == DiagnosticScope::Session) {
+        qCDebug(systemWebViewLifecycle).noquote() << "event=session.closed" << "session=" << diagnosticId;
+    }
+    else if (diagnosticScope == DiagnosticScope::View) {
+        qCDebug(systemWebViewLifecycle).noquote() << "event=view.closed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+    }
 }
 
 void WebViewState::bindBridgePolicy()
@@ -143,30 +189,40 @@ void WebViewState::bindBridgePolicy()
     });
     bridge->setValidator([weak](const BridgeMessage& message, bool outbound, int wireSize, QString* error) {
         const auto state = weak.lock();
-        if (!state || state->lifetime.isClosed() || !state->policy || !state->policy->allowsBridge(state->committedUrl)) {
+        const auto reject = [&state, error](const char* reason, const QString& detail) {
             if (error) {
-                *error = QStringLiteral("The current document is not authorized for bridge messages.");
+                *error = detail;
+            }
+            if (state) {
+                qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+                                                       << "view=" << state->diagnosticId << "reason=" << reason;
             }
             return false;
+        };
+        if (!state || state->lifetime.isClosed() || !state->policy || !state->policy->allowsBridge(state->committedUrl)) {
+            return reject("unauthorized_document", QStringLiteral("The current document is not authorized for bridge messages."));
         }
         if (wireSize > state->policy->maximumBridgeMessageBytes()) {
-            if (error) {
-                *error = QStringLiteral("Bridge message exceeds the configured size limit.");
-            }
-            return false;
+            return reject("size_limit", QStringLiteral("Bridge message exceeds the configured size limit."));
         }
         if (message.type == QStringLiteral("release-resource") || message.type == QStringLiteral("resource-revoked")) {
             const bool allowed = message.kind == BridgeMessageKind::Event
                                  && message.type == (outbound ? QStringLiteral("resource-revoked") : QStringLiteral("release-resource"))
                                  && message.payload.size() == 1 && message.payload.value(QStringLiteral("token")).isString()
                                  && !message.payload.value(QStringLiteral("token")).toString().isEmpty();
-            if (!allowed && error) {
-                *error = QStringLiteral("Invalid resource control message.");
+            if (!allowed) {
+                return reject("resource_control", QStringLiteral("Invalid resource control message."));
             }
-            return allowed;
+            return true;
         }
-        return outbound || message.kind == BridgeMessageKind::Response ? state->policy->validateHostToPageMessage(message, error)
-                                                                       : state->policy->validatePageToHostMessage(message, error);
+        const bool allowed = outbound || message.kind == BridgeMessageKind::Response
+                                 ? state->policy->validateHostToPageMessage(message, error)
+                                 : state->policy->validatePageToHostMessage(message, error);
+        if (!allowed) {
+            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+                                                   << "view=" << state->diagnosticId << "reason=schema";
+        }
+        return allowed;
     });
 }
 
@@ -195,8 +251,20 @@ void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOr
 
 void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url, const QString& error)
 {
+    if (loadState == LoadState::Failed) {
+        qCWarning(systemWebViewNavigation).noquote()
+            << "event=navigation.failed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId
+            << "navigation=" << eventNavigationId << "origin=" << diagnosticOrigin(url);
+    }
     if (!lifetime.isClosed() && callbacks.onLoad) {
         callbacks.onLoad({ loadState, url, error, eventNavigationId, true });
+    }
+}
+
+void WebViewState::emitRuntimeFailure(const RuntimeFailureEvent& event)
+{
+    if (!lifetime.isClosed() && callbacks.onRuntimeFailure) {
+        callbacks.onRuntimeFailure(event);
     }
 }
 } // namespace webview

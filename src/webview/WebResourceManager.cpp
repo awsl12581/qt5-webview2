@@ -1,3 +1,4 @@
+#include "internal/Diagnostics.h"
 #include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
@@ -168,6 +169,8 @@ public:
     QHash<QString, std::shared_ptr<Entry>> entries;
     QSet<QString> revoked;
     std::function<void(const QString&)> onRevoked;
+    quint64 sessionDiagnosticId = 0;
+    quint64 viewDiagnosticId = 0;
 };
 
 WebResourceManager::WebResourceManager(QUrl origin)
@@ -179,6 +182,12 @@ WebResourceManager::WebResourceManager(QUrl origin)
 WebResourceManager::~WebResourceManager()
 {
     releaseAll();
+}
+
+void WebResourceManager::setDiagnosticContext(quint64 sessionId, quint64 viewId)
+{
+    impl_->sessionDiagnosticId = sessionId;
+    impl_->viewDiagnosticId = viewId;
 }
 
 void WebResourceManager::setRevocationHandler(std::function<void(const QString&)> handler)
@@ -218,6 +227,8 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
     if (!impl_->origin.isValid() || impl_->documentToken.isEmpty() || (!documentToken.isEmpty() && documentToken != impl_->documentToken)
         || !info.isFile() || !info.isReadable() || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
         || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes || !impl_->snapshots->directory.isValid()) {
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.publish_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return { };
     }
 
@@ -226,6 +237,8 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
     QFile input(info.absoluteFilePath());
     QSaveFile output(snapshotPath);
     if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) {
+        qCWarning(systemWebViewResource).noquote()
+            << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return { };
     }
     QByteArray buffer(static_cast<int>(kCopyBufferSize), Qt::Uninitialized);
@@ -234,15 +247,21 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
         const auto count = input.read(buffer.data(), buffer.size());
         if (count <= 0 || output.write(buffer.constData(), count) != count) {
             output.cancelWriting();
+            qCWarning(systemWebViewResource).noquote()
+                << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return { };
         }
         copied += count;
         if (copied > kMaximumFileSize) {
             output.cancelWriting();
+            qCWarning(systemWebViewResource).noquote()
+                << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return { };
         }
     }
     if (copied != info.size() || !output.commit()) {
+        qCWarning(systemWebViewResource).noquote()
+            << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return { };
     }
 
@@ -266,19 +285,32 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const auto expectedOrigin = impl_->origin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
     const auto sourceOrigin = request.sourceOrigin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
     if (!expectedOrigin.isValid() || origin != expectedOrigin || sourceOrigin != impl_->documentOrigin) {
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
+            << "origin=" << diagnosticOrigin(request.url) << "status=403";
         return { 403 };
     }
 
     const auto token = request.url.path().section(QLatin1Char('/'), -1);
     const auto it = impl_->entries.constFind(token);
     if (it == impl_->entries.cend()) {
-        return { impl_->revoked.contains(token) ? 410 : 404 };
+        const int status = impl_->revoked.contains(token) ? 410 : 404;
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << status;
+        return { status };
     }
     const auto entry = it.value();
     if (entry->expiresAt <= QDateTime::currentDateTimeUtc()) {
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
+            << "origin=" << diagnosticOrigin(request.url) << "status=410";
         return { 410 };
     }
     if (!entry->document.isEmpty() && entry->document != request.documentToken) {
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
+            << "origin=" << diagnosticOrigin(request.url) << "status=403";
         return { 403 };
     }
 
@@ -316,6 +348,9 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     }
     if ((hasRange && (entry->size == 0 || start < 0 || start > end || start >= entry->size))
         || (!hasRange && entry->size > 0 && (start < 0 || start > end))) {
+        qCDebug(systemWebViewResource).noquote()
+            << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
+            << "origin=" << diagnosticOrigin(request.url) << "status=416";
         ResourceResponse response;
         response.status = 416;
         response.mimeType = entry->mime;
@@ -326,6 +361,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const qint64 length = entry->size == 0 ? 0 : end - start + 1;
     auto file = std::make_unique<RangeFile>(entry->path, length);
     if (!file->open(QIODevice::ReadOnly) || !file->seek(start)) {
+        qCWarning(systemWebViewResource).noquote()
+            << "event=resource.read_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         ResourceResponse response;
         response.status = 500;
         response.mimeType = entry->mime;

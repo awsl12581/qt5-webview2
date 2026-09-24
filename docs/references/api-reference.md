@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-09-24 18:17 CST
-> 文档版本：v9
-> 修改说明：增加本地页面的外部网络访问控制，并说明默认拒绝行为。
+> 最后修改时间：2026-09-24 18:53 CST
+> 文档版本：v11
+> 修改说明：明确 WebView2 browser process 故障的 view/session 回调作用域。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -72,6 +72,7 @@ public:
     virtual void clearCache(ClearCompletion completion = {}) = 0;
     virtual void clearCookies(ClearCompletion completion = {}) = 0;
     virtual void clearWebsiteData(ClearCompletion completion = {}) = 0;
+    virtual void setHostCallbacks(WebViewSessionHostCallbacks callbacks) = 0;
     virtual bool supports(WebViewCapability capability) const = 0;
 };
 ```
@@ -194,6 +195,11 @@ struct WebViewHostCallbacks {
     std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> onSelectFiles;
     std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
+    std::function<void(const RuntimeFailureEvent&)> onRuntimeFailure;
+};
+
+struct WebViewSessionHostCallbacks {
+    std::function<void(const RuntimeFailureEvent&)> onRuntimeFailure;
 };
 ```
 
@@ -201,6 +207,27 @@ struct WebViewHostCallbacks {
 - `onOpenExternal` 在策略返回 `OpenExternally` 时调用。
 - `onNewWindow` 把新建页面的所有权交给宿主。若接受该页面，必须在回调返回前保存传入的 `WebViewPtr`。
 - `onSelectFiles` 和 `onResolveDownload` 由宿主完成用户交互，并各自调用 completion 一次。
+- view 的 `onRuntimeFailure` 接收 WebView2 `ProcessFailed` 或 WKWebView 内容进程终止事件；session 的同名回调接收 WebView2 环境报告的 browser process 故障。同一次 WebView2 browser process 故障可能在两个作用域各报告一次。
+
+运行时故障使用固定枚举，不要求调用方解析文本：
+
+```cpp
+enum class RuntimeFailureKind : int {
+    WebContentProcessTerminated,
+    WebContentProcessUnresponsive,
+    BrowserProcessTerminated,
+    AuxiliaryProcessTerminated,
+    Unknown
+};
+
+struct RuntimeFailureEvent {
+    RuntimeFailureKind kind = RuntimeFailureKind::Unknown;
+    QString reason;
+    qint64 nativeCode = 0;
+};
+```
+
+关闭后的 session 或 view 不再触发运行时故障回调。
 
 ### 文件选择
 
@@ -250,6 +277,12 @@ struct DownloadResolution {
 
 using DownloadCompletion = std::function<void(DownloadResolution)>;
 ```
+
+## 诊断日志
+
+库通过 `system_webview.lifecycle`、`navigation`、`policy`、`bridge`、`resource` 和 `runtime` 六个 Qt logging category 输出诊断。Debug 默认关闭，宿主可用 `QT_LOGGING_RULES` 开启，并通过 `qInstallMessageHandler` 接入自己的持久化设施。
+
+库不创建日志或 dump 文件，也不记录 URL path/query、Bridge payload、token 或本地绝对路径。完整事件码和 dump 接入边界见 `docs/guides/diagnostics.md`。
 
 ## 消息桥
 
@@ -510,3 +543,5 @@ int main(int argc, char* argv[])
 | v7 | 2026-09-24 17:57 CST | 同步头文件中的使用说明，并简化能力查询和回调注册命名。 |
 | v8 | 2026-09-24 18:05 CST | 说明公开枚举的固定底层类型，并同步枚举声明。 |
 | v9 | 2026-09-24 18:17 CST | 增加本地页面的外部网络访问控制，并说明默认拒绝行为。 |
+| v10 | 2026-09-24 18:29 CST | 增加运行时故障公共类型、session/view 回调和诊断日志说明。 |
+| v11 | 2026-09-24 18:53 CST | 明确 WebView2 browser process 故障在 view 和 session 两个作用域的回调语义。 |

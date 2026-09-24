@@ -2,6 +2,7 @@
 #include "internal/Application.h"
 
 #include "internal/BridgePageScript.h"
+#include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
@@ -34,6 +35,36 @@ namespace webview
 {
 namespace
 {
+RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
+{
+    switch (kind) {
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
+        return { RuntimeFailureKind::BrowserProcessTerminated,
+                 QStringLiteral("The WebView2 browser process terminated."),
+                 static_cast<qint64>(kind) };
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:
+        return { RuntimeFailureKind::WebContentProcessUnresponsive,
+                 QStringLiteral("The WebView2 render process is unresponsive."),
+                 static_cast<qint64>(kind) };
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED:
+        return { RuntimeFailureKind::WebContentProcessTerminated,
+                 QStringLiteral("A WebView2 render process terminated."),
+                 static_cast<qint64>(kind) };
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED:
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED:
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED:
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_PLUGIN_PROCESS_EXITED:
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED:
+        return { RuntimeFailureKind::AuxiliaryProcessTerminated,
+                 QStringLiteral("A WebView2 auxiliary process terminated."),
+                 static_cast<qint64>(kind) };
+    case COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED:
+        break;
+    }
+    return { RuntimeFailureKind::Unknown, QStringLiteral("An unknown WebView2 process terminated."), static_cast<qint64>(kind) };
+}
+
 class WebView2BridgeTransport final : public BridgeTransport
 {
 public:
@@ -271,7 +302,7 @@ public:
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose)
         : container(new NativeViewHost(parent))
-        , state(std::make_shared<WebViewState>())
+        , state(std::make_shared<WebViewState>(DiagnosticScope::View, sessionState ? sessionState->diagnosticId : 0))
         , sessionState(std::move(sessionState))
         , environmentProvider(std::move(environmentProvider))
         , policy(std::move(policy))
@@ -331,6 +362,7 @@ public:
                     auto& contentLoadingToken = owner->contentLoadingToken;
                     auto& navigationCompletedToken = owner->navigationCompletedToken;
                     auto& webMessageToken = owner->webMessageToken;
+                    auto& processFailedToken = owner->processFailedToken;
                     if (FAILED(hr) || !created) {
                         state->failInitialization(QStringLiteral("WebView2 controller creation failed (HRESULT 0x%1).")
                                                       .arg(QString::number(static_cast<quint32>(hr), 16)));
@@ -539,6 +571,11 @@ public:
                                 }
                                 const auto decision =
                                     state->policy ? state->policy->decidePermission({ kind, origin }) : PermissionDecision::Deny;
+                                if (decision != PermissionDecision::Allow) {
+                                    qCDebug(systemWebViewPolicy).noquote()
+                                        << "event=policy.permission_denied" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(origin);
+                                }
                                 args->put_State(
                                     decision == PermissionDecision::Allow ? COREWEBVIEW2_PERMISSION_STATE_ALLOW
                                                                           : COREWEBVIEW2_PERMISSION_STATE_DENY);
@@ -569,6 +606,9 @@ public:
                                 const NewWindowRequest request { url, userInitiated != FALSE };
                                 const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
                                 if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow) {
+                                    qCDebug(systemWebViewPolicy).noquote()
+                                        << "event=policy.popup_denied" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Handled(TRUE);
                                     if (deferral) {
                                         deferral->Complete();
@@ -680,6 +720,9 @@ public:
                                                                     suggestedName };
                                     if (!state->policy || state->policy->decideDownload(request) != DownloadDecision::Allow
                                         || !state->callbacks.onResolveDownload) {
+                                        qCDebug(systemWebViewPolicy).noquote()
+                                            << "event=policy.download_denied" << "session=" << state->sessionDiagnosticId
+                                            << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                         args->put_Cancel(TRUE);
                                         return S_OK;
                                     }
@@ -764,10 +807,16 @@ public:
                                         ? state->policy->decideNavigation({ url, true, userInitiated != FALSE, redirected != FALSE })
                                         : NavigationDecision::Allow;
                                 if (decision == NavigationDecision::Cancel) {
+                                    qCDebug(systemWebViewPolicy).noquote()
+                                        << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Cancel(TRUE);
                                     return S_OK;
                                 }
                                 if (decision == NavigationDecision::OpenExternally) {
+                                    qCDebug(systemWebViewPolicy).noquote()
+                                        << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Cancel(TRUE);
                                     if (state->callbacks.onOpenExternal) {
                                         state->callbacks.onOpenExternal(url);
@@ -863,6 +912,9 @@ public:
                                 CoTaskMemFree(rawJson);
                                 CoTaskMemFree(rawSource);
                                 if (state->committedUrl.isEmpty()) {
+                                    qCDebug(systemWebViewBridge).noquote()
+                                        << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "reason=no_committed_document";
                                     return S_OK;
                                 }
                                 QJsonObject object;
@@ -873,6 +925,9 @@ public:
                                            != state->committedUrl.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
                                     || !parseMessage(json, &object, &error)
                                     || object.value(QStringLiteral("documentToken")).toString() != state->documentToken) {
+                                    qCDebug(systemWebViewBridge).noquote()
+                                        << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+                                        << "view=" << state->diagnosticId << "reason=native_boundary";
                                     return S_OK;
                                 }
                                 const auto inner = object.value(QStringLiteral("message")).toObject();
@@ -884,6 +939,25 @@ public:
                             })
                             .Get(),
                         &webMessageToken);
+                    webview->add_ProcessFailed(
+                        Microsoft::WRL::Callback<ICoreWebView2ProcessFailedEventHandler>(
+                            [state = state](ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+                                if (state->lifetime.isClosed() || !args) {
+                                    return S_OK;
+                                }
+                                COREWEBVIEW2_PROCESS_FAILED_KIND kind = COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED;
+                                if (FAILED(args->get_ProcessFailedKind(&kind))) {
+                                    kind = COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED;
+                                }
+                                const auto event = runtimeFailureEvent(kind);
+                                qCCritical(systemWebViewRuntime).noquote()
+                                    << "event=runtime.process_failed" << "session=" << state->sessionDiagnosticId
+                                    << "view=" << state->diagnosticId << "native_code=" << event.nativeCode;
+                                state->emitRuntimeFailure(event);
+                                return S_OK;
+                            })
+                            .Get(),
+                        &processFailedToken);
                     const QString transport = bridgePageScript(
                         QStringLiteral("window.__systemWebViewToken"),
                         QStringLiteral("window.chrome.webview.postMessage"),
@@ -946,6 +1020,7 @@ public:
     EventRegistrationToken contentLoadingToken { };
     EventRegistrationToken navigationCompletedToken { };
     EventRegistrationToken webMessageToken { };
+    EventRegistrationToken processFailedToken { };
     EventRegistrationToken webResourceToken { };
     EventRegistrationToken permissionToken { };
     EventRegistrationToken newWindowToken { };
@@ -1035,6 +1110,7 @@ public:
             webview->remove_ContentLoading(contentLoadingToken);
             webview->remove_NavigationCompleted(navigationCompletedToken);
             webview->remove_WebMessageReceived(webMessageToken);
+            webview->remove_ProcessFailed(processFailedToken);
             webview->remove_WebResourceRequested(webResourceToken);
             webview->remove_PermissionRequested(permissionToken);
             webview->remove_NewWindowRequested(newWindowToken);
