@@ -1,7 +1,7 @@
 #pragma once
 
-#include "webview/IWebView.h"
 #include "internal/ResourceMapping.h"
+#include "webview/IWebView.h"
 #include "webview/WebViewPolicy.h"
 
 #include <functional>
@@ -40,9 +40,13 @@ public:
 
 private:
     friend class WebView2Session;
-    WebView2View(QWidget* parent, std::function<ICoreWebView2Environment*()> environmentProvider,
-        std::shared_ptr<WebViewState> sessionState, WebViewPolicyPtr policy,
-        std::shared_ptr<QVector<ResourceMapping>> resourceMappings, SessionMode sessionMode,
+    WebView2View(
+        QWidget* parent,
+        std::function<ICoreWebView2Environment*()> environmentProvider,
+        std::shared_ptr<WebViewState> sessionState,
+        WebViewPolicyPtr policy,
+        std::shared_ptr<QVector<ResourceMapping>> resourceMappings,
+        SessionMode sessionMode,
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose = { });
 

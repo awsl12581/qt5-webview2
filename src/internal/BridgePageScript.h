@@ -4,7 +4,9 @@
 
 namespace webview
 {
-QString bridgePageScript(const QString& documentTokenExpression,
-    const QString& nativePostExpression, const QString& nativeReceiveRegistration,
-    const QString& prelude = {});
+QString bridgePageScript(
+    const QString& documentTokenExpression,
+    const QString& nativePostExpression,
+    const QString& nativeReceiveRegistration,
+    const QString& prelude = { });
 }

@@ -19,9 +19,7 @@ int main(int argc, char* argv[])
     layout->addWidget(button);
     layout->addStretch();
 
-    QObject::connect(button, &QPushButton::clicked, &window, [label] {
-        label->setText(QStringLiteral("The button click reached Qt."));
-    });
+    QObject::connect(button, &QPushButton::clicked, &window, [label] { label->setText(QStringLiteral("The button click reached Qt.")); });
 
     window.show();
     return application.exec();

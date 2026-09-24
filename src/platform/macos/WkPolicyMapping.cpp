@@ -17,15 +17,13 @@ NativePermissionDecision mapPermissionDecision(PermissionDecision decision)
     return NativePermissionDecision::Deny;
 }
 
-NativePermissionDecision decideNativePermission(
-    const WebViewPolicy& policy, const PermissionRequest& request)
+NativePermissionDecision decideNativePermission(const WebViewPolicy& policy, const PermissionRequest& request)
 {
     return mapPermissionDecision(policy.decidePermission(request));
 }
 
 NativeDownloadDecision mapDownloadDecision(DownloadDecision decision)
 {
-    return decision == DownloadDecision::Allow ? NativeDownloadDecision::Download
-                                               : NativeDownloadDecision::Cancel;
+    return decision == DownloadDecision::Allow ? NativeDownloadDecision::Download : NativeDownloadDecision::Cancel;
 }
 } // namespace webview

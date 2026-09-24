@@ -4,7 +4,8 @@
 
 namespace webview
 {
-struct ResourceMapping {
+struct ResourceMapping
+{
     QUrl origin;
     QString localDirectory;
     QString entryDocument;
@@ -14,6 +15,5 @@ struct ResourceMapping {
 QUrl normalizedOrigin(const QUrl& url);
 bool validateResourceMappings(QVector<ResourceMapping>* mappings, QString* error);
 const ResourceMapping* findResourceMapping(const QVector<ResourceMapping>& mappings, const QUrl& url);
-QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, QString* error,
-    bool allowSpaFallback = false);
+QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, QString* error, bool allowSpaFallback = false);
 } // namespace webview

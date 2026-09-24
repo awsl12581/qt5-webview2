@@ -2,5 +2,8 @@
 
 namespace webview
 {
-bool hasExternalFileLink(const QString&) { return false; }
+bool hasExternalFileLink(const QString&)
+{
+    return false;
+}
 } // namespace webview

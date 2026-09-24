@@ -1,8 +1,8 @@
 #include "webview/WebResourceManager.h"
 
-#include <QDir>
-#include <QDateTime>
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMimeDatabase>
@@ -21,7 +21,8 @@
 
 namespace webview
 {
-namespace {
+namespace
+{
 constexpr qint64 kMaximumFileSize = 2LL * 1024 * 1024 * 1024;
 constexpr qint64 kMaximumPublishedBytes = 8LL * 1024 * 1024 * 1024;
 constexpr int kMaximumResourceCount = 128;
@@ -31,15 +32,25 @@ constexpr qint64 kResourceLifetimeMs = 30LL * 60 * 1000;
 class RangeFile final : public QFile
 {
 public:
-    RangeFile(const QString& path, qint64 length) : QFile(path), remaining_(length) {}
+    RangeFile(const QString& path, qint64 length)
+        : QFile(path)
+        , remaining_(length)
+    {
+    }
+
 protected:
     qint64 readData(char* data, qint64 maximum) override
     {
-        if (remaining_ <= 0) return 0;
+        if (remaining_ <= 0) {
+            return 0;
+        }
         const auto count = QFile::readData(data, qMin(maximum, remaining_));
-        if (count > 0) remaining_ -= count;
+        if (count > 0) {
+            remaining_ -= count;
+        }
         return count;
     }
+
 private:
     qint64 remaining_;
 };
@@ -48,53 +59,76 @@ private:
 class WebResourceManager::Impl
 {
 public:
-    struct SnapshotStore : std::enable_shared_from_this<SnapshotStore> {
+    struct SnapshotStore : std::enable_shared_from_this<SnapshotStore>
+    {
         QTemporaryDir directory;
         std::mutex mutex;
         QHash<QString, qint64> retryPaths;
         qint64 occupiedBytes = 0;
         bool retryScheduled = false;
 
-        qint64 occupied() {
+        qint64 occupied()
+        {
             std::lock_guard<std::mutex> lock(mutex);
             return occupiedBytes;
         }
 
-        void add(qint64 size) {
+        void add(qint64 size)
+        {
             std::lock_guard<std::mutex> lock(mutex);
             occupiedBytes += size;
         }
 
-        void remove(const QString& path, qint64 size) {
+        void remove(const QString& path, qint64 size)
+        {
             bool schedule = false;
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (QFile::remove(path) || !QFileInfo::exists(path)) occupiedBytes -= size;
+                if (QFile::remove(path) || !QFileInfo::exists(path)) {
+                    occupiedBytes -= size;
+                }
                 else {
                     retryPaths.insert(path, size);
-                    if (!retryScheduled) { retryScheduled = true; schedule = true; }
+                    if (!retryScheduled) {
+                        retryScheduled = true;
+                        schedule = true;
+                    }
                 }
             }
-            if (schedule) scheduleRetry();
+            if (schedule) {
+                scheduleRetry();
+            }
         }
 
-        void retry(bool fromTimer = false) {
+        void retry(bool fromTimer = false)
+        {
             bool schedule = false;
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (fromTimer) retryScheduled = false;
+                if (fromTimer) {
+                    retryScheduled = false;
+                }
                 for (auto it = retryPaths.begin(); it != retryPaths.end();) {
                     if (QFile::remove(it.key()) || !QFileInfo::exists(it.key())) {
                         occupiedBytes -= it.value();
                         it = retryPaths.erase(it);
-                    } else ++it;
+                    }
+                    else {
+                        ++it;
+                    }
                 }
-                if (!retryPaths.isEmpty() && !retryScheduled) { retryScheduled = true; schedule = true; }
+                if (!retryPaths.isEmpty() && !retryScheduled) {
+                    retryScheduled = true;
+                    schedule = true;
+                }
             }
-            if (schedule) scheduleRetry();
+            if (schedule) {
+                scheduleRetry();
+            }
         }
 
-        void scheduleRetry() {
+        void scheduleRetry()
+        {
             auto* app = QCoreApplication::instance();
             if (!app) {
                 std::lock_guard<std::mutex> lock(mutex);
@@ -103,19 +137,28 @@ public:
             }
             const std::weak_ptr<SnapshotStore> weak = shared_from_this();
             QTimer::singleShot(1000, app, [weak] {
-                if (const auto store = weak.lock()) store->retry(true);
+                if (const auto store = weak.lock()) {
+                    store->retry(true);
+                }
             });
         }
     };
 
-    struct Entry {
+    struct Entry
+    {
         QString path;
         QString mime;
         QString document;
         qint64 size = 0;
         QDateTime expiresAt;
         std::shared_ptr<SnapshotStore> snapshots;
-        ~Entry() { if (snapshots) snapshots->remove(path, size); }
+
+        ~Entry()
+        {
+            if (snapshots) {
+                snapshots->remove(path, size);
+            }
+        }
     };
 
     QUrl origin;
@@ -127,12 +170,16 @@ public:
     std::function<void(const QString&)> onRevoked;
 };
 
-WebResourceManager::WebResourceManager(QUrl origin) : impl_(std::make_unique<Impl>())
+WebResourceManager::WebResourceManager(QUrl origin)
+    : impl_(std::make_unique<Impl>())
 {
     impl_->origin = std::move(origin);
 }
 
-WebResourceManager::~WebResourceManager() { releaseAll(); }
+WebResourceManager::~WebResourceManager()
+{
+    releaseAll();
+}
 
 void WebResourceManager::setRevocationHandler(std::function<void(const QString&)> handler)
 {
@@ -148,12 +195,13 @@ void WebResourceManager::setContext(const QUrl& resourceOrigin, const QUrl& docu
 
 void WebResourceManager::setDocumentToken(const QString& documentToken)
 {
-    if (impl_->documentToken != documentToken) releaseForDocument(impl_->documentToken);
+    if (impl_->documentToken != documentToken) {
+        releaseForDocument(impl_->documentToken);
+    }
     impl_->documentToken = documentToken;
 }
 
-PublishedResource WebResourceManager::publishFile(const QString& path, const QString& mimeType,
-    const QString& documentToken)
+PublishedResource WebResourceManager::publishFile(const QString& path, const QString& mimeType, const QString& documentToken)
 {
     impl_->snapshots->retry();
     const auto now = QDateTime::currentDateTimeUtc();
@@ -161,38 +209,42 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
         if (it.value()->expiresAt <= now) {
             impl_->revoked.insert(it.key());
             it = impl_->entries.erase(it);
-        } else ++it;
+        }
+        else {
+            ++it;
+        }
     }
     const QFileInfo info(path);
-    if (!impl_->origin.isValid() || impl_->documentToken.isEmpty()
-        || (!documentToken.isEmpty() && documentToken != impl_->documentToken)
-        || !info.isFile() || !info.isReadable()
-        || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
-        || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes
-        || !impl_->snapshots->directory.isValid()) {
-        return {};
+    if (!impl_->origin.isValid() || impl_->documentToken.isEmpty() || (!documentToken.isEmpty() && documentToken != impl_->documentToken)
+        || !info.isFile() || !info.isReadable() || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
+        || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes || !impl_->snapshots->directory.isValid()) {
+        return { };
     }
 
     const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto snapshotPath = QDir(impl_->snapshots->directory.path()).filePath(token);
     QFile input(info.absoluteFilePath());
     QSaveFile output(snapshotPath);
-    if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) return {};
+    if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) {
+        return { };
+    }
     QByteArray buffer(static_cast<int>(kCopyBufferSize), Qt::Uninitialized);
     qint64 copied = 0;
     while (!input.atEnd()) {
         const auto count = input.read(buffer.data(), buffer.size());
         if (count <= 0 || output.write(buffer.constData(), count) != count) {
             output.cancelWriting();
-            return {};
+            return { };
         }
         copied += count;
         if (copied > kMaximumFileSize) {
             output.cancelWriting();
-            return {};
+            return { };
         }
     }
-    if (copied != info.size() || !output.commit()) return {};
+    if (copied != info.size() || !output.commit()) {
+        return { };
+    }
 
     auto entry = std::make_shared<Impl::Entry>();
     entry->path = snapshotPath;
@@ -213,14 +265,22 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const auto origin = request.url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
     const auto expectedOrigin = impl_->origin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
     const auto sourceOrigin = request.sourceOrigin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
-    if (!expectedOrigin.isValid() || origin != expectedOrigin || sourceOrigin != impl_->documentOrigin) return { 403 };
+    if (!expectedOrigin.isValid() || origin != expectedOrigin || sourceOrigin != impl_->documentOrigin) {
+        return { 403 };
+    }
 
     const auto token = request.url.path().section(QLatin1Char('/'), -1);
     const auto it = impl_->entries.constFind(token);
-    if (it == impl_->entries.cend()) return { impl_->revoked.contains(token) ? 410 : 404 };
+    if (it == impl_->entries.cend()) {
+        return { impl_->revoked.contains(token) ? 410 : 404 };
+    }
     const auto entry = it.value();
-    if (entry->expiresAt <= QDateTime::currentDateTimeUtc()) return { 410 };
-    if (!entry->document.isEmpty() && entry->document != request.documentToken) return { 403 };
+    if (entry->expiresAt <= QDateTime::currentDateTimeUtc()) {
+        return { 410 };
+    }
+    if (!entry->document.isEmpty() && entry->document != request.documentToken) {
+        return { 403 };
+    }
 
     qint64 start = request.rangeStart < 0 ? 0 : request.rangeStart;
     qint64 end = request.rangeEnd < 0 ? entry->size - 1 : request.rangeEnd;
@@ -234,16 +294,24 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         const auto last = match.captured(2);
         if (!match.hasMatch() || (first.isEmpty() && last.isEmpty())) {
             start = -1;
-        } else if (first.isEmpty()) {
+        }
+        else if (first.isEmpty()) {
             const auto suffix = last.toLongLong(&endOk);
             start = endOk && suffix > 0 ? qMax<qint64>(0, entry->size - suffix) : -1;
             end = entry->size - 1;
-        } else {
+        }
+        else {
             start = first.toLongLong(&startOk);
             end = last.isEmpty() ? entry->size - 1 : last.toLongLong(&endOk);
-            if (!last.isEmpty() && !endOk) end = -1;
-            if (!startOk) start = -1;
-            if (end >= entry->size) end = entry->size - 1;
+            if (!last.isEmpty() && !endOk) {
+                end = -1;
+            }
+            if (!startOk) {
+                start = -1;
+            }
+            if (end >= entry->size) {
+                end = entry->size - 1;
+            }
         }
     }
     if ((hasRange && (entry->size == 0 || start < 0 || start > end || start >= entry->size))
@@ -279,26 +347,37 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
 void WebResourceManager::release(const QString& token)
 {
     const auto it = impl_->entries.find(token);
-    if (it == impl_->entries.end()) return;
+    if (it == impl_->entries.end()) {
+        return;
+    }
     impl_->revoked.insert(token);
     impl_->entries.erase(it);
-    if (impl_->onRevoked) impl_->onRevoked(token);
+    if (impl_->onRevoked) {
+        impl_->onRevoked(token);
+    }
 }
 
 void WebResourceManager::releaseForDocument(const QString& documentToken)
 {
-    if (documentToken.isEmpty()) return;
+    if (documentToken.isEmpty()) {
+        return;
+    }
     for (auto it = impl_->entries.begin(); it != impl_->entries.end();) {
         if (it.value()->document == documentToken) {
             impl_->revoked.insert(it.key());
             it = impl_->entries.erase(it);
-        } else ++it;
+        }
+        else {
+            ++it;
+        }
     }
 }
 
 void WebResourceManager::releaseAll()
 {
-    for (auto it = impl_->entries.cbegin(); it != impl_->entries.cend(); ++it) impl_->revoked.insert(it.key());
+    for (auto it = impl_->entries.cbegin(); it != impl_->entries.cend(); ++it) {
+        impl_->revoked.insert(it.key());
+    }
     impl_->entries.clear();
 }
 } // namespace webview

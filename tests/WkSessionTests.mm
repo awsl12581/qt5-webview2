@@ -51,35 +51,23 @@ int main(int argc, char** argv)
     bundle.source = webview::LocalBundle { profile.path() };
     assert(session->createApplication(bundle));
     assert(!session->createApplication(std::move(bundle)));
-    assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile)
-        == webview::CapabilitySupport::Supported);
-    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PersistentProfile)
-        == webview::CapabilitySupport::Supported);
-    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile)
-        == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::PrivateProfile)
-        == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
-        == webview::CapabilitySupport::Supported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Location)
-        == webview::CapabilitySupport::Unsupported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Notifications)
-        == webview::CapabilitySupport::Unsupported);
-    assert(session->capabilitySupport(webview::WebViewCapability::Clipboard)
-        == webview::CapabilitySupport::Unsupported);
+    assert(session->capabilitySupport(webview::WebViewCapability::PersistentProfile) == webview::CapabilitySupport::Supported);
+    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PersistentProfile) == webview::CapabilitySupport::Supported);
+    assert(ephemeral->capabilitySupport(webview::WebViewCapability::PrivateProfile) == webview::CapabilitySupport::Supported);
+    assert(session->capabilitySupport(webview::WebViewCapability::PrivateProfile) == webview::CapabilitySupport::Supported);
+    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection) == webview::CapabilitySupport::Supported);
+    assert(session->capabilitySupport(webview::WebViewCapability::Location) == webview::CapabilitySupport::Unsupported);
+    assert(session->capabilitySupport(webview::WebViewCapability::Notifications) == webview::CapabilitySupport::Unsupported);
+    assert(session->capabilitySupport(webview::WebViewCapability::Clipboard) == webview::CapabilitySupport::Unsupported);
     if (@available(macOS 12.0, *)) {
-        assert(session->capabilitySupport(webview::WebViewCapability::Camera)
-            == webview::CapabilitySupport::Supported);
-        assert(session->capabilitySupport(webview::WebViewCapability::Microphone)
-            == webview::CapabilitySupport::Supported);
+        assert(session->capabilitySupport(webview::WebViewCapability::Camera) == webview::CapabilitySupport::Supported);
+        assert(session->capabilitySupport(webview::WebViewCapability::Microphone) == webview::CapabilitySupport::Supported);
     }
     if (@available(macOS 11.3, *)) {
-        assert(session->capabilitySupport(webview::WebViewCapability::DownloadTarget)
-            == webview::CapabilitySupport::Supported);
+        assert(session->capabilitySupport(webview::WebViewCapability::DownloadTarget) == webview::CapabilitySupport::Supported);
     }
 
     assert(waitForClear([&](auto completion) { session->clearCache(std::move(completion)); }));
     assert(waitForClear([&](auto completion) { session->clearCookies(std::move(completion)); }));
     assert(waitForClear([&](auto completion) { session->clearWebsiteData(std::move(completion)); }));
-
 }

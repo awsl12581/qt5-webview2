@@ -2,9 +2,9 @@
 
 #include "webview/DocumentLifetime.h"
 #include "webview/IWebView.h"
-#include "webview/WebViewPolicy.h"
-#include "webview/WebViewBridge.h"
 #include "webview/WebResourceManager.h"
+#include "webview/WebViewBridge.h"
+#include "webview/WebViewPolicy.h"
 
 #include <functional>
 #include <memory>
@@ -62,8 +62,8 @@ public:
     void setResourceDocumentToken(const QString& token);
     void setResourceContext(const QUrl& origin, const QUrl& documentOrigin, const QString& token);
 
-    void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { },
-        const QString& error = { });
+    void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { }, const QString& error = { });
+
 private:
     InitializationScheduler initialization_;
 };

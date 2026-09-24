@@ -11,8 +11,10 @@
 
 namespace webview
 {
-QString bridgePageScript(const QString& documentTokenExpression,
-    const QString& nativePostExpression, const QString& nativeReceiveRegistration,
+QString bridgePageScript(
+    const QString& documentTokenExpression,
+    const QString& nativePostExpression,
+    const QString& nativeReceiveRegistration,
     const QString& prelude)
 {
     return QStringLiteral(R"JS((() => {
@@ -64,7 +66,8 @@ QString bridgePageScript(const QString& documentTokenExpression,
     window.dispatchEvent(new CustomEvent('system-webview-message', { detail }));
   };
   %3
-})();)JS").arg(documentTokenExpression, nativePostExpression, nativeReceiveRegistration, prelude);
+})();)JS")
+        .arg(documentTokenExpression, nativePostExpression, nativeReceiveRegistration, prelude);
 }
 
 namespace

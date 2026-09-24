@@ -9,14 +9,16 @@
 
 namespace webview
 {
-struct PublishedResource {
+struct PublishedResource
+{
     QString token;
     QUrl url;
     QString mimeType;
     qint64 size = -1;
 };
 
-struct ResourceRequest {
+struct ResourceRequest
+{
     QUrl url;
     QUrl sourceOrigin;
     QString documentToken;
@@ -25,7 +27,8 @@ struct ResourceRequest {
     qint64 rangeEnd = -1;
 };
 
-struct ResourceResponse {
+struct ResourceResponse
+{
     int status = 404;
     QString mimeType;
     qint64 totalSize = 0;
@@ -39,11 +42,10 @@ struct ResourceResponse {
 class WebResourceManager final
 {
 public:
-    explicit WebResourceManager(QUrl origin = {});
+    explicit WebResourceManager(QUrl origin = { });
     ~WebResourceManager();
 
-    PublishedResource publishFile(const QString& path, const QString& mimeType = {},
-        const QString& documentToken = {});
+    PublishedResource publishFile(const QString& path, const QString& mimeType = { }, const QString& documentToken = { });
     ResourceResponse open(const ResourceRequest& request) const;
     void release(const QString& token);
 

@@ -9,9 +9,15 @@ namespace webview
 {
 class WebViewState;
 
-enum class HostCompletionClaim { Accepted, Duplicate, OwnerUnavailable };
+enum class HostCompletionClaim
+{
+    Accepted,
+    Duplicate,
+    OwnerUnavailable
+};
 
-struct HostCompletionAccess {
+struct HostCompletionAccess
+{
     HostCompletionClaim claim = HostCompletionClaim::OwnerUnavailable;
     std::shared_ptr<WebViewState> state;
 };
@@ -27,6 +33,5 @@ private:
     std::weak_ptr<WebViewState> state_;
 };
 
-FileSelectionResult normalizeFileSelectionResult(
-    const FileSelectionRequest& request, FileSelectionResult result);
+FileSelectionResult normalizeFileSelectionResult(const FileSelectionRequest& request, FileSelectionResult result);
 } // namespace webview

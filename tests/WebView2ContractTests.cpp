@@ -20,8 +20,7 @@ void testUnsupportedFileSelectionIsExplicit()
 {
     auto session = webview::createWebViewSession({ });
     assert(session);
-    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection)
-        == webview::CapabilitySupport::Unsupported);
+    assert(session->capabilitySupport(webview::WebViewCapability::FileSelection) == webview::CapabilitySupport::Unsupported);
 }
 
 void testHostCompletionGuardIsThreadSafe()
@@ -61,8 +60,7 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     response.lease.reset();
 
     const auto path = snapshotPath.toStdWString();
-    HANDLE lockedFile = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE lockedFile = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     assert(lockedFile != INVALID_HANDLE_VALUE);
     state->resources->release(published.token);
     assert(QFileInfo::exists(snapshotPath));

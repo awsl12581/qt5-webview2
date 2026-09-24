@@ -1,11 +1,11 @@
 #include "platform/windows/WebView2View.h"
 #include "internal/Application.h"
 
+#include "internal/BridgePageScript.h"
 #include "internal/ResourceMapping.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
-#include "internal/BridgePageScript.h"
 
 #include <QDir>
 #include <QFile>
@@ -37,14 +37,22 @@ namespace
 class WebView2BridgeTransport final : public BridgeTransport
 {
 public:
-    explicit WebView2BridgeTransport(Microsoft::WRL::ComPtr<ICoreWebView2> view) : view_(std::move(view)) {}
+    explicit WebView2BridgeTransport(Microsoft::WRL::ComPtr<ICoreWebView2> view)
+        : view_(std::move(view))
+    {
+    }
+
     bool send(const QByteArray& message) override
     {
-        if (!view_) return false;
+        if (!view_) {
+            return false;
+        }
         const auto text = QString::fromUtf8(message).toStdWString();
         return SUCCEEDED(view_->PostWebMessageAsJson(text.c_str()));
     }
+
     void invalidate() override { view_.Reset(); }
+
 private:
     Microsoft::WRL::ComPtr<ICoreWebView2> view_;
 };
@@ -53,22 +61,39 @@ class FileRangeStream final : public IStream
 {
 public:
     FileRangeStream(const QString& path, qint64 offset, qint64 length, std::shared_ptr<void> lease)
-        : offset_(offset), length_(length), lease_(std::move(lease))
+        : offset_(offset)
+        , length_(length)
+        , lease_(std::move(lease))
     {
-        file_ = CreateFileW(path.toStdWString().c_str(), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        file_ = CreateFileW(
+            path.toStdWString().c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+            nullptr);
         if (file_ != INVALID_HANDLE_VALUE) {
             LARGE_INTEGER position;
             position.QuadPart = offset_;
             SetFilePointerEx(file_, position, nullptr, FILE_BEGIN);
         }
     }
-    ~FileRangeStream() { if (file_ != INVALID_HANDLE_VALUE) CloseHandle(file_); }
+
+    ~FileRangeStream()
+    {
+        if (file_ != INVALID_HANDLE_VALUE) {
+            CloseHandle(file_);
+        }
+    }
+
     bool valid() const { return file_ != INVALID_HANDLE_VALUE; }
+
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override
     {
-        if (!object) return E_POINTER;
+        if (!object) {
+            return E_POINTER;
+        }
         if (iid == IID_IUnknown || iid == IID_ISequentialStream || iid == IID_IStream) {
             *object = static_cast<IStream*>(this);
             AddRef();
@@ -77,66 +102,114 @@ public:
         *object = nullptr;
         return E_NOINTERFACE;
     }
+
     ULONG STDMETHODCALLTYPE AddRef() override { return ++references_; }
-    ULONG STDMETHODCALLTYPE Release() override { const ULONG count = --references_; if (!count) delete this; return count; }
+
+    ULONG STDMETHODCALLTYPE Release() override
+    {
+        const ULONG count = --references_;
+        if (!count) {
+            delete this;
+        }
+        return count;
+    }
+
     HRESULT STDMETHODCALLTYPE Read(void* buffer, ULONG bytes, ULONG* read) override
     {
-        if (!buffer) return E_POINTER;
+        if (!buffer) {
+            return E_POINTER;
+        }
         const auto remaining = length_ - position_;
         const DWORD amount = static_cast<DWORD>(qMin<qint64>(bytes, qMax<qint64>(0, remaining)));
         DWORD actual = 0;
-        if (amount && !ReadFile(file_, buffer, amount, &actual, nullptr)) return HRESULT_FROM_WIN32(GetLastError());
+        if (amount && !ReadFile(file_, buffer, amount, &actual, nullptr)) {
+            return HRESULT_FROM_WIN32(GetLastError());
+        }
         position_ += actual;
-        if (read) *read = actual;
+        if (read) {
+            *read = actual;
+        }
         return actual == bytes ? S_OK : S_FALSE;
     }
+
     HRESULT STDMETHODCALLTYPE Write(const void*, ULONG, ULONG*) override { return STG_E_ACCESSDENIED; }
+
     HRESULT STDMETHODCALLTYPE Seek(LARGE_INTEGER move, DWORD origin, ULARGE_INTEGER* result) override
     {
-        qint64 base = origin == STREAM_SEEK_SET ? 0 : origin == STREAM_SEEK_CUR ? position_
-            : origin == STREAM_SEEK_END ? length_ : -1;
-        if (base < 0) return STG_E_INVALIDFUNCTION;
+        qint64 base = origin == STREAM_SEEK_SET ? 0 : origin == STREAM_SEEK_CUR ? position_ : origin == STREAM_SEEK_END ? length_ : -1;
+        if (base < 0) {
+            return STG_E_INVALIDFUNCTION;
+        }
         const qint64 next = base + move.QuadPart;
-        if (next < 0 || next > length_) return STG_E_INVALIDFUNCTION;
-        LARGE_INTEGER absolute; absolute.QuadPart = offset_ + next;
-        if (!SetFilePointerEx(file_, absolute, nullptr, FILE_BEGIN)) return HRESULT_FROM_WIN32(GetLastError());
+        if (next < 0 || next > length_) {
+            return STG_E_INVALIDFUNCTION;
+        }
+        LARGE_INTEGER absolute;
+        absolute.QuadPart = offset_ + next;
+        if (!SetFilePointerEx(file_, absolute, nullptr, FILE_BEGIN)) {
+            return HRESULT_FROM_WIN32(GetLastError());
+        }
         position_ = next;
-        if (result) result->QuadPart = static_cast<ULONGLONG>(position_);
+        if (result) {
+            result->QuadPart = static_cast<ULONGLONG>(position_);
+        }
         return S_OK;
     }
+
     HRESULT STDMETHODCALLTYPE SetSize(ULARGE_INTEGER) override { return STG_E_ACCESSDENIED; }
+
     HRESULT STDMETHODCALLTYPE CopyTo(IStream* target, ULARGE_INTEGER count, ULARGE_INTEGER* read, ULARGE_INTEGER* written) override
     {
-        if (!target) return E_POINTER;
+        if (!target) {
+            return E_POINTER;
+        }
         ULONGLONG totalRead = 0, totalWritten = 0;
         BYTE buffer[64 * 1024];
         while (totalRead < count.QuadPart) {
             ULONG got = 0;
             const ULONG request = static_cast<ULONG>(qMin<ULONGLONG>(sizeof(buffer), count.QuadPart - totalRead));
             const HRESULT result = Read(buffer, request, &got);
-            if (FAILED(result) || !got) break;
+            if (FAILED(result) || !got) {
+                break;
+            }
             ULONG sent = 0;
             const HRESULT writeResult = target->Write(buffer, got, &sent);
-            totalRead += got; totalWritten += sent;
-            if (FAILED(writeResult) || sent != got) break;
+            totalRead += got;
+            totalWritten += sent;
+            if (FAILED(writeResult) || sent != got) {
+                break;
+            }
         }
-        if (read) read->QuadPart = totalRead;
-        if (written) written->QuadPart = totalWritten;
+        if (read) {
+            read->QuadPart = totalRead;
+        }
+        if (written) {
+            written->QuadPart = totalWritten;
+        }
         return totalRead == count.QuadPart ? S_OK : S_FALSE;
     }
+
     HRESULT STDMETHODCALLTYPE Commit(DWORD) override { return S_OK; }
+
     HRESULT STDMETHODCALLTYPE Revert() override { return STG_E_REVERTED; }
+
     HRESULT STDMETHODCALLTYPE LockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return STG_E_INVALIDFUNCTION; }
+
     HRESULT STDMETHODCALLTYPE UnlockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return STG_E_INVALIDFUNCTION; }
+
     HRESULT STDMETHODCALLTYPE Stat(STATSTG* stat, DWORD) override
     {
-        if (!stat) return E_POINTER;
+        if (!stat) {
+            return E_POINTER;
+        }
         ZeroMemory(stat, sizeof(*stat));
         stat->type = STGTY_STREAM;
         stat->cbSize.QuadPart = static_cast<ULONGLONG>(length_);
         return S_OK;
     }
+
     HRESULT STDMETHODCALLTYPE Clone(IStream**) override { return E_NOTIMPL; }
+
 private:
     std::atomic<ULONG> references_ { 1 };
     HANDLE file_ = INVALID_HANDLE_VALUE;
@@ -314,14 +387,20 @@ public:
                                 const auto inlineDocument = inlineDocuments->constFind(url.toString(QUrl::FullyEncoded));
                                 if (inlineDocument != inlineDocuments->cend()) {
                                     const auto& bytes = inlineDocument.value();
-                                    Microsoft::WRL::ComPtr<IStream> stream(
-                                        SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.constData()), static_cast<UINT>(bytes.size())));
-                                    if (!stream) return S_OK;
-                                    const std::wstring headers = L"Content-Type: text/html\r\nContent-Length: "
-                                        + std::to_wstring(bytes.size()) + L"\r\n";
+                                    Microsoft::WRL::ComPtr<IStream> stream(SHCreateMemStream(
+                                        reinterpret_cast<const BYTE*>(bytes.constData()),
+                                        static_cast<UINT>(bytes.size())));
+                                    if (!stream) {
+                                        return S_OK;
+                                    }
+                                    const std::wstring headers =
+                                        L"Content-Type: text/html\r\nContent-Length: " + std::to_wstring(bytes.size()) + L"\r\n";
                                     Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
-                                    if (SUCCEEDED(environment->CreateWebResourceResponse(stream.Get(), 200, L"OK", headers.c_str(), &response))
-                                        && response) args->put_Response(response.Get());
+                                    if (SUCCEEDED(
+                                            environment->CreateWebResourceResponse(stream.Get(), 200, L"OK", headers.c_str(), &response))
+                                        && response) {
+                                        args->put_Response(response.Get());
+                                    }
                                     return S_OK;
                                 }
                                 ResourceResponse resourceResponse;
@@ -334,8 +413,8 @@ public:
                                         rangeHeader = QString::fromWCharArray(rawRange);
                                         CoTaskMemFree(rawRange);
                                     }
-                                    resourceResponse = state->resources->open({ url, state->committedUrl,
-                                        state->documentToken, rangeHeader });
+                                    resourceResponse =
+                                        state->resources->open({ url, state->committedUrl, state->documentToken, rangeHeader });
                                     status = resourceResponse.status;
                                     mime = resourceResponse.mimeType;
                                     totalSize = resourceResponse.totalSize;
@@ -343,50 +422,85 @@ public:
                                     length = resourceResponse.length;
                                     lease = std::move(resourceResponse.lease);
                                     auto* file = qobject_cast<QFile*>(resourceResponse.body.get());
-                                    if (file) filePath = file->fileName();
+                                    if (file) {
+                                        filePath = file->fileName();
+                                    }
                                     resourceResponse.body.reset();
-                                } else {
+                                }
+                                else {
                                     const auto* mapping = findResourceMapping(*mappings, url);
                                     QString error;
                                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT context { };
                                     args->get_ResourceContext(&context);
-                                    filePath = mapping ? resolveMappedResource(*mapping, url, &error,
-                                        context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) : QString();
-                                    if (filePath.isEmpty()) return S_OK;
+                                    filePath = mapping ? resolveMappedResource(
+                                                             *mapping,
+                                                             url,
+                                                             &error,
+                                                             context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)
+                                                       : QString();
+                                    if (filePath.isEmpty()) {
+                                        return S_OK;
+                                    }
                                     const QFileInfo info(filePath);
                                     mime = QMimeDatabase().mimeTypeForFile(filePath).name();
                                     totalSize = info.size();
                                     length = totalSize;
                                 }
                                 if (filePath.isEmpty()) {
-                                    if (!url.path().startsWith(QStringLiteral("/resource/"))) return S_OK;
+                                    if (!url.path().startsWith(QStringLiteral("/resource/"))) {
+                                        return S_OK;
+                                    }
                                     Microsoft::WRL::ComPtr<IStream> empty(SHCreateMemStream(nullptr, 0));
-                                    if (!empty) return S_OK;
-                                    std::wstring errorHeaders = L"Content-Length: 0\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
-                                    if (status == 416) errorHeaders += L"Content-Range: bytes */" + std::to_wstring(totalSize) + L"\r\n";
-                                    const wchar_t* errorStatus = status == 403 ? L"Forbidden" : status == 404 ? L"Not Found"
-                                        : status == 410 ? L"Gone" : status == 416 ? L"Range Not Satisfiable" : L"Read Error";
+                                    if (!empty) {
+                                        return S_OK;
+                                    }
+                                    std::wstring errorHeaders =
+                                        L"Content-Length: 0\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
+                                    if (status == 416) {
+                                        errorHeaders += L"Content-Range: bytes */" + std::to_wstring(totalSize) + L"\r\n";
+                                    }
+                                    const wchar_t* errorStatus = status == 403   ? L"Forbidden"
+                                                                 : status == 404 ? L"Not Found"
+                                                                 : status == 410 ? L"Gone"
+                                                                 : status == 416 ? L"Range Not Satisfiable"
+                                                                                 : L"Read Error";
                                     Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> errorResponse;
-                                    if (SUCCEEDED(environment->CreateWebResourceResponse(empty.Get(), status, errorStatus,
-                                            errorHeaders.c_str(), &errorResponse)) && errorResponse) {
+                                    if (SUCCEEDED(environment->CreateWebResourceResponse(
+                                            empty.Get(),
+                                            status,
+                                            errorStatus,
+                                            errorHeaders.c_str(),
+                                            &errorResponse))
+                                        && errorResponse) {
                                         args->put_Response(errorResponse.Get());
                                     }
                                     return S_OK;
                                 }
                                 Microsoft::WRL::ComPtr<IStream> stream;
                                 auto* fileStream = new FileRangeStream(filePath, offset, length, std::move(lease));
-                                if (!fileStream->valid()) { fileStream->Release(); return S_OK; }
+                                if (!fileStream->valid()) {
+                                    fileStream->Release();
+                                    return S_OK;
+                                }
                                 stream.Attach(fileStream);
-                                std::wstring headerText = L"Content-Type: " + mime.toStdWString()
-                                    + L"\r\nContent-Length: " + std::to_wstring(length)
+                                std::wstring headerText =
+                                    L"Content-Type: " + mime.toStdWString() + L"\r\nContent-Length: " + std::to_wstring(length)
                                     + L"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
-                                if (status == 206) headerText += L"Content-Range: bytes " + std::to_wstring(offset)
-                                    + L"-" + std::to_wstring(offset + length - 1) + L"/" + std::to_wstring(totalSize) + L"\r\n";
-                                const wchar_t* statusText = status == 206 ? L"Partial Content" : status == 403 ? L"Forbidden"
-                                    : status == 404 ? L"Not Found" : status == 410 ? L"Gone"
-                                    : status == 416 ? L"Range Not Satisfiable" : status >= 500 ? L"Read Error" : L"OK";
+                                if (status == 206) {
+                                    headerText += L"Content-Range: bytes " + std::to_wstring(offset) + L"-"
+                                                  + std::to_wstring(offset + length - 1) + L"/" + std::to_wstring(totalSize) + L"\r\n";
+                                }
+                                const wchar_t* statusText = status == 206   ? L"Partial Content"
+                                                            : status == 403 ? L"Forbidden"
+                                                            : status == 404 ? L"Not Found"
+                                                            : status == 410 ? L"Gone"
+                                                            : status == 416 ? L"Range Not Satisfiable"
+                                                            : status >= 500 ? L"Read Error"
+                                                                            : L"OK";
                                 Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
-                                if (SUCCEEDED(environment->CreateWebResourceResponse(stream.Get(), status, statusText, headerText.c_str(), &response))
+                                if (SUCCEEDED(
+                                        environment
+                                            ->CreateWebResourceResponse(stream.Get(), status, statusText, headerText.c_str(), &response))
                                     && response) {
                                     args->put_Response(response.Get());
                                 }
@@ -755,8 +869,7 @@ public:
                                     return S_OK;
                                 }
                                 const auto inner = object.value(QStringLiteral("message")).toObject();
-                                if (!inner.value(QStringLiteral("type")).isString()
-                                    || !inner.value(QStringLiteral("payload")).isObject()) {
+                                if (!inner.value(QStringLiteral("type")).isString() || !inner.value(QStringLiteral("payload")).isObject()) {
                                     return S_OK;
                                 }
                                 state->bridge->receive(QJsonDocument(inner).toJson(QJsonDocument::Compact), source);
@@ -767,7 +880,8 @@ public:
                     const QString transport = bridgePageScript(
                         QStringLiteral("window.__systemWebViewToken"),
                         QStringLiteral("window.chrome.webview.postMessage"),
-                        QStringLiteral("window.chrome.webview.addEventListener('message', event => window.__systemWebViewReceive(event.data));"),
+                        QStringLiteral(
+                            "window.chrome.webview.addEventListener('message', event => window.__systemWebViewReceive(event.data));"),
                         QStringLiteral("window.__systemWebViewToken = null;"));
                     const HRESULT transportResult = webview->AddScriptToExecuteOnDocumentCreated(
                         transport.toStdWString().c_str(),
@@ -1069,8 +1183,15 @@ bool WebView2View::isClosed() const
     return impl_->state->lifetime.isClosed();
 }
 
-WebViewBridge& WebView2View::bridge() { return *impl_->state->bridge; }
-WebResourceManager& WebView2View::resources() { return *impl_->state->resources; }
+WebViewBridge& WebView2View::bridge()
+{
+    return *impl_->state->bridge;
+}
+
+WebResourceManager& WebView2View::resources()
+{
+    return *impl_->state->resources;
+}
 
 void WebView2View::setHostCallbacks(WebViewHostCallbacks callbacks)
 {

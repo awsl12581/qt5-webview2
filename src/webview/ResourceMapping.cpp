@@ -32,10 +32,9 @@ bool validateResourceMappings(QVector<ResourceMapping>* mappings, QString* error
     QSet<QString> origins;
     for (auto& mapping : *mappings) {
         const auto normalized = normalizedOrigin(mapping.origin);
-        const bool invalidOrigin = normalized.scheme() != QStringLiteral("app")
-            || mapping.origin.port() >= 0 || !mapping.origin.userInfo().isEmpty()
-            || !mapping.origin.path().isEmpty() || mapping.origin.hasQuery()
-            || mapping.origin.hasFragment();
+        const bool invalidOrigin = normalized.scheme() != QStringLiteral("app") || mapping.origin.port() >= 0
+                                   || !mapping.origin.userInfo().isEmpty() || !mapping.origin.path().isEmpty() || mapping.origin.hasQuery()
+                                   || mapping.origin.hasFragment();
         if (invalidOrigin) {
             if (error) {
                 *error = QStringLiteral("Invalid resource mapping origin: %1").arg(mapping.origin.toString());
@@ -53,8 +52,7 @@ bool validateResourceMappings(QVector<ResourceMapping>* mappings, QString* error
         const auto canonicalRoot = rootInfo.canonicalFilePath();
         if (canonicalRoot.isEmpty() || !rootInfo.isDir()) {
             if (error) {
-                *error = QStringLiteral("Invalid resource mapping directory for %1: %2")
-                             .arg(originText, mapping.localDirectory);
+                *error = QStringLiteral("Invalid resource mapping directory for %1: %2").arg(originText, mapping.localDirectory);
             }
             return false;
         }
@@ -76,8 +74,7 @@ const ResourceMapping* findResourceMapping(const QVector<ResourceMapping>& mappi
     return nullptr;
 }
 
-QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, QString* error,
-    bool allowSpaFallback)
+QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, QString* error, bool allowSpaFallback)
 {
     const auto encodedPath = url.path(QUrl::FullyEncoded).toUtf8();
     const auto decodedPath = QUrl::fromPercentEncoding(encodedPath);
@@ -92,20 +89,22 @@ QString resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, Q
         const QFileInfo candidate(QDir(mapping.localDirectory).filePath(relativePath));
         const auto canonicalPath = candidate.canonicalFilePath();
         const auto pathWithinRoot = QDir(mapping.localDirectory).relativeFilePath(canonicalPath);
-        const bool outsideRoot = pathWithinRoot == QStringLiteral("..")
-            || pathWithinRoot.startsWith(QStringLiteral("../"))
-            || pathWithinRoot.startsWith(QStringLiteral("..\\"));
-        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot || hasExternalFileLink(canonicalPath)
-            ? QString() : canonicalPath;
+        const bool outsideRoot = pathWithinRoot == QStringLiteral("..") || pathWithinRoot.startsWith(QStringLiteral("../"))
+                                 || pathWithinRoot.startsWith(QStringLiteral("..\\"));
+        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot || hasExternalFileLink(canonicalPath) ? QString()
+                                                                                                                 : canonicalPath;
     };
     const auto requestedPath = segments.join(QLatin1Char('/'));
     const auto resolved = resolve(requestedPath);
-    if (!resolved.isEmpty()) return resolved;
+    if (!resolved.isEmpty()) {
+        return resolved;
+    }
     const QFileInfo requestInfo(requestedPath);
-    if (allowSpaFallback && mapping.spaFallback && !mapping.entryDocument.isEmpty()
-        && requestInfo.suffix().isEmpty()) {
+    if (allowSpaFallback && mapping.spaFallback && !mapping.entryDocument.isEmpty() && requestInfo.suffix().isEmpty()) {
         const auto entry = resolve(mapping.entryDocument);
-        if (!entry.isEmpty()) return entry;
+        if (!entry.isEmpty()) {
+            return entry;
+        }
     }
     {
         if (error) {

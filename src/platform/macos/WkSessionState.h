@@ -3,15 +3,16 @@
 #include "internal/ResourceMapping.h"
 #include "webview/WebViewState.h"
 
-#include <unordered_set>
 #include <atomic>
 #include <mutex>
+#include <unordered_set>
 
 namespace webview
 {
 class WkWebView;
 
-struct WkSessionState {
+struct WkSessionState
+{
     std::atomic_bool valid = true;
     InitializationScheduler initialization;
     QVector<ResourceMapping> resourceMappings;

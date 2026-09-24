@@ -38,10 +38,8 @@ public:
 
 private:
     friend class WkWebViewSession;
-    WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy,
-        std::shared_ptr<WkSessionState> sessionState);
-    void initialize(void* configuration, WebViewPolicyPtr policy,
-        std::shared_ptr<WkSessionState> sessionState);
+    WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
+    void initialize(void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
 
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -14,7 +14,8 @@
 
 namespace samples::demo
 {
-namespace {
+namespace
+{
 class DemoPolicy final : public webview::WebViewPolicy
 {
 public:
@@ -22,14 +23,10 @@ public:
         : WebViewPolicy([] {
             webview::WebViewPolicyConfig config;
             config.allowedAppHosts.insert(QStringLiteral("demo"));
-            config.pageToHostSchemas.insert(QStringLiteral("hello"),
-                { { { QStringLiteral("message"), QJsonValue::String } } });
-            config.pageToHostSchemas.insert(QStringLiteral("window"),
-                { { { QStringLiteral("action"), QJsonValue::String } } });
-            config.hostToPageSchemas.insert(QStringLiteral("ack"),
-                { { { QStringLiteral("message"), QJsonValue::String } } });
-            config.hostToPageSchemas.insert(QStringLiteral("window-state"),
-                { { { QStringLiteral("maximized"), QJsonValue::Bool } } });
+            config.pageToHostSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } } });
+            config.pageToHostSchemas.insert(QStringLiteral("window"), { { { QStringLiteral("action"), QJsonValue::String } } });
+            config.hostToPageSchemas.insert(QStringLiteral("ack"), { { { QStringLiteral("message"), QJsonValue::String } } });
+            config.hostToPageSchemas.insert(QStringLiteral("window-state"), { { { QStringLiteral("maximized"), QJsonValue::Bool } } });
             return config;
         }())
     {
@@ -37,9 +34,8 @@ public:
 
     webview::NewWindowDecision decideNewWindow(const webview::NewWindowRequest& request) const override
     {
-        return request.url == QUrl(QStringLiteral("https://example.com/"))
-            ? webview::NewWindowDecision::Allow
-            : webview::NewWindowDecision::Cancel;
+        return request.url == QUrl(QStringLiteral("https://example.com/")) ? webview::NewWindowDecision::Allow
+                                                                           : webview::NewWindowDecision::Cancel;
     }
 };
 }
@@ -100,9 +96,7 @@ DemoWindow::DemoWindow()
     session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
     webview::WebApplicationOptions app;
     app.id = QStringLiteral("demo");
-    app.source = webview::LocalBundle {
-        QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR), QStringLiteral("demo.html")
-    };
+    app.source = webview::LocalBundle { QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR), QStringLiteral("demo.html") };
     app.bridgeAccess = webview::BridgeAccess::Allowed;
     const auto application = session_->createApplication(std::move(app));
     if (!application) {
@@ -125,19 +119,22 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         }
     };
     page->bridge().on(QStringLiteral("window"), [this, page](const QJsonObject& payload) {
-            const auto action = payload.value(QStringLiteral("action")).toString();
-            if (action == QStringLiteral("drag") && windowHandle()) {
-                windowHandle()->startSystemMove();
-            } else if (action == QStringLiteral("minimize")) {
-                showMinimized();
-            } else if (action == QStringLiteral("maximize")) {
-                const bool maximize = !isMaximized();
-                maximize ? showMaximized() : showNormal();
-                page->bridge().emitEvent(QStringLiteral("window-state"), { { "maximized", maximize } });
-            } else if (action == QStringLiteral("close")) {
-                close();
-            }
-        });
+        const auto action = payload.value(QStringLiteral("action")).toString();
+        if (action == QStringLiteral("drag") && windowHandle()) {
+            windowHandle()->startSystemMove();
+        }
+        else if (action == QStringLiteral("minimize")) {
+            showMinimized();
+        }
+        else if (action == QStringLiteral("maximize")) {
+            const bool maximize = !isMaximized();
+            maximize ? showMaximized() : showNormal();
+            page->bridge().emitEvent(QStringLiteral("window-state"), { { "maximized", maximize } });
+        }
+        else if (action == QStringLiteral("close")) {
+            close();
+        }
+    });
     page->bridge().on(QStringLiteral("hello"), [this, page](const QJsonObject& payload) {
         status_->setText(QStringLiteral("Page: %1").arg(payload.value("message").toString()));
         page->bridge().emitEvent(QStringLiteral("ack"), { { "message", "Native received your message." } });

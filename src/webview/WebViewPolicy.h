@@ -1,7 +1,7 @@
 #pragma once
 
-#include "webview/WebViewTypes.h"
 #include "webview/WebViewBridge.h"
+#include "webview/WebViewTypes.h"
 
 #include <QHash>
 #include <QJsonValue>
@@ -12,12 +12,14 @@
 
 namespace webview
 {
-struct BridgeMessageSchema {
+struct BridgeMessageSchema
+{
     QHash<QString, QJsonValue::Type> requiredPayloadFields;
     bool allowAdditionalPayloadFields = false;
 };
 
-struct WebViewPolicyConfig {
+struct WebViewPolicyConfig
+{
     QSet<QString> allowedAppHosts;
     QStringList allowedFileRoots;
     QSet<QString> trustedDevelopmentOrigins;

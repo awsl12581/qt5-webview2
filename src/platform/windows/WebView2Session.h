@@ -10,6 +10,7 @@ struct ICoreWebView2Environment;
 namespace webview
 {
 class WebView2View;
+
 class WebView2Session final : public IWebViewSession
 {
 public:

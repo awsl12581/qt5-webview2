@@ -17,15 +17,30 @@ using WebViewPtr = std::unique_ptr<IWebView>;
 class WebApplication;
 using WebApplicationPtr = std::shared_ptr<const WebApplication>;
 
-enum class LoadState { Started, Redirected, Committed, Finished, Failed };
-enum class InitializationState { Initializing, Ready, Failed, Closed };
+enum class LoadState
+{
+    Started,
+    Redirected,
+    Committed,
+    Finished,
+    Failed
+};
+enum class InitializationState
+{
+    Initializing,
+    Ready,
+    Failed,
+    Closed
+};
 
-struct InitializationResult {
+struct InitializationResult
+{
     InitializationState state = InitializationState::Ready;
     QString error;
 };
 
-struct LoadEvent {
+struct LoadEvent
+{
     LoadState state = LoadState::Started;
     QUrl url;
     QString error;
@@ -33,26 +48,59 @@ struct LoadEvent {
     bool isMainFrame = true;
 };
 
-enum class NavigationDecision { Allow, Cancel, OpenExternally };
+enum class NavigationDecision
+{
+    Allow,
+    Cancel,
+    OpenExternally
+};
 
-struct NavigationRequest {
+struct NavigationRequest
+{
     QUrl url;
     bool isMainFrame = true;
     bool isUserInitiated = false;
     bool isRedirect = false;
 };
 
-struct NewWindowRequest {
+struct NewWindowRequest
+{
     QUrl url;
     bool isUserInitiated = false;
 };
 
-enum class NewWindowDecision { Allow, Cancel };
-enum class PermissionDecision { Allow, Deny, Unsupported };
-enum class PermissionKind { Camera, Microphone, Location, Notifications, Clipboard, FilePicker };
-enum class DownloadDecision { Allow, Cancel };
-enum class CapabilitySupport { Supported, Unsupported };
-enum class WebViewCapability {
+enum class NewWindowDecision
+{
+    Allow,
+    Cancel
+};
+enum class PermissionDecision
+{
+    Allow,
+    Deny,
+    Unsupported
+};
+enum class PermissionKind
+{
+    Camera,
+    Microphone,
+    Location,
+    Notifications,
+    Clipboard,
+    FilePicker
+};
+enum class DownloadDecision
+{
+    Allow,
+    Cancel
+};
+enum class CapabilitySupport
+{
+    Supported,
+    Unsupported
+};
+enum class WebViewCapability
+{
     PersistentProfile,
     PrivateProfile,
     FileSelection,
@@ -65,52 +113,81 @@ enum class WebViewCapability {
     Clipboard
 };
 
-enum class SessionMode { Persistent, Ephemeral };
-enum class BridgeAccess { Denied, Allowed };
+enum class SessionMode
+{
+    Persistent,
+    Ephemeral
+};
+enum class BridgeAccess
+{
+    Denied,
+    Allowed
+};
 
-struct LocalBundle {
+struct LocalBundle
+{
     QString directory;
     QString entryDocument = QStringLiteral("index.html");
     bool spaFallback = true;
 };
 
-struct DevelopmentServer { QUrl url; };
-struct RemoteOrigin { QUrl url; };
+struct DevelopmentServer
+{
+    QUrl url;
+};
+
+struct RemoteOrigin
+{
+    QUrl url;
+};
+
 using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOrigin>;
 
-struct WebApplicationOptions {
+struct WebApplicationOptions
+{
     QString id;
     ApplicationSource source;
     BridgeAccess bridgeAccess = BridgeAccess::Denied;
 };
 
-struct WebViewSessionOptions {
+struct WebViewSessionOptions
+{
     SessionMode mode = SessionMode::Ephemeral;
     QString profilePath;
 };
 
-struct PermissionRequest {
+struct PermissionRequest
+{
     PermissionKind kind = PermissionKind::Camera;
     QUrl origin;
 };
 
-struct DownloadRequest {
+struct DownloadRequest
+{
     QUrl url;
     QUrl origin;
     QUrl documentUrl;
     QString suggestedFileName;
 };
 
-struct FileSelectionRequest {
+struct FileSelectionRequest
+{
     QUrl origin;
     QUrl documentUrl;
     bool allowsMultiple = false;
     bool allowsDirectories = false;
 };
 
-enum class FileSelectionStatus { Selected, Cancelled, Closed, InvalidResult };
+enum class FileSelectionStatus
+{
+    Selected,
+    Cancelled,
+    Closed,
+    InvalidResult
+};
 
-struct FileSelectionResult {
+struct FileSelectionResult
+{
     FileSelectionStatus status = FileSelectionStatus::Cancelled;
     QStringList paths;
     QString error;
@@ -118,16 +195,29 @@ struct FileSelectionResult {
 
 using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
 
-enum class DownloadHandling { Cancel, BrowserDefault, TargetPath };
+enum class DownloadHandling
+{
+    Cancel,
+    BrowserDefault,
+    TargetPath
+};
 
-struct DownloadTarget {
+struct DownloadTarget
+{
     DownloadHandling handling = DownloadHandling::Cancel;
     QString filePath;
 };
 
-enum class DownloadResolutionStatus { Resolved, Cancelled, Closed, InvalidResult };
+enum class DownloadResolutionStatus
+{
+    Resolved,
+    Cancelled,
+    Closed,
+    InvalidResult
+};
 
-struct DownloadResolution {
+struct DownloadResolution
+{
     DownloadResolutionStatus status = DownloadResolutionStatus::Cancelled;
     DownloadTarget target;
     QString error;
@@ -135,14 +225,21 @@ struct DownloadResolution {
 
 using DownloadCompletion = std::function<void(DownloadResolution)>;
 
-enum class DocumentError { None, Closed, NavigationChanged };
+enum class DocumentError
+{
+    None,
+    Closed,
+    NavigationChanged
+};
 
-struct WebsiteDataResult {
+struct WebsiteDataResult
+{
     bool success = true;
     QString error;
 };
 
-struct WebViewHostCallbacks {
+struct WebViewHostCallbacks
+{
     std::function<void(const LoadEvent&)> load;
     std::function<void(const QUrl&)> openExternal;
     std::function<void(const NewWindowRequest&, WebViewPtr)> newWindow;

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "webview/WebViewTypes.h"
-#include "webview/WebViewBridge.h"
 #include "webview/WebResourceManager.h"
+#include "webview/WebViewBridge.h"
+#include "webview/WebViewTypes.h"
 
 #include <functional>
 

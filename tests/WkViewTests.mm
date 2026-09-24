@@ -4,11 +4,11 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QFile>
-#include <QTemporaryDir>
-#include <QVBoxLayout>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <cassert>
@@ -27,8 +27,7 @@ public:
     webview::NavigationDecision decideNavigation(const webview::NavigationRequest& request) const override
     {
         navigationRequests.push_back(request);
-        if (request.url.scheme() == QStringLiteral("http")
-            && request.url.host() == QStringLiteral("127.0.0.1")) {
+        if (request.url.scheme() == QStringLiteral("http") && request.url.host() == QStringLiteral("127.0.0.1")) {
             return webview::NavigationDecision::Allow;
         }
         return WebViewPolicy::decideNavigation(request);
@@ -70,29 +69,32 @@ void serveConnection(QTcpSocket* socket, quint16 port, ServerStats* stats)
         if (request.startsWith("GET /redirect ")) {
             response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(port)
                 + "/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        } else if (request.startsWith("GET /download ")) {
+        }
+        else if (request.startsWith("GET /download ")) {
             const QByteArray body = "download-data";
             response = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
                        "Content-Disposition: attachment; filename=test.bin\r\nContent-Length: "
                 + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-        } else if (request.startsWith("GET /slow ")) {
+        }
+        else if (request.startsWith("GET /slow ")) {
             ++stats->slowRequests;
             QTimer::singleShot(500, socket, [socket] {
                 if (socket->state() == QAbstractSocket::ConnectedState) {
                     const QByteArray body = "<!doctype html><title>slow</title>done";
-                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
-                        + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + QByteArray::number(body.size())
+                        + "\r\nConnection: close\r\n\r\n" + body);
                     socket->disconnectFromHost();
                 }
             });
             return;
-        } else {
+        }
+        else {
             if (request.startsWith("GET /reload ")) {
                 ++stats->reloadRequests;
             }
             const QByteArray body = "<!doctype html><title>final</title>done";
-            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
-                + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + QByteArray::number(body.size())
+                + "\r\nConnection: close\r\n\r\n" + body;
         }
         socket->write(response);
         socket->disconnectFromHost();
@@ -108,10 +110,8 @@ int main(int argc, char** argv)
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert(QStringLiteral("bridge-test"));
     config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
-    config.pageToHostSchemas.insert(QStringLiteral("hello"),
-        { { { QStringLiteral("message"), QJsonValue::String } }, true });
-    config.hostToPageSchemas.insert(QStringLiteral("hello"),
-        { { { QStringLiteral("message"), QJsonValue::String } } });
+    config.pageToHostSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } }, true });
+    config.hostToPageSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } } });
     auto policy = std::make_shared<TestPolicy>(std::move(config));
     auto session = webview::createWebViewSession({ }, policy);
     auto view = session->createWebView();
@@ -134,9 +134,7 @@ int main(int argc, char** argv)
             loop.quit();
         }
     };
-    callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) {
-        ++popupCount;
-    };
+    callbacks.newWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
     view->setHostCallbacks(std::move(callbacks));
     view->bridge().on(QStringLiteral("hello"), [&](const QJsonObject& payload) {
         ++messageCount;
@@ -145,7 +143,8 @@ int main(int argc, char** argv)
             hostileExecuted = payload.value(QStringLiteral("executed")).toBool();
             hostileReturnedPayload = payload.value(QStringLiteral("message")).toString();
             loop.quit();
-        } else {
+        }
+        else {
             assert(payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
         }
     });
@@ -261,7 +260,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (request.url.path() == QStringLiteral("/redirect")) {
             sawInitialRequest = true;
             assert(!request.isRedirect);
-        } else if (request.url.path() == QStringLiteral("/final")) {
+        }
+        else if (request.url.path() == QStringLiteral("/final")) {
             sawRedirectRequest = true;
             assert(request.isRedirect);
         }
@@ -302,7 +302,8 @@ window.addEventListener('DOMContentLoaded', () => {
     view->loadDocument(QStringLiteral(R"HTML(
 <!doctype html><input id="file" type="file"><script>
 window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
-</script>)HTML"), QUrl(QStringLiteral("https://trusted.example/file-input.html")));
+</script>)HTML"),
+        QUrl(QStringLiteral("https://trusted.example/file-input.html")));
     timeout.start(10000);
     loop.exec();
     QEventLoop permissionLoop;
@@ -376,7 +377,8 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     view->loadDocument(QStringLiteral(R"HTML(
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
-</script>)HTML"), QUrl(QStringLiteral("https://trusted.example/popup-opener.html")));
+</script>)HTML"),
+        QUrl(QStringLiteral("https://trusted.example/popup-opener.html")));
     timeout.start(10000);
     loop.exec();
     assert(popup);
@@ -390,10 +392,8 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(policy->navigationRequests.size() == navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;
-    view->bridge().call(QStringLiteral("hello"), {},
-        [&](const QJsonObject&, const QString& error) { rootClosed = !error.isEmpty(); });
-    popup->bridge().call(QStringLiteral("hello"), {},
-        [&](const QJsonObject&, const QString& error) { popupClosed = !error.isEmpty(); });
+    view->bridge().call(QStringLiteral("hello"), { }, [&](const QJsonObject&, const QString& error) { rootClosed = !error.isEmpty(); });
+    popup->bridge().call(QStringLiteral("hello"), { }, [&](const QJsonObject&, const QString& error) { popupClosed = !error.isEmpty(); });
     assert(rootClosed);
     assert(popupClosed);
 

@@ -1,10 +1,10 @@
 #include "platform/macos/WkWebViewSession.h"
 
-#include "platform/macos/WkWebView.h"
 #include "platform/macos/WkSessionState.h"
+#include "platform/macos/WkWebView.h"
 
-#include "internal/ResourceMapping.h"
 #include "internal/Application.h"
+#include "internal/ResourceMapping.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -24,14 +24,13 @@
 @end
 
 @implementation SystemWebViewSchemeHandler
-- (void)webView:(WKWebView*)webView
-    startURLSchemeTask:(id<WKURLSchemeTask>)task
+- (void)webView:(WKWebView*)webView startURLSchemeTask:(id<WKURLSchemeTask>)task
 {
-    @synchronized (self) { [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]]; }
+    @synchronized(self) {
+        [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
+    }
     if (!state || !state->valid) {
-        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain
-                                                   code:NSURLErrorCancelled
-                                               userInfo:nil]];
+        [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
         return;
     }
     const QUrl url(QString::fromUtf8(task.request.URL.absoluteString.UTF8String));
@@ -53,8 +52,8 @@
     const bool published = url.path().startsWith(QStringLiteral("/resource/"));
     if (published && pageState) {
         const auto range = [task.request valueForHTTPHeaderField:@"Range"];
-        resource = pageState->resources->open({ url, documentUrl, pageState->documentToken,
-            range ? QString::fromUtf8(range.UTF8String) : QString() });
+        resource = pageState->resources->open(
+            { url, documentUrl, pageState->documentToken, range ? QString::fromUtf8(range.UTF8String) : QString() });
     }
 
     QString path;
@@ -68,17 +67,23 @@
     std::unique_ptr<QIODevice> body = std::move(resource.body);
     if (published) {
         mimeType = resource.mimeType;
-        if (auto* file = qobject_cast<QFile*>(body.get())) path = file->fileName();
+        if (auto* file = qobject_cast<QFile*>(body.get()))
+            path = file->fileName();
         body.reset();
-    } else {
+    }
+    else {
         const auto* mapping = webview::findResourceMapping(state->resourceMappings, url);
         QString errorText;
         const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
         const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
         path = mapping ? webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest) : QString();
         if (path.isEmpty()) {
-            [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist
-                userInfo:@{ NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.toUtf8().constData()] }]];
+            [task didFailWithError:[NSError
+                                       errorWithDomain:NSURLErrorDomain
+                                                  code:NSURLErrorFileDoesNotExist
+                                              userInfo:@{
+                                                  NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.toUtf8().constData()]
+                                              }]];
             return;
         }
         mimeType = QMimeDatabase().mimeTypeForFile(path).name();
@@ -93,18 +98,27 @@
             bool firstOk = false, lastOk = false;
             const auto first = match.captured(1);
             const auto last = match.captured(2);
-            if (!match.hasMatch() || (first.isEmpty() && last.isEmpty())) status = 416;
+            if (!match.hasMatch() || (first.isEmpty() && last.isEmpty()))
+                status = 416;
             else if (first.isEmpty()) {
                 const auto suffix = last.toLongLong(&lastOk);
-                if (!lastOk || suffix <= 0) status = 416;
-                else { offset = qMax<qint64>(0, totalSize - suffix); length = totalSize - offset; }
-            } else {
+                if (!lastOk || suffix <= 0)
+                    status = 416;
+                else {
+                    offset = qMax<qint64>(0, totalSize - suffix);
+                    length = totalSize - offset;
+                }
+            }
+            else {
                 offset = first.toLongLong(&firstOk);
                 const auto end = last.isEmpty() ? totalSize - 1 : last.toLongLong(&lastOk);
-                if (!firstOk || (!last.isEmpty() && !lastOk) || offset > end || end >= totalSize) status = 416;
-                else length = end - offset + 1;
+                if (!firstOk || (!last.isEmpty() && !lastOk) || offset > end || end >= totalSize)
+                    status = 416;
+                else
+                    length = end - offset + 1;
             }
-            if (status != 416) status = 206;
+            if (status != 416)
+                status = 206;
         }
     }
 
@@ -125,16 +139,19 @@
     };
     if (status == 206) {
         NSMutableDictionary* rangeHeaders = [headers mutableCopy];
-        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld",
-            static_cast<long long>(offset), static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
+        rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset),
+            static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
         headers = rangeHeaders;
-    } else if (status == 416) {
+    }
+    else if (status == 416) {
         NSMutableDictionary* rangeHeaders = [headers mutableCopy];
         rangeHeaders[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
         headers = rangeHeaders;
     }
-    auto* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL statusCode:status
-        HTTPVersion:@"HTTP/1.1" headerFields:headers];
+    auto* response = [[NSHTTPURLResponse alloc] initWithURL:task.request.URL
+                                                 statusCode:status
+                                                HTTPVersion:@"HTTP/1.1"
+                                               headerFields:headers];
     [task didReceiveResponse:response];
     if (status == 200 || status == 206) {
         auto* device = qobject_cast<QFile*>(body.get());
@@ -142,11 +159,13 @@
         qint64 remaining = length;
         while (device && remaining > 0) {
             BOOL cancelled = NO;
-            @synchronized (self) {
+            @synchronized(self) {
                 cancelled = [cancelledTasks containsObject:[NSValue valueWithNonretainedObject:task]];
-                if (cancelled) [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
+                if (cancelled)
+                    [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
             }
-            if (cancelled) return;
+            if (cancelled)
+                return;
             const auto count = device->read(buffer.data(), qMin<qint64>(buffer.size(), remaining));
             if (count <= 0) {
                 [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil]];
@@ -156,26 +175,30 @@
             remaining -= count;
         }
     }
-    @synchronized (self) { [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]]; }
+    @synchronized(self) {
+        [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
+    }
     [task didFinish];
     Q_UNUSED(lease);
 }
 
 - (void)webView:(WKWebView*)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task
 {
-    @synchronized (self) { [cancelledTasks addObject:[NSValue valueWithNonretainedObject:task]]; }
+    @synchronized(self) {
+        [cancelledTasks addObject:[NSValue valueWithNonretainedObject:task]];
+    }
 }
 
 - (instancetype)init
 {
     self = [super init];
-    if (self) cancelledTasks = [NSMutableSet set];
+    if (self)
+        cancelledTasks = [NSMutableSet set];
     return self;
 }
 @end
 
-namespace webview
-{
+namespace webview {
 class WkWebViewSession::Impl
 {
 public:
@@ -194,9 +217,8 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
 {
     impl_->options = std::move(options);
     impl_->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
-    impl_->dataStore = impl_->options.mode == SessionMode::Ephemeral
-        ? [WKWebsiteDataStore nonPersistentDataStore]
-        : [WKWebsiteDataStore defaultDataStore];
+    impl_->dataStore = impl_->options.mode == SessionMode::Ephemeral ? [WKWebsiteDataStore nonPersistentDataStore]
+                                                                     : [WKWebsiteDataStore defaultDataStore];
     impl_->processPool = [[WKProcessPool alloc] init];
     auto* schemeHandler = [[SystemWebViewSchemeHandler alloc] init];
     schemeHandler->state = impl_->state;
@@ -204,10 +226,7 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
     impl_->state->initialization.markReady();
 }
 
-InitializationState WkWebViewSession::initializationState() const
-{
-    return impl_->state->initialization.state();
-}
+InitializationState WkWebViewSession::initializationState() const { return impl_->state->initialization.state(); }
 
 void WkWebViewSession::whenInitialized(InitializationCompletion completion)
 {
@@ -220,13 +239,15 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
 {
     QString error;
     const auto application = webview::createApplication(std::move(options), &error);
-    if (!application || impl_->applicationIds.contains(application->id())) return { };
+    if (!application || impl_->applicationIds.contains(application->id()))
+        return { };
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
         ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback };
         QVector<ResourceMapping> candidate = impl_->state->resourceMappings;
         candidate.push_back(std::move(mapping));
         if (!validateResourceMappings(&candidate, &error)
-            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty()) return { };
+            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty())
+            return { };
         impl_->state->resourceMappings = std::move(candidate);
     }
     impl_->applicationIds.insert(application->id());
@@ -265,11 +286,9 @@ WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
 }
 
 namespace {
-void clearData(WkSessionState& state, WKWebsiteDataStore* store, NSSet<NSString*>* types,
-    IWebViewSession::ClearCompletion completion)
-{
-    state.initialization.runWhenReady(
-        [store, types, completion = std::move(completion)](const InitializationResult& result) {
+    void clearData(WkSessionState& state, WKWebsiteDataStore* store, NSSet<NSString*>* types, IWebViewSession::ClearCompletion completion)
+    {
+        state.initialization.runWhenReady([store, types, completion = std::move(completion)](const InitializationResult& result) {
             if (result.state != InitializationState::Ready) {
                 if (completion) {
                     completion({ false, result.error });
@@ -284,26 +303,23 @@ void clearData(WkSessionState& state, WKWebsiteDataStore* store, NSSet<NSString*
                        }
                    }];
         });
-}
+    }
 }
 
 void WkWebViewSession::clearCache(ClearCompletion completion)
 {
-    clearData(*impl_->state, impl_->dataStore,
-        [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil],
+    clearData(*impl_->state, impl_->dataStore, [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil],
         std::move(completion));
 }
 
 void WkWebViewSession::clearCookies(ClearCompletion completion)
 {
-    clearData(*impl_->state, impl_->dataStore, [NSSet setWithObject:WKWebsiteDataTypeCookies],
-        std::move(completion));
+    clearData(*impl_->state, impl_->dataStore, [NSSet setWithObject:WKWebsiteDataTypeCookies], std::move(completion));
 }
 
 void WkWebViewSession::clearWebsiteData(ClearCompletion completion)
 {
-    clearData(*impl_->state, impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes],
-        std::move(completion));
+    clearData(*impl_->state, impl_->dataStore, [WKWebsiteDataStore allWebsiteDataTypes], std::move(completion));
 }
 
 CapabilitySupport WkWebViewSession::capabilitySupport(WebViewCapability capability) const
