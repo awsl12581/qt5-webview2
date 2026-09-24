@@ -136,7 +136,7 @@ public:
     }
     void invalidate() override { view_ = nil; }
 private:
-    WKWebView* __weak view_;
+    WKWebView* view_;
 };
 
 class WkWebView::Impl
