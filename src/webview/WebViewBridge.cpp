@@ -279,7 +279,7 @@ void WebViewBridge::setTransport(std::unique_ptr<BridgeTransport> transport)
     impl_->transport = std::move(transport);
 }
 
-void WebViewBridge::receive(const std::string& message, const QUrl&)
+void WebViewBridge::receive(const std::string& message, const Url&)
 {
     if (!impl_->valid) {
         return;

@@ -17,15 +17,11 @@ std::uint64_t nextDiagnosticId()
     return nextId.fetch_add(1, std::memory_order_relaxed);
 }
 
-std::string diagnosticOrigin(const QUrl& url)
+std::string diagnosticOrigin(const Url& url)
 {
-    if (!url.isValid() || url.scheme().isEmpty()) {
+    if (!url.isValid() || url.scheme().empty()) {
         return "invalid";
     }
-    QUrl origin;
-    origin.setScheme(url.scheme().toLower());
-    origin.setHost(url.host().toLower());
-    origin.setPort(url.port());
-    return origin.toString(QUrl::FullyEncoded).toStdString();
+    return url.origin().toString();
 }
 } // namespace webview

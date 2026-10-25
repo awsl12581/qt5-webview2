@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QLoggingCategory>
-#include <QUrl>
+#include <system_webview/system_webview.h>
 #include <cstdint>
 #include <string>
 
@@ -22,5 +22,5 @@ enum class DiagnosticScope
 };
 
 std::uint64_t nextDiagnosticId();
-std::string diagnosticOrigin(const QUrl& url);
+std::string diagnosticOrigin(const Url& url);
 } // namespace webview

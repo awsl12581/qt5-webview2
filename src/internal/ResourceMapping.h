@@ -9,16 +9,16 @@ namespace webview
 {
 struct ResourceMapping
 {
-    QUrl origin;
+    Url origin;
     std::string localDirectory;
     std::string entryDocument;
     bool spaFallback = false;
     ExternalNetworkAccess externalNetworkAccess = ExternalNetworkAccess::Denied;
 };
 
-QUrl normalizedOrigin(const QUrl& url);
+Url normalizedOrigin(const Url& url);
 bool validateResourceMappings(std::vector<ResourceMapping>* mappings, std::string* error);
-const ResourceMapping* findResourceMapping(const std::vector<ResourceMapping>& mappings, const QUrl& url);
-std::string resolveMappedResource(const ResourceMapping& mapping, const QUrl& url, std::string* error, bool allowSpaFallback = false);
+const ResourceMapping* findResourceMapping(const std::vector<ResourceMapping>& mappings, const Url& url);
+std::string resolveMappedResource(const ResourceMapping& mapping, const Url& url, std::string* error, bool allowSpaFallback = false);
 std::string localBundleContentSecurityPolicy(ExternalNetworkAccess access);
 } // namespace webview

@@ -46,9 +46,9 @@ public:
     std::shared_ptr<WebViewBridge> bridge = std::make_shared<WebViewBridge>();
     std::shared_ptr<WebResourceManager> resources = std::make_shared<WebResourceManager>();
     WebViewPolicyPtr policy;
-    QUrl committedUrl;
-    QUrl bridgeOrigin;
-    QUrl resourceOrigin;
+    Url committedUrl;
+    Url bridgeOrigin;
+    Url resourceOrigin;
     std::string documentToken;
     bool documentTransportPrepared = false;
     bool provisionalMainFrameNavigation = false;
@@ -67,9 +67,9 @@ public:
     void bindBridgePolicy();
     void invalidateDocument();
     void setResourceDocumentToken(std::string_view token);
-    void setResourceContext(const QUrl& origin, const QUrl& documentOrigin, std::string_view token);
+    void setResourceContext(const Url& origin, const Url& documentOrigin, std::string_view token);
 
-    void emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const QUrl& url = {}, std::string_view error = {});
+    void emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const Url& url = {}, std::string_view error = {});
     void emitRuntimeFailure(const RuntimeFailureEvent& event);
 
 private:

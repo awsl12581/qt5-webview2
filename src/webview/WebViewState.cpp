@@ -242,14 +242,14 @@ void WebViewState::setResourceDocumentToken(std::string_view token)
     }
 }
 
-void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOrigin, std::string_view token)
+void WebViewState::setResourceContext(const Url& origin, const Url& documentOrigin, std::string_view token)
 {
     if (resources) {
         resources->setContext(origin, documentOrigin, std::string(token));
     }
 }
 
-void WebViewState::emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const QUrl& url, std::string_view error)
+void WebViewState::emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const Url& url, std::string_view error)
 {
     if (loadState == LoadState::Failed) {
         qCWarning(systemWebViewNavigation).noquote()

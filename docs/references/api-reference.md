@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-25 22:20 CST
-> 文档版本：v12
-> 修改说明：将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。
+> 最后修改时间：2026-10-25 23:24 CST
+> 文档版本：v13
+> 修改说明：将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -17,7 +17,7 @@
 
 `src/` 下的头文件属于库内部实现，不安装给使用方。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；路径列表使用 `std::vector<std::string>`，配置集合和映射使用 `std::unordered_set`、`std::unordered_map`，计数使用标准定宽整数。`QUrl`、`QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget` 继续保留。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON、流和控件继续使用 `QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget`。JSON 键值和 Qt 界面文本需要在调用处显式转换。
 
 这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
@@ -58,7 +58,7 @@ struct WebViewSessionOptions {
 
 `Persistent` 保留站点数据，`Ephemeral` 使用临时会话。Windows 将 `profilePath` 作为 WebView2 用户数据目录；macOS 的公开 WKWebView API 不保证数据存放在该物理路径。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；路径列表使用 `std::vector<std::string>`，配置集合和映射使用 `std::unordered_set`、`std::unordered_map`，计数使用标准定宽整数。`QUrl`、`QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget` 继续保留。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON、流和控件继续使用 `QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget`。JSON 键值和 Qt 界面文本需要在调用处显式转换。
 
 这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
@@ -109,8 +109,8 @@ struct LocalBundle {
     ExternalNetworkAccess externalNetworkAccess = ExternalNetworkAccess::Denied;
 };
 
-struct DevelopmentServer { QUrl url; };
-struct RemoteOrigin { QUrl url; };
+struct DevelopmentServer { webview::Url url; };
+struct RemoteOrigin { webview::Url url; };
 
 using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOrigin>;
 
@@ -149,8 +149,8 @@ public:
     virtual void attachNativeView() = 0;
     virtual void detachNativeView() = 0;
     virtual void open(WebApplicationPtr application, const std::string& route = {}) = 0;
-    virtual void navigate(const QUrl& url) = 0;
-    virtual void loadDocument(const std::string& html, const QUrl& baseUrl = {}) = 0;
+    virtual void navigate(const webview::Url& url) = 0;
+    virtual void loadDocument(const std::string& html, const webview::Url& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
     virtual void close() = 0;
@@ -185,7 +185,7 @@ enum class LoadState : int { Started, Redirected, Committed, Finished, Failed };
 
 struct LoadEvent {
     LoadState state = LoadState::Started;
-    QUrl url;
+    webview::Url url;
     std::string error;
     std::uint64_t navigationId = 0;
     bool isMainFrame = true;
@@ -199,7 +199,7 @@ struct LoadEvent {
 ```cpp
 struct WebViewHostCallbacks {
     std::function<void(const LoadEvent&)> onLoad;
-    std::function<void(const QUrl&)> onOpenExternal;
+    std::function<void(const webview::Url&)> onOpenExternal;
     std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> onSelectFiles;
     std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
@@ -241,8 +241,8 @@ struct RuntimeFailureEvent {
 
 ```cpp
 struct FileSelectionRequest {
-    QUrl origin;
-    QUrl documentUrl;
+    webview::Url origin;
+    webview::Url documentUrl;
     bool allowsMultiple = false;
     bool allowsDirectories = false;
 };
@@ -262,9 +262,9 @@ using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
 
 ```cpp
 struct DownloadRequest {
-    QUrl url;
-    QUrl origin;
-    QUrl documentUrl;
+    webview::Url url;
+    webview::Url origin;
+    webview::Url documentUrl;
     std::string suggestedFileName;
 };
 
@@ -412,7 +412,7 @@ public:
 
     virtual NavigationDecision decideNavigation(const NavigationRequest& request) const;
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
-    virtual bool allowsBridge(const QUrl& committedUrl) const;
+    virtual bool allowsBridge(const webview::Url& committedUrl) const;
     virtual bool validatePageToHostMessage(
         const BridgeMessage& message, std::string* error = nullptr) const;
     virtual bool validateHostToPageMessage(
@@ -442,20 +442,20 @@ enum class PermissionKind : int {
 };
 
 struct NavigationRequest {
-    QUrl url;
+    webview::Url url;
     bool isMainFrame = true;
     bool isUserInitiated = false;
     bool isRedirect = false;
 };
 
 struct NewWindowRequest {
-    QUrl url;
+    webview::Url url;
     bool isUserInitiated = false;
 };
 
 struct PermissionRequest {
     PermissionKind kind = PermissionKind::Camera;
-    QUrl origin;
+    webview::Url origin;
 };
 ```
 
@@ -550,3 +550,4 @@ int main(int argc, char* argv[])
 | v10 | 2026-09-24 18:29 CST | 增加运行时故障公共类型、session/view 回调和诊断日志说明。 |
 | v11 | 2026-09-24 18:53 CST | 明确 WebView2 browser process 故障在 view 和 session 两个作用域的回调语义。 |
 | v12 | 2026-10-25 22:20 CST | 将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。 |
+| v13 | 2026-10-25 23:24 CST | 将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。 |

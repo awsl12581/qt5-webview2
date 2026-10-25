@@ -28,7 +28,7 @@ public:
     webview::NavigationDecision decideNavigation(const webview::NavigationRequest& request) const override
     {
         navigationRequests.push_back(request);
-        if (request.url.scheme() == QStringLiteral("http") && request.url.host() == QStringLiteral("127.0.0.1")) {
+        if (request.url.scheme() == "http" && request.url.host() == "127.0.0.1") {
             return webview::NavigationDecision::Allow;
         }
         return WebViewPolicy::decideNavigation(request);
@@ -213,7 +213,7 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(popupCount == 0);
 
     const auto eventCount = events.size();
-    view->navigate(QUrl(QStringLiteral("javascript:window.__policyBypass=true")));
+    view->navigate(webview::Url("javascript:window.__policyBypass=true"));
     QEventLoop rejectionLoop;
     QTimer::singleShot(100, &rejectionLoop, &QEventLoop::quit);
     rejectionLoop.exec();
@@ -237,7 +237,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>)HTML";
     events.clear();
-    view->loadDocument(replayHtml, QUrl(QStringLiteral("https://trusted.example/next.html")));
+    view->loadDocument(replayHtml, webview::Url("https://trusted.example/next.html"));
     timeout.start(10000);
     loop.exec();
     assert(events.back().state == webview::LoadState::Finished);
@@ -253,7 +253,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     events.clear();
     policy->navigationRequests.clear();
-    view->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort())));
+    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort()).toStdString()));
     timeout.start(10000);
     loop.exec();
     assert(!events.empty());
@@ -269,11 +269,11 @@ window.addEventListener('DOMContentLoaded', () => {
     bool sawInitialRequest = false;
     bool sawRedirectRequest = false;
     for (const auto& request : policy->navigationRequests) {
-        if (request.url.path() == QStringLiteral("/redirect")) {
+        if (request.url.path() == "/redirect") {
             sawInitialRequest = true;
             assert(!request.isRedirect);
         }
-        else if (request.url.path() == QStringLiteral("/final")) {
+        else if (request.url.path() == "/final") {
             sawRedirectRequest = true;
             assert(request.isRedirect);
         }
@@ -282,7 +282,7 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(sawRedirectRequest);
 
     events.clear();
-    view->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/reload").arg(server.serverPort())));
+    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/reload").arg(server.serverPort()).toStdString()));
     timeout.start(10000);
     loop.exec();
     assert(events.back().state == webview::LoadState::Finished);
@@ -295,7 +295,7 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(serverStats.reloadRequests == 2);
 
     events.clear();
-    view->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort())));
+    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort()).toStdString()));
     QEventLoop startedLoop;
     QTimer::singleShot(100, &startedLoop, &QEventLoop::quit);
     startedLoop.exec();
@@ -315,7 +315,7 @@ window.addEventListener('DOMContentLoaded', () => {
 <!doctype html><input id="file" type="file"><script>
 window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
 </script>)HTML",
-        QUrl(QStringLiteral("https://trusted.example/file-input.html")));
+        webview::Url("https://trusted.example/file-input.html"));
     timeout.start(10000);
     loop.exec();
     QEventLoop permissionLoop;
@@ -325,19 +325,19 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
 
     policy->downloadRequests.clear();
     events.clear();
-    view->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/download").arg(server.serverPort())));
+    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/download").arg(server.serverPort()).toStdString()));
     QEventLoop downloadLoop;
     QTimer::singleShot(500, &downloadLoop, &QEventLoop::quit);
     downloadLoop.exec();
     assert(!policy->downloadRequests.empty());
-    assert(policy->downloadRequests.back().url.path() == QStringLiteral("/download"));
+    assert(policy->downloadRequests.back().url.path() == "/download");
 
     auto raceView = session->createWebView();
     int raceCallbacks = 0;
     webview::WebViewHostCallbacks raceCallbacksConfig;
     raceCallbacksConfig.onLoad = [&](const webview::LoadEvent&) { ++raceCallbacks; };
     raceView->setHostCallbacks(std::move(raceCallbacksConfig));
-    raceView->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort())));
+    raceView->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort()).toStdString()));
     raceView->close();
     const auto callbacksAtClose = raceCallbacks;
     QEventLoop raceLoop;
@@ -361,7 +361,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
         }
     };
     failureView->setHostCallbacks(std::move(failureCallbacks));
-    failureView->navigate(QUrl(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(unavailablePort)));
+    failureView->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(unavailablePort).toStdString()));
     timeout.start(10000);
     loop.exec();
     assert(!failureEvents.empty());
@@ -390,7 +390,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
 </script>)HTML",
-        QUrl(QStringLiteral("https://trusted.example/popup-opener.html")));
+        webview::Url("https://trusted.example/popup-opener.html"));
     timeout.start(10000);
     loop.exec();
     assert(popup);
@@ -400,7 +400,7 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(view->isClosed());
     assert(popup->isClosed());
     const auto navigationRequestCount = policy->navigationRequests.size();
-    view->navigate(QUrl(QStringLiteral("https://trusted.example/after-session")));
+    view->navigate(webview::Url("https://trusted.example/after-session"));
     assert(policy->navigationRequests.size() == navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;

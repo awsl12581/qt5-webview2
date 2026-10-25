@@ -49,12 +49,11 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
     }
     else {
         const bool developmentServer = std::holds_alternative<DevelopmentServer>(options.source);
-        const QUrl url = developmentServer ? std::get<DevelopmentServer>(options.source).url : std::get<RemoteOrigin>(options.source).url;
-        const auto scheme = url.scheme().toLower();
-        if (!url.isValid() || url.host().isEmpty()
-            || (developmentServer ? scheme != QStringLiteral("http") && scheme != QStringLiteral("https")
-                                  : scheme != QStringLiteral("https"))
-            || (url.path() != QStringLiteral("/") && !url.path().isEmpty()) || url.hasQuery() || url.hasFragment()) {
+        const Url& url = developmentServer ? std::get<DevelopmentServer>(options.source).url : std::get<RemoteOrigin>(options.source).url;
+        const auto scheme = url.scheme();
+        if (!url.isValid() || url.host().empty()
+            || (developmentServer ? scheme != "http" && scheme != "https" : scheme != "https")
+            || (url.path() != "/" && !url.path().empty()) || url.hasQuery() || url.hasFragment()) {
             if (error) {
                 *error = "Application URL sources require an absolute origin URL.";
             }
@@ -68,22 +67,22 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
     return application;
 }
 
-QUrl WebApplication::origin() const
+Url WebApplication::origin() const
 {
     if (std::holds_alternative<LocalBundle>(source_)) {
-        return QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(id_)));
+        return Url("app://" + id_);
     }
     return std::get_if<DevelopmentServer>(&source_) ? std::get<DevelopmentServer>(source_).url : std::get<RemoteOrigin>(source_).url;
 }
 
-QUrl WebApplication::urlForRoute(std::string_view route) const
+Url WebApplication::urlForRoute(std::string_view route) const
 {
-    QUrl url = origin();
-    const auto cleanRoute =
-        route.empty() ? (std::holds_alternative<LocalBundle>(source_) ? QString::fromStdString(std::get<LocalBundle>(source_).entryDocument)
-                                                                      : QString())
-                      : QString::fromUtf8(route.data(), static_cast<int>(route.size()));
-    url.setPath(cleanRoute.startsWith(QLatin1Char('/')) ? cleanRoute : QStringLiteral("/") + cleanRoute);
-    return url;
+    const auto path = route.empty() && std::holds_alternative<LocalBundle>(source_) ? std::string_view(std::get<LocalBundle>(source_).entryDocument)
+                                                                                    : route;
+    if (path.empty()) {
+        return origin();
+    }
+    const auto rootedPath = path.front() == '/' ? std::string(path) : "/" + std::string(path);
+    return origin().withPath(rootedPath);
 }
 } // namespace webview

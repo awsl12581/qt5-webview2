@@ -107,6 +107,18 @@ public:
     explicit Impl(WebViewPolicyConfig value)
         : config(std::move(value))
     {
+        const auto normalizeOrigins = [](std::unordered_set<std::string>& origins) {
+            std::unordered_set<std::string> normalized;
+            for (const auto& origin : origins) {
+                const Url url(origin);
+                if (url.isValid()) {
+                    normalized.insert(url.origin().toString());
+                }
+            }
+            origins = std::move(normalized);
+        };
+        normalizeOrigins(config.trustedDevelopmentOrigins);
+        normalizeOrigins(config.trustedHttpsOrigins);
     }
 
     WebViewPolicyConfig config;
@@ -134,24 +146,22 @@ WebViewPolicy::~WebViewPolicy() = default;
 
 NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& request) const
 {
-    if (!request.url.isValid() || request.url.isRelative()
-        || request.url.host().isEmpty() && request.url.scheme() != QStringLiteral("file")) {
+    if (!request.url.isValid() || (request.url.host().empty() && request.url.scheme() != "file")) {
         return NavigationDecision::Cancel;
     }
-    const auto scheme = request.url.scheme().toLower();
-    if (scheme == QStringLiteral("https")) {
+    const auto scheme = request.url.scheme();
+    if (scheme == "https") {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("http")
-        && impl_->config.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString().toStdString())) {
+    if (scheme == "http" && impl_->config.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString())) {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("app") && impl_->config.allowedAppHosts.contains(request.url.host().toLower().toStdString())) {
+    if (scheme == "app" && impl_->config.allowedAppHosts.contains(request.url.host())) {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("file")) {
+    if (scheme == "file") {
         for (const auto& root : impl_->config.allowedFileRoots) {
-            if (isWithinRoot(request.url.toLocalFile(), QString::fromStdString(root))) {
+            if (isWithinRoot(QString::fromStdString(request.url.toLocalFile()), QString::fromStdString(root))) {
                 return NavigationDecision::Allow;
             }
         }
@@ -164,15 +174,15 @@ NewWindowDecision WebViewPolicy::decideNewWindow(const NewWindowRequest&) const
     return NewWindowDecision::Cancel;
 }
 
-bool WebViewPolicy::allowsBridge(const QUrl& committedUrl) const
+bool WebViewPolicy::allowsBridge(const Url& committedUrl) const
 {
-    const auto scheme = committedUrl.scheme().toLower();
-    if (scheme == QStringLiteral("app")) {
-        return impl_->config.allowedAppHosts.contains(committedUrl.host().toLower().toStdString());
+    const auto scheme = committedUrl.scheme();
+    if (scheme == "app") {
+        return impl_->config.allowedAppHosts.contains(committedUrl.host());
     }
-    const auto origin = webview::normalizedOrigin(committedUrl).toString().toStdString();
-    return (scheme == QStringLiteral("https") && impl_->config.trustedHttpsOrigins.contains(origin))
-           || (scheme == QStringLiteral("http") && impl_->config.trustedDevelopmentOrigins.contains(origin));
+    const auto origin = webview::normalizedOrigin(committedUrl).toString();
+    return (scheme == "https" && impl_->config.trustedHttpsOrigins.contains(origin))
+           || (scheme == "http" && impl_->config.trustedDevelopmentOrigins.contains(origin));
 }
 
 bool WebViewPolicy::validatePageToHostMessage(const BridgeMessage& message, std::string* error) const

@@ -74,7 +74,7 @@ int main()
         diagnosticState.emitLoad(
             webview::LoadState::Failed,
             7,
-            QUrl(QStringLiteral("https://user:password@example.com/private?token=secret#fragment")),
+            webview::Url("https://user:password@example.com/private?token=secret#fragment"),
             "failure with /private/path");
         diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, "terminated", 9 });
         assert(runtimeFailureReceived);
@@ -210,16 +210,16 @@ int main()
     assert(sourceFile.open(QIODevice::WriteOnly));
     assert(sourceFile.write("0123456789") == 10);
     sourceFile.close();
-    webview::WebResourceManager unboundResources(QUrl(QStringLiteral("app://ui")));
+    webview::WebResourceManager unboundResources(webview::Url("app://ui"));
     assert(unboundResources.publishFile(sourceFile.fileName().toStdString()).token.empty());
     auto resourceState = std::make_shared<webview::WebViewState>();
     auto& resources = *resourceState->resources;
-    const QUrl documentOrigin(QStringLiteral("https://trusted.example"));
-    resourceState->setResourceContext(QUrl(QStringLiteral("app://ui")), documentOrigin, "文档-1");
+    const webview::Url documentOrigin("https://trusted.example");
+    resourceState->setResourceContext(webview::Url("app://ui"), documentOrigin, "文档-1");
     assert(resources.publishFile(sourceFile.fileName().toStdString(), {}, "other-doc").token.empty());
     const auto published = resources.publishFile(sourceFile.fileName().toStdString());
     assert(!published.token.empty());
-    assert(!published.url.toString().contains(sourceFile.fileName()));
+    assert(published.url.toString().find(sourceFile.fileName().toStdString()) == std::string::npos);
     assert(sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
     assert(sourceFile.write("abcdefghij") == 10);
     sourceFile.close();
@@ -246,11 +246,11 @@ int main()
     assert(resources.open({ emptyPublished.url, documentOrigin, "文档-1", "bytes=0-0" }).status == 416);
 
     webview::WebViewPolicyConfig resourcePolicyConfig;
-    resourcePolicyConfig.trustedHttpsOrigins.insert(documentOrigin.toString().toStdString());
+    resourcePolicyConfig.trustedHttpsOrigins.insert(documentOrigin.toString());
     auto resourceTransport = std::make_unique<MemoryBridgeTransport>();
     auto* resourceTransportProbe = resourceTransport.get();
     resourceState->policy = std::make_shared<webview::WebViewPolicy>(std::move(resourcePolicyConfig));
-    resourceState->committedUrl = QUrl(QStringLiteral("https://trusted.example/index.html"));
+    resourceState->committedUrl = webview::Url("https://trusted.example/index.html");
     resourceState->bridge->setTransport(std::move(resourceTransport));
     resourceState->bindBridgePolicy();
     const auto controlResource = resources.publishFile(sourceFile.fileName().toStdString());
@@ -289,31 +289,31 @@ int main()
     webview::WebViewPolicy copiedPolicy(policy);
     webview::WebViewPolicy assignedPolicy;
     assignedPolicy = policy;
-    assert(copiedPolicy.allowsBridge(QUrl(QStringLiteral("app://ui/page"))));
+    assert(copiedPolicy.allowsBridge(webview::Url("app://ui/page")));
     assert(assignedPolicy.maximumBridgeMessageBytes() == 128);
 
-    const auto navigation = [&policy](const QString& url) {
-        return policy.decideNavigation({ QUrl(url), true, true, false });
+    const auto navigation = [&policy](std::string_view url) {
+        return policy.decideNavigation({ webview::Url(url), true, true, false });
     };
-    assert(navigation(QStringLiteral("https://example.com/page")) == webview::NavigationDecision::Allow);
-    assert(navigation(QStringLiteral("http://127.0.0.1:5173/")) == webview::NavigationDecision::Allow);
-    assert(navigation(QStringLiteral("http://127.0.0.1:5174/")) == webview::NavigationDecision::Cancel);
-    assert(navigation(QStringLiteral("app://ui/home")) == webview::NavigationDecision::Allow);
-    assert(navigation(QUrl::fromLocalFile(allowedFile.fileName()).toString()) == webview::NavigationDecision::Allow);
-    assert(navigation(QStringLiteral("app://other/home")) == webview::NavigationDecision::Cancel);
-    assert(navigation(QStringLiteral("javascript:alert(1)")) == webview::NavigationDecision::Cancel);
-    assert(navigation(QStringLiteral("custom://host/path")) == webview::NavigationDecision::Cancel);
-    assert(navigation(QStringLiteral("not a url")) == webview::NavigationDecision::Cancel);
+    assert(navigation("https://example.com/page") == webview::NavigationDecision::Allow);
+    assert(navigation("http://127.0.0.1:5173/") == webview::NavigationDecision::Allow);
+    assert(navigation("http://127.0.0.1:5174/") == webview::NavigationDecision::Cancel);
+    assert(navigation("app://ui/home") == webview::NavigationDecision::Allow);
+    assert(navigation(webview::Url::fromLocalFile(allowedFile.fileName().toStdString()).toString()) == webview::NavigationDecision::Allow);
+    assert(navigation("app://other/home") == webview::NavigationDecision::Cancel);
+    assert(navigation("javascript:alert(1)") == webview::NavigationDecision::Cancel);
+    assert(navigation("custom://host/path") == webview::NavigationDecision::Cancel);
+    assert(navigation("not a url") == webview::NavigationDecision::Cancel);
 
-    assert(policy.decideNewWindow({ QUrl(QStringLiteral("https://example.com")), true }) == webview::NewWindowDecision::Cancel);
+    assert(policy.decideNewWindow({ webview::Url("https://example.com"), true }) == webview::NewWindowDecision::Cancel);
     assert(
-        policy.decidePermission({ webview::PermissionKind::Camera, QUrl(QStringLiteral("app://ui")) })
+        policy.decidePermission({ webview::PermissionKind::Camera, webview::Url("app://ui") })
         == webview::PermissionDecision::Deny);
-    assert(policy.decideDownload({ QUrl(QStringLiteral("https://example.com/file")), { }, { } }) == webview::DownloadDecision::Cancel);
-    assert(policy.allowsBridge(QUrl(QStringLiteral("app://ui/page"))));
-    assert(policy.allowsBridge(QUrl(QStringLiteral("http://127.0.0.1:5173/page"))));
-    assert(policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example/path"))));
-    assert(!policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example.evil/path"))));
+    assert(policy.decideDownload({ webview::Url("https://example.com/file"), { }, { } }) == webview::DownloadDecision::Cancel);
+    assert(policy.allowsBridge(webview::Url("app://ui/page")));
+    assert(policy.allowsBridge(webview::Url("http://127.0.0.1:5173/page")));
+    assert(policy.allowsBridge(webview::Url("https://trusted.example/path")));
+    assert(!policy.allowsBridge(webview::Url("https://trusted.example.evil/path")));
 
     std::string validationError;
     const webview::BridgeMessage validMessage {
@@ -379,7 +379,7 @@ int main()
     wireLimitConfig.maximumBridgeMessageBytes = 128;
     auto wireLimitState = std::make_shared<webview::WebViewState>();
     wireLimitState->policy = std::make_shared<webview::WebViewPolicy>(std::move(wireLimitConfig));
-    wireLimitState->committedUrl = QUrl(QStringLiteral("app://ui/index.html"));
+    wireLimitState->committedUrl = webview::Url("app://ui/index.html");
     wireLimitState->bindBridgePolicy();
     bool oversizedMessageReceived = false;
     wireLimitState->bridge->setEventHandler("notify", [&](const QJsonObject&) { oversizedMessageReceived = true; });
@@ -492,22 +492,22 @@ int main()
     assert(directory.status == webview::FileSelectionStatus::InvalidResult);
 
     std::vector<webview::ResourceMapping> mappings {
-        { QUrl(QStringLiteral("app://demo")), selectedRoot.path().toStdString(), "index.html", true }
+        { webview::Url("app://demo"), selectedRoot.path().toStdString(), "index.html", true }
     };
     std::string mappingError;
     assert(webview::validateResourceMappings(&mappings, &mappingError));
     assert(mappings.front().localDirectory == QFileInfo(selectedRoot.path()).canonicalFilePath().toStdString());
-    const auto* mapping = webview::findResourceMapping(mappings, QUrl(QStringLiteral("app://demo/selected.txt")));
+    const auto* mapping = webview::findResourceMapping(mappings, webview::Url("app://demo/selected.txt"));
     assert(mapping);
     assert(
-        webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/selected.txt")), &mappingError)
+        webview::resolveMappedResource(*mapping, webview::Url("app://demo/selected.txt"), &mappingError)
         == QFileInfo(selectedFile).canonicalFilePath().toStdString());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/%2e%2e/secret")), &mappingError).empty());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.txt")), &mappingError).empty());
+    assert(webview::resolveMappedResource(*mapping, webview::Url("app://demo/%2e%2e/secret"), &mappingError).empty());
+    assert(webview::resolveMappedResource(*mapping, webview::Url("app://demo/missing.txt"), &mappingError).empty());
     assert(
-        webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/orders/42")), &mappingError, true)
+        webview::resolveMappedResource(*mapping, webview::Url("app://demo/orders/42"), &mappingError, true)
         == QFileInfo(indexFile.fileName()).canonicalFilePath().toStdString());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.js")), &mappingError, true).empty());
+    assert(webview::resolveMappedResource(*mapping, webview::Url("app://demo/missing.js"), &mappingError, true).empty());
     const auto deniedNetworkPolicy = webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Denied);
     assert(deniedNetworkPolicy.find("default-src 'self'") != std::string::npos);
     assert(deniedNetworkPolicy.find("connect-src 'self'") != std::string::npos);
@@ -522,13 +522,13 @@ int main()
     const auto linkedFile = selectedRoot.filePath(QStringLiteral("linked.txt"));
     assert(QFile::link(outsideFile, linkedFile));
     if (QFileInfo(linkedFile).isSymLink()) {
-        assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError).empty());
+        assert(webview::resolveMappedResource(*mapping, webview::Url("app://demo/linked.txt"), &mappingError).empty());
     }
 
-    std::vector<webview::ResourceMapping> duplicateMappings { { QUrl(QStringLiteral("app://demo")), selectedRoot.path().toStdString() },
-                                                              { QUrl(QStringLiteral("APP://DEMO")), selectedRoot.path().toStdString() } };
-    assert(!webview::validateResourceMappings(&duplicateMappings, &mappingError));
-    std::vector<webview::ResourceMapping> invalidMappings { { QUrl(QStringLiteral("https://demo/path")),
+    std::vector<webview::ResourceMapping> duplicateMappings { { webview::Url("app://demo"), selectedRoot.path().toStdString() },
+                                                              { webview::Url("APP://DEMO"), selectedRoot.path().toStdString() } };
+    assert(webview::validateResourceMappings(&duplicateMappings, &mappingError));
+    std::vector<webview::ResourceMapping> invalidMappings { { webview::Url("https://demo/path"),
                                                               selectedRoot.path().toStdString() } };
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
@@ -538,14 +538,14 @@ int main()
     const auto bundleApplication = webview::createApplication(std::move(bundleOptions), &mappingError);
     assert(bundleApplication);
     assert(std::get<webview::LocalBundle>(bundleApplication->source()).externalNetworkAccess == webview::ExternalNetworkAccess::Denied);
-    assert(bundleApplication->urlForRoute("orders/42") == QUrl(QStringLiteral("app://demo-app/orders/42")));
-    assert(bundleApplication->urlForRoute("订单/详情") == QUrl(QStringLiteral("app://demo-app/订单/详情")));
+    assert(bundleApplication->urlForRoute("orders/42") == webview::Url("app://demo-app/orders/42"));
+    assert(bundleApplication->urlForRoute("订单/详情") == webview::Url("app://demo-app/订单/详情"));
     const auto unicodeFile = selectedRoot.filePath(QStringLiteral("数据.txt"));
     QFile unicodeResource(unicodeFile);
     assert(unicodeResource.open(QIODevice::WriteOnly));
     unicodeResource.close();
     assert(
-        webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/数据.txt")), &mappingError)
+        webview::resolveMappedResource(*mapping, webview::Url("app://demo/数据.txt"), &mappingError)
         == QFileInfo(unicodeFile).canonicalFilePath().toStdString());
     webview::WebApplicationOptions invalidNetworkAccess;
     invalidNetworkAccess.id = "invalid-network-access";
@@ -554,15 +554,15 @@ int main()
     assert(!webview::createApplication(std::move(invalidNetworkAccess), &mappingError));
     webview::WebApplicationOptions devOptions;
     devOptions.id = "demo-dev";
-    devOptions.source = webview::DevelopmentServer { QUrl(QStringLiteral("http://127.0.0.1:5173")) };
+    devOptions.source = webview::DevelopmentServer { webview::Url("http://127.0.0.1:5173") };
     const auto devApplication = webview::createApplication(std::move(devOptions), &mappingError);
-    assert(devApplication && devApplication->urlForRoute("assets/main.js") == QUrl(QStringLiteral("http://127.0.0.1:5173/assets/main.js")));
+    assert(devApplication && devApplication->urlForRoute("assets/main.js") == webview::Url("http://127.0.0.1:5173/assets/main.js"));
     webview::WebApplicationOptions remoteOptions;
     remoteOptions.id = "demo-remote";
-    remoteOptions.source = webview::RemoteOrigin { QUrl(QStringLiteral("https://example.com")) };
+    remoteOptions.source = webview::RemoteOrigin { webview::Url("https://example.com") };
     assert(webview::createApplication(std::move(remoteOptions), &mappingError));
     webview::WebApplicationOptions invalidRemote;
     invalidRemote.id = "invalid-remote";
-    invalidRemote.source = webview::RemoteOrigin { QUrl(QStringLiteral("http://example.com")) };
+    invalidRemote.source = webview::RemoteOrigin { webview::Url("http://example.com") };
     assert(!webview::createApplication(std::move(invalidRemote), &mappingError));
 }

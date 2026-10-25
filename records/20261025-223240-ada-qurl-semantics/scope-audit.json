@@ -1,0 +1,91 @@
+{
+    "note": "Lexical QUrl token inventory; not a semantic call-site count.",
+    "files": 21,
+    "tokens": 183,
+    "inventory": [
+        {
+            "file": "tests/JsonMessageTests.cpp",
+            "qurl_tokens": 34
+        },
+        {
+            "file": "tests/WebView2ContractTests.cpp",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "tests/WkViewTests.mm",
+            "qurl_tokens": 11
+        },
+        {
+            "file": "include/system_webview/system_webview.h",
+            "qurl_tokens": 23
+        },
+        {
+            "file": "src/internal/ResourceMapping.h",
+            "qurl_tokens": 5
+        },
+        {
+            "file": "src/internal/Diagnostics.h",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "src/internal/Application.h",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "samples/demo/DemoWindow.cpp",
+            "qurl_tokens": 1
+        },
+        {
+            "file": "src/webview/Diagnostics.cpp",
+            "qurl_tokens": 3
+        },
+        {
+            "file": "src/webview/WebViewState.h",
+            "qurl_tokens": 6
+        },
+        {
+            "file": "src/webview/WebViewBridge.cpp",
+            "qurl_tokens": 1
+        },
+        {
+            "file": "src/webview/WebViewState.cpp",
+            "qurl_tokens": 3
+        },
+        {
+            "file": "src/webview/WebViewPolicy.cpp",
+            "qurl_tokens": 1
+        },
+        {
+            "file": "src/webview/WebResourceManager.cpp",
+            "qurl_tokens": 18
+        },
+        {
+            "file": "src/webview/Application.cpp",
+            "qurl_tokens": 5
+        },
+        {
+            "file": "src/webview/ResourceMapping.cpp",
+            "qurl_tokens": 7
+        },
+        {
+            "file": "src/platform/windows/WebView2View.h",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "src/platform/windows/WebView2View.cpp",
+            "qurl_tokens": 29
+        },
+        {
+            "file": "src/platform/macos/WkWebView.h",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "src/platform/macos/WkWebViewSession.mm",
+            "qurl_tokens": 2
+        },
+        {
+            "file": "src/platform/macos/WkWebView.mm",
+            "qurl_tokens": 24
+        }
+    ]
+}

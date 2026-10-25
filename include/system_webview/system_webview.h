@@ -43,12 +43,12 @@
 #include <QIODevice>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QUrl>
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -66,6 +66,37 @@ using WebViewPtr = std::unique_ptr<IWebView>;
 class WebApplication;
 /// Immutable application source registered with a session.
 using WebApplicationPtr = std::shared_ptr<const WebApplication>;
+
+/// Absolute URL parsed and serialized according to the WHATWG URL Standard.
+class SYSTEM_WEBVIEW_API Url
+{
+public:
+    Url() = default;
+    explicit Url(std::string_view absoluteUrl);
+
+    static Url fromLocalFile(std::string_view path);
+
+    bool isValid() const noexcept;
+    bool isEmpty() const noexcept;
+    bool hasQuery() const;
+    bool hasFragment() const;
+    bool hasCredentials() const;
+    std::string scheme() const;
+    std::string host() const;
+    int port() const;
+    std::string path() const;
+    std::string fileName() const;
+    std::string toString() const;
+    std::string toLocalFile() const;
+    Url origin() const;
+    Url resolved(std::string_view reference) const;
+    Url withPath(std::string_view path) const;
+
+    friend bool operator==(const Url& left, const Url& right) noexcept { return left.href_ == right.href_; }
+
+private:
+    std::string href_;
+};
 
 enum class LoadState : int
 {
@@ -93,7 +124,7 @@ struct InitializationResult
 struct LoadEvent
 {
     LoadState state = LoadState::Started;
-    QUrl url;
+    Url url;
     std::string error;
     std::uint64_t navigationId = 0;
     bool isMainFrame = true;
@@ -108,7 +139,7 @@ enum class NavigationDecision : int
 
 struct NavigationRequest
 {
-    QUrl url;
+    Url url;
     bool isMainFrame = true;
     bool isUserInitiated = false;
     bool isRedirect = false;
@@ -116,7 +147,7 @@ struct NavigationRequest
 
 struct NewWindowRequest
 {
-    QUrl url;
+    Url url;
     bool isUserInitiated = false;
 };
 
@@ -196,12 +227,12 @@ struct LocalBundle
 
 struct DevelopmentServer
 {
-    QUrl url;
+    Url url;
 };
 
 struct RemoteOrigin
 {
-    QUrl url;
+    Url url;
 };
 
 using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOrigin>;
@@ -225,21 +256,21 @@ struct WebViewSessionOptions
 struct PermissionRequest
 {
     PermissionKind kind = PermissionKind::Camera;
-    QUrl origin;
+    Url origin;
 };
 
 struct DownloadRequest
 {
-    QUrl url;
-    QUrl origin;
-    QUrl documentUrl;
+    Url url;
+    Url origin;
+    Url documentUrl;
     std::string suggestedFileName;
 };
 
 struct FileSelectionRequest
 {
-    QUrl origin;
-    QUrl documentUrl;
+    Url origin;
+    Url documentUrl;
     bool allowsMultiple = false;
     bool allowsDirectories = false;
 };
@@ -318,7 +349,7 @@ struct WebViewHostCallbacks
     /// Receives main-frame navigation state changes.
     std::function<void(const LoadEvent&)> onLoad;
     /// Opens a URL after the policy returns NavigationDecision::OpenExternally.
-    std::function<void(const QUrl&)> onOpenExternal;
+    std::function<void(const Url&)> onOpenExternal;
     /// Takes ownership of an allowed popup. Retain the WebViewPtr before returning.
     std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
     /// Must invoke the completion exactly once; an empty callback cancels selection.
@@ -388,7 +419,7 @@ public:
     void setRequestHandler(const std::string& type, RequestHandler handler);
     void setValidator(Validator validator);
     void setTransport(std::unique_ptr<BridgeTransport> transport);
-    void receive(const std::string& message, const QUrl& source = {});
+    void receive(const std::string& message, const Url& source = {});
     void cancelPending(const std::string& error = "Bridge request cancelled.");
     void invalidate();
 
@@ -403,15 +434,15 @@ private:
 struct PublishedResource
 {
     std::string token;
-    QUrl url;
+    Url url;
     std::string mimeType;
     std::int64_t size = -1;
 };
 
 struct ResourceRequest
 {
-    QUrl url;
-    QUrl sourceOrigin;
+    Url url;
+    Url sourceOrigin;
     std::string documentToken;
     std::string rangeHeader;
     std::int64_t rangeStart = -1;
@@ -433,7 +464,7 @@ struct ResourceResponse
 class WebResourceManager final
 {
 public:
-    SYSTEM_WEBVIEW_API explicit WebResourceManager(QUrl origin = { });
+    SYSTEM_WEBVIEW_API explicit WebResourceManager(Url origin = { });
     SYSTEM_WEBVIEW_API ~WebResourceManager();
 
     /// Publishes an immutable snapshot of path to the current document.
@@ -448,7 +479,7 @@ private:
     friend class WebViewState;
     void setDiagnosticContext(std::uint64_t sessionId, std::uint64_t viewId);
     void setRevocationHandler(std::function<void(const std::string&)> handler);
-    void setContext(const QUrl& resourceOrigin, const QUrl& documentOrigin, const std::string& documentToken);
+    void setContext(const Url& resourceOrigin, const Url& documentOrigin, const std::string& documentToken);
     void setDocumentToken(const std::string& documentToken);
     void releaseForDocument(const std::string& documentToken);
     void releaseAll();
@@ -475,9 +506,9 @@ public:
     /// Opens a session-registered application at an optional application route.
     virtual void open(WebApplicationPtr application, const std::string& route = {}) = 0;
     /// Navigates directly; WebViewPolicy still decides whether the URL is allowed.
-    virtual void navigate(const QUrl& url) = 0;
+    virtual void navigate(const Url& url) = 0;
     /// Loads an HTML string. Set baseUrl when the document uses relative URLs.
-    virtual void loadDocument(const std::string& html, const QUrl& baseUrl = {}) = 0;
+    virtual void loadDocument(const std::string& html, const Url& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
     /// Idempotently closes the native view and cancels pending callbacks.
@@ -548,7 +579,7 @@ public:
 
     virtual NavigationDecision decideNavigation(const NavigationRequest& request) const;
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
-    virtual bool allowsBridge(const QUrl& committedUrl) const;
+    virtual bool allowsBridge(const Url& committedUrl) const;
     virtual bool validatePageToHostMessage(const BridgeMessage& message, std::string* error = nullptr) const;
     virtual bool validateHostToPageMessage(const BridgeMessage& message, std::string* error = nullptr) const;
     int maximumBridgeMessageBytes() const;

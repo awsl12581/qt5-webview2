@@ -32,7 +32,7 @@ public:
 
     webview::NewWindowDecision decideNewWindow(const webview::NewWindowRequest& request) const override
     {
-        return request.url == QUrl(QStringLiteral("https://example.com/")) ? webview::NewWindowDecision::Allow
+        return request.url == webview::Url("https://example.com/") ? webview::NewWindowDecision::Allow
                                                                            : webview::NewWindowDecision::Cancel;
     }
 };
@@ -138,7 +138,7 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
         page->bridge().emitEvent("ack", { { "message", "Native received your message." } });
     });
     callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
-        addTab(std::move(child), request.url.host().isEmpty() ? "New tab" : request.url.host().toStdString());
+        addTab(std::move(child), request.url.host().empty() ? "New tab" : request.url.host());
     };
     page->setHostCallbacks(std::move(callbacks));
     page->whenInitialized([this](const webview::InitializationResult& result) {

@@ -16,8 +16,8 @@ public:
 
     BridgeAccess bridgeAccess() const { return bridgeAccess_; }
 
-    QUrl origin() const;
-    QUrl urlForRoute(std::string_view route) const;
+    Url origin() const;
+    Url urlForRoute(std::string_view route) const;
 
 private:
     friend WebApplicationPtr createApplication(WebApplicationOptions options, std::string* error);

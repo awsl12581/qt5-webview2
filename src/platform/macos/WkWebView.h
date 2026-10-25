@@ -21,8 +21,8 @@ public:
     void attachNativeView() override;
     void detachNativeView() override;
     void open(WebApplicationPtr application, const std::string& route) override;
-    void navigate(const QUrl& url) override;
-    void loadDocument(const std::string& html, const QUrl& baseUrl) override;
+    void navigate(const Url& url) override;
+    void loadDocument(const std::string& html, const Url& baseUrl) override;
     void stop() override;
     void reload() override;
     void close() override;

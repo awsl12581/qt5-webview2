@@ -38,8 +38,8 @@
         [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
         return;
     }
-    const QUrl url(QString::fromUtf8(task.request.URL.absoluteString.UTF8String));
-    const QUrl documentUrl(QString::fromUtf8(task.request.mainDocumentURL.absoluteString.UTF8String));
+    const webview::Url url(task.request.URL.absoluteString.UTF8String ?: "");
+    const webview::Url documentUrl(task.request.mainDocumentURL.absoluteString.UTF8String ?: "");
     webview::WebViewState* pageState = nullptr;
     std::shared_ptr<webview::WebViewState> pageStateOwner;
     {
@@ -54,7 +54,7 @@
     }
 
     webview::ResourceResponse resource;
-    const bool published = url.path().startsWith(QStringLiteral("/resource/"));
+    const bool published = url.path().starts_with("/resource/");
     if (published && pageState) {
         const auto range = [task.request valueForHTTPHeaderField:@"Range"];
         resource = pageState->resources->open(

@@ -49,8 +49,8 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     source.close();
 
     auto state = std::make_shared<webview::WebViewState>();
-    const QUrl origin(QStringLiteral("https://trusted.example"));
-    state->setResourceContext(QUrl(QStringLiteral("app://resource-test")), origin, "doc-1");
+    const webview::Url origin(QStringLiteral("https://trusted.example"));
+    state->setResourceContext(webview::Url("app://resource-test"), origin, "doc-1");
     const auto published = state->resources->publishFile(source.fileName().toStdString());
     assert(!published.token.empty());
     auto response = state->resources->open({ published.url, origin, "doc-1" });

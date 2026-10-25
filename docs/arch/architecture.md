@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-25 22:20 CST
-> 文档版本：v14
-> 修改说明：Documented standard value types in the public API and the required consumer rebuild.
+> 最后修改时间：2026-10-25 23:24 CST
+> 文档版本：v15
+> 修改说明：Documented the Ada-backed URL value type and WHATWG URL normalization.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -27,11 +27,13 @@ resource reader uses `std::vector<char>`; bridge script text uses standard strin
 `NSString`. Windows stores inline HTML in `std::unordered_map<std::string, std::string>`, passes profile errors
 as standard strings, formats internal errors with `std::format`, and opens native file streams through
 `std::filesystem::path`. Qt/native text conversions occur at the corresponding API boundaries.
-Qt URL, JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
-boundaries; URL parsing, path authorization, and message schemas retain their existing behavior.
+Ada parses and serializes URLs through the public `webview::Url` value type. The project adopts WHATWG
+normalization, including default-port removal and dot-segment handling; `app:` identity uses the parsed host.
+Qt JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
+boundaries; path authorization and message schemas retain their existing behavior.
 The public API uses UTF-8 `std::string` for text, filesystem paths, bridge metadata, errors, and serialized bridge
 messages; `std::vector<std::string>` for path lists; standard unordered sets/maps for policy configuration;
-and fixed-width standard integers for counters. `QUrl`, `QJsonObject`, `QJsonValue`, `QIODevice`, and `QWidget`
+and fixed-width standard integers for counters. `webview::Url`, `QJsonObject`, `QJsonValue`, `QIODevice`, and `QWidget`
 remain at the URL, JSON, stream, and widget boundaries. This migration changes public signatures and value
 layouts, so consumers must update their calls, callbacks, and policy overrides and rebuild against the library.
 There are no compatibility overloads for the replaced Qt value types.
@@ -137,7 +139,7 @@ Views in one macOS session share its website data store and assigned `WKProcessP
 
 The session API is a source-breaking replacement. Remove calls to old session factory names, former standalone view factories, page-level bridge or popup setters, and concrete `WkWebView` casts. There are no forwarding overloads or deprecation shims. Migration consists of constructing `WebViewSessionOptions`, retaining one session per login/profile boundary, creating views from it, inserting each widget into its final host layout, attaching the view, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view.
 
-`navigate(QUrl)` remains available for ordinary browser navigation. `loadDocument` remains available only when its base URL passes navigation policy; it is not an application deployment API and follows the same committed-origin bridge checks as network navigation.
+`navigate(webview::Url)` remains available for ordinary browser navigation. `loadDocument` remains available only when its base URL passes navigation policy; it is not an application deployment API and follows the same committed-origin bridge checks as network navigation.
 
 ## Version history
 
@@ -157,3 +159,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v12 | 2026-10-25 22:04 CST | Documented standard-library storage in portable webview implementation. |
 | v13 | 2026-10-25 22:11 CST | Documented standard-library storage and conversion boundaries in platform backends. |
 | v14 | 2026-10-25 22:20 CST | Documented standard value types in the public API and the required consumer rebuild. |
+| v15 | 2026-10-25 23:24 CST | Documented the Ada-backed URL value type and WHATWG URL normalization. |

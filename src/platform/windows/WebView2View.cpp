@@ -41,6 +41,11 @@ namespace webview
 {
 namespace
 {
+Url urlFromWide(const wchar_t* value)
+{
+    return Url(QString::fromWCharArray(value ? value : L"").toStdString());
+}
+
 RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
 {
     switch (kind) {
@@ -416,7 +421,7 @@ public:
                                 }
                                 LPWSTR rawUri = nullptr;
                                 request->get_Uri(&rawUri);
-                                const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                const Url url = urlFromWide(rawUri);
                                 CoTaskMemFree(rawUri);
                                 std::string mime = "text/html";
                                 int status = httpStatus::kOk;
@@ -426,7 +431,7 @@ public:
                                 std::shared_ptr<void> lease;
                                 std::string filePath;
                                 const ResourceMapping* mapping = nullptr;
-                                const auto inlineDocument = inlineDocuments->find(url.toString(QUrl::FullyEncoded).toStdString());
+                                const auto inlineDocument = inlineDocuments->find(url.toString());
                                 if (inlineDocument != inlineDocuments->cend()) {
                                     const auto& bytes = inlineDocument->second;
                                     Microsoft::WRL::ComPtr<IStream> stream(
@@ -449,7 +454,7 @@ public:
                                     return S_OK;
                                 }
                                 ResourceResponse resourceResponse;
-                                if (url.path().startsWith(QStringLiteral("/resource/"))) {
+                                if (url.path().starts_with("/resource/")) {
                                     std::string rangeHeader;
                                     Microsoft::WRL::ComPtr<ICoreWebView2HttpRequestHeaders> headers;
                                     LPWSTR rawRange = nullptr;
@@ -492,7 +497,7 @@ public:
                                     length = totalSize;
                                 }
                                 if (filePath.empty()) {
-                                    if (!url.path().startsWith(QStringLiteral("/resource/"))) {
+                                    if (!url.path().starts_with("/resource/")) {
                                         return S_OK;
                                     }
                                     Microsoft::WRL::ComPtr<IStream> empty(SHCreateMemStream(nullptr, 0));
@@ -572,7 +577,7 @@ public:
                                 COREWEBVIEW2_PERMISSION_KIND nativeKind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
                                 args->get_Uri(&rawUri);
                                 args->get_PermissionKind(&nativeKind);
-                                const QUrl origin = normalizedOrigin(QUrl(QString::fromWCharArray(rawUri ? rawUri : L"")));
+                                const Url origin = normalizedOrigin(urlFromWide(rawUri));
                                 CoTaskMemFree(rawUri);
                                 PermissionKind kind = PermissionKind::Notifications;
                                 if (nativeKind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE) {
@@ -617,7 +622,7 @@ public:
                                 args->GetDeferral(deferral.GetAddressOf());
                                 LPWSTR rawUri = nullptr;
                                 args->get_Uri(&rawUri);
-                                const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                const Url url = urlFromWide(rawUri);
                                 CoTaskMemFree(rawUri);
                                 BOOL userInitiated = FALSE;
                                 args->get_IsUserInitiated(&userInitiated);
@@ -726,7 +731,7 @@ public:
                                     }
                                     LPWSTR rawUri = nullptr;
                                     operation->get_Uri(&rawUri);
-                                    const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                    const Url url = urlFromWide(rawUri);
                                     CoTaskMemFree(rawUri);
                                     LPWSTR rawPath = nullptr;
                                     args->get_ResultFilePath(&rawPath);
@@ -819,7 +824,7 @@ public:
                                 args->get_IsRedirected(&redirected);
                                 args->get_IsUserInitiated(&userInitiated);
                                 args->get_NavigationId(&webviewNavigationId);
-                                const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                const Url url = urlFromWide(rawUri);
                                 CoTaskMemFree(rawUri);
                                 const std::uint64_t id = state->navigationId = webviewNavigationId;
                                 const auto decision =
@@ -858,7 +863,7 @@ public:
                             [state = state](ICoreWebView2* sender, ICoreWebView2SourceChangedEventArgs*) -> HRESULT {
                                 LPWSTR rawSource = nullptr;
                                 if (SUCCEEDED(sender->get_Source(&rawSource))) {
-                                    state->committedUrl = QUrl(QString::fromWCharArray(rawSource ? rawSource : L""));
+                                    state->committedUrl = urlFromWide(rawSource);
                                     state->setResourceContext(state->resourceOrigin, state->committedUrl, state->documentToken);
                                 }
                                 CoTaskMemFree(rawSource);
@@ -873,7 +878,7 @@ public:
                                 LPWSTR rawSource = nullptr;
                                 args->get_NavigationId(&id);
                                 if (SUCCEEDED(sender->get_Source(&rawSource))) {
-                                    state->committedUrl = QUrl(QString::fromWCharArray(rawSource ? rawSource : L""));
+                                    state->committedUrl = urlFromWide(rawSource);
                                     state->setResourceContext(state->resourceOrigin, state->committedUrl, state->documentToken);
                                 }
                                 CoTaskMemFree(rawSource);
@@ -903,7 +908,7 @@ public:
                                 args->get_NavigationId(&id);
                                 LPWSTR rawUri = nullptr;
                                 sender->get_Source(&rawUri);
-                                const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
+                                const Url url = urlFromWide(rawUri);
                                 CoTaskMemFree(rawUri);
                                 if (success) {
                                     state->committedUrl = url;
@@ -930,7 +935,7 @@ public:
                                 args->get_WebMessageAsJson(&rawJson);
                                 args->get_Source(&rawSource);
                                 const auto json = QString::fromWCharArray(rawJson ? rawJson : L"").toStdString();
-                                const QUrl source = QUrl(QString::fromWCharArray(rawSource ? rawSource : L""));
+                                const Url source = urlFromWide(rawSource);
                                 CoTaskMemFree(rawJson);
                                 CoTaskMemFree(rawSource);
                                 if (state->committedUrl.isEmpty()) {
@@ -943,8 +948,7 @@ public:
                                 std::string error;
                                 if (state->bridgeOrigin != normalizedOrigin(source) || !state->policy
                                     || !state->policy->allowsBridge(source)
-                                    || source.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
-                                           != state->committedUrl.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
+                                    || source.origin() != state->committedUrl.origin()
                                     || !parseMessage(json, &object, &error)
                                     || object.value(QStringLiteral("documentToken")).toString().toStdString() != state->documentToken) {
                                     qCDebug(systemWebViewBridge).noquote()
@@ -1217,13 +1221,13 @@ void WebView2View::open(WebApplicationPtr application, const std::string& route)
     if (!application) {
         return;
     }
-    impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : QUrl();
-    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(application->id())));
+    impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : Url();
+    impl_->state->resourceOrigin = Url("app://" + application->id());
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
     navigate(application->urlForRoute(route));
 }
 
-void WebView2View::navigate(const QUrl& url)
+void WebView2View::navigate(const Url& url)
 {
     impl_->state->runWhenReady([state = impl_->state, url, owner = std::weak_ptr<Impl>(impl_)](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
@@ -1232,7 +1236,7 @@ void WebView2View::navigate(const QUrl& url)
         }
         const auto view = owner.lock();
         const auto webview = view ? view->webview : nullptr;
-        const auto text = url.toString().toStdWString();
+        const auto text = QString::fromStdString(url.toString()).toStdWString();
         if (!webview) {
             state->emitLoad(LoadState::Failed, ++state->navigationId, url, "WebView2 core object is unavailable.");
             return;
@@ -1248,15 +1252,15 @@ void WebView2View::navigate(const QUrl& url)
     });
 }
 
-void WebView2View::loadDocument(const std::string& html, const QUrl& baseUrl)
+void WebView2View::loadDocument(const std::string& html, const Url& baseUrl)
 {
-    if (baseUrl.scheme() == QStringLiteral("app")
+    if (baseUrl.scheme() == "app"
         && (!impl_->resourceMappings || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
         const auto id = ++impl_->state->navigationId;
         impl_->state->emitLoad(LoadState::Failed, id, baseUrl, "The document base URL is unavailable.");
         return;
     }
-    impl_->inlineDocuments->insert_or_assign(baseUrl.toString(QUrl::FullyEncoded).toStdString(), html);
+    impl_->inlineDocuments->insert_or_assign(baseUrl.toString(), html);
     navigate(baseUrl);
 }
 
@@ -1271,7 +1275,7 @@ void WebView2View::reload()
 {
     if (impl_->webview) {
         impl_->state->invalidateDocument();
-        impl_->state->committedUrl = QUrl();
+        impl_->state->committedUrl = Url();
         impl_->webview->Reload();
     }
 }

@@ -165,8 +165,8 @@ public:
         }
     };
 
-    QUrl origin;
-    QUrl documentOrigin;
+    Url origin;
+    Url documentOrigin;
     std::string documentToken;
     std::shared_ptr<SnapshotStore> snapshots = std::make_shared<SnapshotStore>();
     std::unordered_map<std::string, std::shared_ptr<Entry>> entries;
@@ -176,7 +176,7 @@ public:
     std::uint64_t viewDiagnosticId = 0;
 };
 
-WebResourceManager::WebResourceManager(QUrl origin)
+WebResourceManager::WebResourceManager(Url origin)
     : impl_(std::make_unique<Impl>())
 {
     impl_->origin = std::move(origin);
@@ -198,10 +198,10 @@ void WebResourceManager::setRevocationHandler(std::function<void(const std::stri
     impl_->onRevoked = std::move(handler);
 }
 
-void WebResourceManager::setContext(const QUrl& resourceOrigin, const QUrl& documentOrigin, const std::string& documentToken)
+void WebResourceManager::setContext(const Url& resourceOrigin, const Url& documentOrigin, const std::string& documentToken)
 {
     impl_->origin = resourceOrigin;
-    impl_->documentOrigin = documentOrigin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
+    impl_->documentOrigin = documentOrigin.origin();
     setDocumentToken(documentToken);
 }
 
@@ -278,16 +278,15 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
     impl_->snapshots->add(copied);
     impl_->entries.insert_or_assign(token, entry);
     impl_->revoked.erase(token);
-    const auto url = impl_->origin.resolved(QUrl(QString::fromStdString("resource/" + token)));
+    const auto url = impl_->origin.resolved("resource/" + token);
     return { token, url, entry->mime, copied };
 }
 
 ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
 {
-    const auto origin = request.url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
-    const auto expectedOrigin = impl_->origin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
-    const auto sourceOrigin = request.sourceOrigin.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
-    if (!expectedOrigin.isValid() || origin != expectedOrigin || sourceOrigin != impl_->documentOrigin) {
+    const auto origin = request.url.origin();
+    const auto sourceOrigin = request.sourceOrigin.origin();
+    if (!impl_->origin.isValid() || origin != impl_->origin.origin() || sourceOrigin != impl_->documentOrigin) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
             << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
@@ -295,7 +294,9 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         return { httpStatus::kForbidden };
     }
 
-    const auto token = request.url.path().section(QLatin1Char('/'), -1).toStdString();
+    const auto resourcePath = request.url.path();
+    const auto slash = resourcePath.find_last_of('/');
+    const auto token = slash == std::string::npos ? resourcePath : resourcePath.substr(slash + 1);
     const auto it = impl_->entries.find(token);
     if (it == impl_->entries.cend()) {
         const int status = impl_->revoked.contains(token) ? httpStatus::kGone : httpStatus::kNotFound;
