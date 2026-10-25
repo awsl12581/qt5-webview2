@@ -6,8 +6,11 @@
 #include <QWidget>
 
 #include <array>
+#include <cstdint>
 #include <cstdio>
+#include <format>
 #include <memory>
+#include <string>
 
 namespace
 {
@@ -28,14 +31,14 @@ const char* architecture()
 #endif
 }
 
-QString runtimeVersion()
+std::string runtimeVersion()
 {
     LPWSTR version = nullptr;
     const HRESULT result = GetAvailableCoreWebView2BrowserVersionString(nullptr, &version);
     if (result < 0) {
-        return QStringLiteral("unavailable:hresult=0x%1").arg(QString::number(static_cast<quint32>(result), 16));
+        return std::format("unavailable:hresult=0x{:x}", static_cast<std::uint32_t>(result));
     }
-    const QString value = QString::fromWCharArray(version ? version : L"");
+    const auto value = QString::fromWCharArray(version ? version : L"").toStdString();
     CoTaskMemFree(version);
     return value;
 }
@@ -80,7 +83,7 @@ private:
         auto retainedView = closingSession->createWebView(&parent);
         closingSession.reset();
         if (!retainedView->isClosed()) {
-            fail(QStringLiteral("A retained WebView2 view remained active after its session was destroyed."));
+            fail("A retained WebView2 view remained active after its session was destroyed.");
             return false;
         }
         bool completionCalled = false;
@@ -88,7 +91,7 @@ private:
             completionCalled = !error.empty();
         });
         if (!completionCalled) {
-            fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
+            fail("A retained WebView2 view accepted work after its session was destroyed.");
             return false;
         }
         std::printf("session-close=ok retained-view=closed\n");
@@ -96,13 +99,13 @@ private:
         return true;
     }
 
-    void armTimeout(const QString& operation)
+    void armTimeout(const std::string& operation)
     {
         const auto expectedGeneration = ++generation;
         QTimer::singleShot(15000, &application, [weak = weak_from_this(), expectedGeneration, operation] {
             const auto owner = weak.lock();
             if (owner && owner->generation == expectedGeneration) {
-                owner->fail(QStringLiteral("Timed out waiting for WebView2 %1.").arg(operation));
+                owner->fail(std::format("Timed out waiting for WebView2 {}.", operation));
             }
         });
     }
@@ -117,10 +120,10 @@ private:
         webview::WebViewSessionOptions options;
         options.mode = current.mode;
         if (current.mode == webview::SessionMode::Persistent) {
-            options.profilePath = (profile.path() + QStringLiteral("/%1").arg(static_cast<int>(caseIndex))).toStdString();
+            options.profilePath = profile.path().toStdString() + "/" + std::to_string(caseIndex);
         }
         session = webview::createWebViewSession(std::move(options));
-        armTimeout(QStringLiteral("session initialization"));
+        armTimeout("session initialization");
         session->whenInitialized([weak = weak_from_this()](const webview::InitializationResult& result) {
             const auto owner = weak.lock();
             if (!owner) {
@@ -128,7 +131,7 @@ private:
             }
             ++owner->generation;
             if (result.state != webview::InitializationState::Ready) {
-                owner->fail(QStringLiteral("WebView2 session failed: %1").arg(QString::fromStdString(result.error)));
+                owner->fail("WebView2 session failed: " + result.error);
                 return;
             }
             owner->createController();
@@ -139,12 +142,12 @@ private:
     {
         const auto current = cases[caseIndex];
         if (current.mode == webview::SessionMode::Ephemeral && !session->supports(webview::WebViewCapability::PrivateProfile)) {
-            fail(QStringLiteral("WebView2 Runtime does not expose InPrivate controller options."));
+            fail("WebView2 Runtime does not expose InPrivate controller options.");
             return;
         }
         view = session->createWebView(&parent);
         view->attachNativeView();
-        armTimeout(QStringLiteral("controller/profile initialization"));
+        armTimeout("controller/profile initialization");
         view->whenInitialized([weak = weak_from_this()](const webview::InitializationResult& result) {
             const auto owner = weak.lock();
             if (!owner) {
@@ -152,7 +155,7 @@ private:
             }
             ++owner->generation;
             if (result.state != webview::InitializationState::Ready) {
-                owner->fail(QStringLiteral("WebView2 controller/profile failed: %1").arg(QString::fromStdString(result.error)));
+                owner->fail("WebView2 controller/profile failed: " + result.error);
                 return;
             }
             QTimer::singleShot(0, &owner->application, [weak] {
@@ -183,7 +186,7 @@ private:
             current.mode == webview::SessionMode::Ephemeral ? "ephemeral" : "persistent",
             clearName);
         std::fflush(stdout);
-        armTimeout(QStringLiteral("%1 clear completion").arg(QString::fromLatin1(clearName)));
+        armTimeout(std::format("{} clear completion", clearName));
         auto completion = [weak = weak_from_this(), clearName](const webview::WebsiteDataResult& result) {
             const auto owner = weak.lock();
             if (!owner) {
@@ -191,8 +194,7 @@ private:
             }
             ++owner->generation;
             if (!result.success) {
-                owner->fail(QStringLiteral("WebView2 %1 clear failed: %2")
-                                .arg(QString::fromLatin1(clearName), QString::fromStdString(result.error)));
+                owner->fail(std::format("WebView2 {} clear failed: {}", clearName, result.error));
                 return;
             }
             owner->finishCase(clearName);
@@ -235,12 +237,12 @@ private:
     {
         webview::WebViewSessionOptions options;
         options.mode = webview::SessionMode::Persistent;
-        options.profilePath = (profile.path() + QStringLiteral("/closing")).toStdString();
+        options.profilePath = profile.path().toStdString() + "/closing";
         auto closingSession = webview::createWebViewSession(std::move(options));
         auto retainedView = closingSession->createWebView(&parent);
         closingSession.reset();
         if (!retainedView->isClosed()) {
-            fail(QStringLiteral("A retained WebView2 view remained active after its session was destroyed."));
+            fail("A retained WebView2 view remained active after its session was destroyed.");
             return;
         }
         bool completionCalled = false;
@@ -248,7 +250,7 @@ private:
             completionCalled = !error.empty();
         });
         if (!completionCalled) {
-            fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
+            fail("A retained WebView2 view accepted work after its session was destroyed.");
             return;
         }
         retainedView.reset();
@@ -259,7 +261,7 @@ private:
         QTimer::singleShot(250, &application, &QApplication::quit);
     }
 
-    void fail(const QString& message)
+    void fail(const std::string& message)
     {
         if (failed) {
             return;
@@ -277,7 +279,7 @@ private:
             "result=failed architecture=%s scenario=%zu exit_code=1 detail=%s\n",
             architecture(),
             caseIndex,
-            message.toUtf8().constData());
+            message.c_str());
         std::fflush(stderr);
         application.exit(1);
     }
@@ -288,7 +290,7 @@ private:
     webview::WebViewSessionPtr session;
     webview::WebViewPtr view;
     std::size_t caseIndex = 0;
-    quint64 generation = 0;
+    std::uint64_t generation = 0;
     bool failed = false;
     const std::array<ProbeCase, 4> cases { {
         { webview::SessionMode::Persistent, ClearKind::Cache },
@@ -302,10 +304,7 @@ private:
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
-    std::printf(
-        "probe=webview2-runtime architecture=%s runtime_version=%s timeout_ms=15000\n",
-        architecture(),
-        runtimeVersion().toUtf8().constData());
+    std::printf("probe=webview2-runtime architecture=%s runtime_version=%s timeout_ms=15000\n", architecture(), runtimeVersion().c_str());
     std::fflush(stdout);
     auto probe = std::make_shared<RuntimeProbe>(application);
     if (!probe->isReady()) {

@@ -103,10 +103,10 @@ DemoWindow::DemoWindow()
     }
     auto webView = session_->createWebView();
     webView->open(application);
-    addTab(std::move(webView), QStringLiteral("Home"));
+    addTab(std::move(webView), "Home");
 }
 
-void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
+void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
 {
     auto* tab = new WebViewTab(std::move(webView), tabs_);
     auto* page = tab->webView();
@@ -117,19 +117,19 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         }
     };
     page->bridge().setEventHandler("window", [this, page](const QJsonObject& payload) {
-        const auto action = payload.value(QStringLiteral("action")).toString();
-        if (action == QStringLiteral("drag") && windowHandle()) {
+        const auto action = payload.value(QStringLiteral("action")).toString().toStdString();
+        if (action == "drag" && windowHandle()) {
             windowHandle()->startSystemMove();
         }
-        else if (action == QStringLiteral("minimize")) {
+        else if (action == "minimize") {
             showMinimized();
         }
-        else if (action == QStringLiteral("maximize")) {
+        else if (action == "maximize") {
             const bool maximize = !isMaximized();
             maximize ? showMaximized() : showNormal();
             page->bridge().emitEvent("window-state", { { "maximized", maximize } });
         }
-        else if (action == QStringLiteral("close")) {
+        else if (action == "close") {
             close();
         }
     });
@@ -138,7 +138,7 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         page->bridge().emitEvent("ack", { { "message", "Native received your message." } });
     });
     callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
-        addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
+        addTab(std::move(child), request.url.host().isEmpty() ? "New tab" : request.url.host().toStdString());
     };
     page->setHostCallbacks(std::move(callbacks));
     page->whenInitialized([this](const webview::InitializationResult& result) {
@@ -146,7 +146,7 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
             status_->setText(QStringLiteral("Initialization failed: %1").arg(QString::fromStdString(result.error)));
         }
     });
-    const int index = tabs_->addTab(tab, title);
+    const int index = tabs_->addTab(tab, QString::fromStdString(title));
     tabs_->setCurrentIndex(index);
     tabs_->widget(index)->layout()->activate();
     page->attachNativeView();

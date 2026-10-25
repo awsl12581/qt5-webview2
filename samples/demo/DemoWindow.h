@@ -2,6 +2,8 @@
 
 #include <QMainWindow>
 
+#include <string>
+
 #include <system_webview/system_webview.h>
 
 class QLabel;
@@ -15,7 +17,7 @@ public:
     DemoWindow();
 
 private:
-    void addTab(webview::WebViewPtr webView, const QString& title);
+    void addTab(webview::WebViewPtr webView, const std::string& title);
 
     QTabWidget* tabs_ = nullptr;
     QLabel* status_ = nullptr;

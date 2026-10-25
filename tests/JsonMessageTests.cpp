@@ -16,14 +16,16 @@
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <string>
+#include <vector>
 
 namespace
 {
-QStringList capturedMessages;
+std::vector<std::string> capturedMessages;
 
 void captureMessage(QtMsgType, const QMessageLogContext& context, const QString& message)
 {
-    capturedMessages.push_back(QStringLiteral("%1|%2").arg(QString::fromLatin1(context.category), message));
+    capturedMessages.push_back(std::string(context.category) + "|" + message.toStdString());
 }
 
 class MemoryBridgeTransport final : public webview::BridgeTransport
@@ -81,18 +83,21 @@ int main()
         diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, "terminated", 9 });
         assert(!runtimeFailureReceived);
     }
-    const auto diagnosticText = capturedMessages.join(QLatin1Char('\n'));
-    assert(diagnosticText.contains(QStringLiteral("event=view.created")));
-    assert(diagnosticText.contains(QStringLiteral("system_webview.lifecycle")));
-    assert(diagnosticText.contains(QStringLiteral("event=view.ready")));
-    assert(diagnosticText.count(QStringLiteral("event=view.ready")) == 1);
-    assert(diagnosticText.contains(QStringLiteral("event=navigation.failed")));
-    assert(diagnosticText.contains(QStringLiteral("event=view.closed")));
-    assert(diagnosticText.contains(QStringLiteral("session= 41")));
-    assert(diagnosticText.contains(QStringLiteral("origin= https://example.com")));
-    assert(!diagnosticText.contains(QStringLiteral("password")));
-    assert(!diagnosticText.contains(QStringLiteral("private")));
-    assert(!diagnosticText.contains(QStringLiteral("secret")));
+    std::string diagnosticText;
+    for (const auto& message : capturedMessages) {
+        diagnosticText += message + "\n";
+    }
+    assert(diagnosticText.find("event=view.created") != std::string::npos);
+    assert(diagnosticText.find("system_webview.lifecycle") != std::string::npos);
+    assert(diagnosticText.find("event=view.ready") != std::string::npos);
+    assert(diagnosticText.find("event=view.ready") == diagnosticText.rfind("event=view.ready"));
+    assert(diagnosticText.find("event=navigation.failed") != std::string::npos);
+    assert(diagnosticText.find("event=view.closed") != std::string::npos);
+    assert(diagnosticText.find("session= 41") != std::string::npos);
+    assert(diagnosticText.find("origin= https://example.com") != std::string::npos);
+    assert(diagnosticText.find("password") == std::string::npos);
+    assert(diagnosticText.find("private") == std::string::npos);
+    assert(diagnosticText.find("secret") == std::string::npos);
     qInstallMessageHandler(previousHandler);
     QLoggingCategory::setFilterRules(QString());
 
@@ -436,18 +441,18 @@ int main()
     assert(queuedClose);
 
     webview::InitializationScheduler scheduler;
-    QStringList operationOrder;
+    std::vector<std::string> operationOrder;
     scheduler.runWhenReady([&](const webview::InitializationResult& result) {
         assert(result.state == webview::InitializationState::Ready);
-        operationOrder.push_back(QStringLiteral("first"));
+        operationOrder.push_back("first");
         scheduler.runWhenReady([&](const webview::InitializationResult& nestedResult) {
             assert(nestedResult.state == webview::InitializationState::Ready);
-            operationOrder.push_back(QStringLiteral("nested"));
+            operationOrder.push_back("nested");
         });
     });
-    scheduler.runWhenReady([&](const webview::InitializationResult&) { operationOrder.push_back(QStringLiteral("second")); });
+    scheduler.runWhenReady([&](const webview::InitializationResult&) { operationOrder.push_back("second"); });
     scheduler.markReady();
-    assert(operationOrder == QStringList({ QStringLiteral("first"), QStringLiteral("second"), QStringLiteral("nested") }));
+    assert(operationOrder == std::vector<std::string>({ "first", "second", "nested" }));
 
     auto completionState = std::make_shared<webview::WebViewState>();
     webview::HostCompletionGuard completionGuard(completionState);

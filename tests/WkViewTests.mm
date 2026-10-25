@@ -11,7 +11,9 @@
 #include <QWidget>
 
 #include <cassert>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace {
@@ -60,42 +62,43 @@ struct ServerStats {
     int slowRequests = 0;
 };
 
-void serveConnection(QTcpSocket* socket, quint16 port, ServerStats* stats)
+void serveConnection(QTcpSocket* socket, std::uint16_t port, ServerStats* stats)
 {
     QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, port, stats] {
-        const auto request = socket->readAll();
-        QByteArray response;
-        if (request.startsWith("GET /redirect ")) {
-            response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(port)
+        const auto request = socket->readAll().toStdString();
+        std::string response;
+        if (request.starts_with("GET /redirect ")) {
+            response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + std::to_string(port)
                 + "/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         }
-        else if (request.startsWith("GET /download ")) {
-            const QByteArray body = "download-data";
+        else if (request.starts_with("GET /download ")) {
+            const std::string body = "download-data";
             response = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
                        "Content-Disposition: attachment; filename=test.bin\r\nContent-Length: "
-                + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+                + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
         }
-        else if (request.startsWith("GET /slow ")) {
+        else if (request.starts_with("GET /slow ")) {
             ++stats->slowRequests;
             QTimer::singleShot(500, socket, [socket] {
                 if (socket->state() == QAbstractSocket::ConnectedState) {
-                    const QByteArray body = "<!doctype html><title>slow</title>done";
-                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + QByteArray::number(body.size())
-                        + "\r\nConnection: close\r\n\r\n" + body);
+                    const std::string body = "<!doctype html><title>slow</title>done";
+                    const auto response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(body.size())
+                        + "\r\nConnection: close\r\n\r\n" + body;
+                    socket->write(response.data(), static_cast<qint64>(response.size()));
                     socket->disconnectFromHost();
                 }
             });
             return;
         }
         else {
-            if (request.startsWith("GET /reload ")) {
+            if (request.starts_with("GET /reload ")) {
                 ++stats->reloadRequests;
             }
-            const QByteArray body = "<!doctype html><title>final</title>done";
-            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + QByteArray::number(body.size())
+            const std::string body = "<!doctype html><title>final</title>done";
+            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(body.size())
                 + "\r\nConnection: close\r\n\r\n" + body;
         }
-        socket->write(response);
+        socket->write(response.data(), static_cast<qint64>(response.size()));
         socket->disconnectFromHost();
     });
     QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
@@ -120,7 +123,7 @@ int main(int argc, char** argv)
     int popupCount = 0;
     bool hostileReturned = false;
     bool hostileExecuted = false;
-    QString hostileReturnedPayload;
+    std::string hostileReturnedPayload;
     QEventLoop loop;
     QTimer timeout;
     timeout.setSingleShot(true);
@@ -140,7 +143,7 @@ int main(int argc, char** argv)
         if (payload.contains(QStringLiteral("executed"))) {
             hostileReturned = true;
             hostileExecuted = payload.value(QStringLiteral("executed")).toBool();
-            hostileReturnedPayload = payload.value(QStringLiteral("message")).toString();
+            hostileReturnedPayload = payload.value(QStringLiteral("message")).toString().toStdString();
             loop.quit();
         }
         else {
@@ -148,7 +151,7 @@ int main(int argc, char** argv)
             assert(payload.value(QStringLiteral("resourceVerified")).toBool());
         }
     });
-    const QString html = QStringLiteral(R"HTML(
+    const std::string html = R"HTML(
 <!doctype html><html><head><meta charset="utf-8"></head><body>
 <script src="脚本.js"></script>
 <iframe srcdoc="<script>window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'frame'}})</script>"></iframe>
@@ -172,17 +175,17 @@ window.addEventListener('DOMContentLoaded', () => {
   window.open('https://trusted.example/popup');
 });
 </script>
-</body></html>)HTML");
+</body></html>)HTML";
     QTemporaryDir bridgeRoot;
     assert(bridgeRoot.isValid());
     QFile scriptResource(bridgeRoot.filePath(QStringLiteral("脚本.js")));
-    const auto scriptBytes = "window.resourceText='" + QByteArray(300 * 1024, 'x') + QStringLiteral("结束';").toUtf8();
+    const auto scriptBytes = "window.resourceText='" + std::string(300 * 1024, 'x') + "结束';";
     assert(scriptResource.open(QIODevice::WriteOnly));
-    assert(scriptResource.write(scriptBytes) == scriptBytes.size());
+    assert(scriptResource.write(scriptBytes.data(), static_cast<qint64>(scriptBytes.size())) == static_cast<qint64>(scriptBytes.size()));
     scriptResource.close();
     QFile bridgeEntry(bridgeRoot.filePath(QStringLiteral("index.html")));
     assert(bridgeEntry.open(QIODevice::WriteOnly));
-    assert(bridgeEntry.write(html.toUtf8()) == html.toUtf8().size());
+    assert(bridgeEntry.write(html.data(), static_cast<qint64>(html.size())) == static_cast<qint64>(html.size()));
     bridgeEntry.close();
     webview::WebApplicationOptions bridgeApplicationOptions;
     bridgeApplicationOptions.id = "bridge-test";
@@ -216,15 +219,15 @@ window.addEventListener('DOMContentLoaded', () => {
     rejectionLoop.exec();
     assert(events.size() == eventCount);
 
-    const QString hostilePayload = QStringLiteral("</script><script>window.__payloadExecuted=true</script>");
-    view->bridge().emitEvent("hello", { { QStringLiteral("message"), hostilePayload } });
+    const std::string hostilePayload = "</script><script>window.__payloadExecuted=true</script>";
+    view->bridge().emitEvent("hello", { { QStringLiteral("message"), QString::fromStdString(hostilePayload) } });
     timeout.start(10000);
     loop.exec();
     assert(hostileReturned);
     assert(hostileReturnedPayload == hostilePayload);
     assert(!hostileExecuted);
 
-    const QString replayHtml = QStringLiteral(R"HTML(
+    const std::string replayHtml = R"HTML(
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => {
   window.webkit.messageHandlers.systemWebView.postMessage({
@@ -232,9 +235,9 @@ window.addEventListener('DOMContentLoaded', () => {
     message: {version:1,type:'hello',payload:{message:'stale'}}
   });
 });
-</script>)HTML");
+</script>)HTML";
     events.clear();
-    view->loadDocument(replayHtml.toStdString(), QUrl(QStringLiteral("https://trusted.example/next.html")));
+    view->loadDocument(replayHtml, QUrl(QStringLiteral("https://trusted.example/next.html")));
     timeout.start(10000);
     loop.exec();
     assert(events.back().state == webview::LoadState::Finished);
