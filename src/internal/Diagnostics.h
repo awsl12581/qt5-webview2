@@ -1,8 +1,9 @@
 #pragma once
 
 #include <QLoggingCategory>
-#include <QString>
 #include <QUrl>
+#include <cstdint>
+#include <string>
 
 Q_DECLARE_LOGGING_CATEGORY(systemWebViewLifecycle)
 Q_DECLARE_LOGGING_CATEGORY(systemWebViewNavigation)
@@ -20,6 +21,6 @@ enum class DiagnosticScope
     View
 };
 
-quint64 nextDiagnosticId();
-QString diagnosticOrigin(const QUrl& url);
+std::uint64_t nextDiagnosticId();
+std::string diagnosticOrigin(const QUrl& url);
 } // namespace webview

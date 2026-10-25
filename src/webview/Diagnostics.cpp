@@ -11,21 +11,21 @@ Q_LOGGING_CATEGORY(systemWebViewRuntime, "system_webview.runtime", QtInfoMsg)
 
 namespace webview
 {
-quint64 nextDiagnosticId()
+std::uint64_t nextDiagnosticId()
 {
-    static std::atomic<quint64> nextId { 1 };
+    static std::atomic<std::uint64_t> nextId { 1 };
     return nextId.fetch_add(1, std::memory_order_relaxed);
 }
 
-QString diagnosticOrigin(const QUrl& url)
+std::string diagnosticOrigin(const QUrl& url)
 {
     if (!url.isValid() || url.scheme().isEmpty()) {
-        return QStringLiteral("invalid");
+        return "invalid";
     }
     QUrl origin;
     origin.setScheme(url.scheme().toLower());
     origin.setHost(url.host().toLower());
     origin.setPort(url.port());
-    return origin.toString(QUrl::FullyEncoded);
+    return origin.toString(QUrl::FullyEncoded).toStdString();
 }
 } // namespace webview

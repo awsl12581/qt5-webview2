@@ -1,12 +1,13 @@
 #pragma once
 
-#include <QString>
+#include <string>
+#include <string_view>
 
 namespace webview
 {
-QString bridgePageScript(
-    const QString& documentTokenExpression,
-    const QString& nativePostExpression,
-    const QString& nativeReceiveRegistration,
-    const QString& prelude = { });
+std::string bridgePageScript(
+    std::string_view documentTokenExpression,
+    std::string_view nativePostExpression,
+    std::string_view nativeReceiveRegistration,
+    std::string_view prelude = {});
 }

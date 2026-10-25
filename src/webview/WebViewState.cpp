@@ -254,7 +254,7 @@ void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, cons
     if (loadState == LoadState::Failed) {
         qCWarning(systemWebViewNavigation).noquote()
             << "event=navigation.failed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId
-            << "navigation=" << eventNavigationId << "origin=" << diagnosticOrigin(url);
+            << "navigation=" << eventNavigationId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
     }
     if (!lifetime.isClosed() && callbacks.onLoad) {
         callbacks.onLoad({ loadState, url, error, eventNavigationId, true });

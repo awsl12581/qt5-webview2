@@ -12,7 +12,7 @@
 #include <QFileInfo>
 #include <QMimeDatabase>
 #include <QRegularExpression>
-#include <QSet>
+#include <unordered_set>
 
 #include <vector>
 
@@ -76,17 +76,15 @@
     }
     else {
         mapping = webview::findResourceMapping(state->resourceMappings, url);
-        QString errorText;
+        std::string errorText;
         const auto accept = [task.request valueForHTTPHeaderField:@"Accept"];
         const bool mainDocumentRequest = accept && [accept containsString:@"text/html"];
-        path = mapping ? webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest) : QString();
+        path = mapping ? QString::fromStdString(webview::resolveMappedResource(*mapping, url, &errorText, mainDocumentRequest)) : QString();
         if (path.isEmpty()) {
             [task didFailWithError:[NSError
                                        errorWithDomain:NSURLErrorDomain
                                                   code:NSURLErrorFileDoesNotExist
-                                              userInfo:@{
-                                                  NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.toUtf8().constData()]
-                                              }]];
+                                              userInfo:@{ NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.c_str()] }]];
             return;
         }
         mimeType = QMimeDatabase().mimeTypeForFile(path).name();
@@ -143,8 +141,8 @@
     }];
     if (mapping && mimeType == QStringLiteral("text/html")) {
         const auto policy = webview::localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
-        if (!policy.isEmpty()) {
-            headers[@"Content-Security-Policy"] = [NSString stringWithUTF8String:policy.toUtf8().constData()];
+        if (!policy.empty()) {
+            headers[@"Content-Security-Policy"] = [NSString stringWithUTF8String:policy.c_str()];
         }
     }
     if (status == webview::httpStatus::kPartialContent) {
@@ -214,7 +212,7 @@ public:
     WKProcessPool* processPool = nil;
     id schemeHandler = nil;
     std::shared_ptr<WkSessionState> state = std::make_shared<WkSessionState>();
-    QSet<QString> applicationIds;
+    std::unordered_set<std::string> applicationIds;
     QVector<WebApplicationPtr> applications;
 };
 
@@ -245,18 +243,18 @@ void WkWebViewSession::whenInitialized(InitializationCompletion completion)
 
 WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions options)
 {
-    QString error;
+    std::string error;
     const auto application = webview::createApplication(std::move(options), &error);
     if (!application || impl_->applicationIds.contains(application->id()))
         return { };
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
-        ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback,
-            bundle->externalNetworkAccess };
-        QVector<ResourceMapping> candidate = impl_->state->resourceMappings;
+        ResourceMapping mapping { application->origin(), bundle->directory.toStdString(), bundle->entryDocument.toStdString(),
+            bundle->spaFallback, bundle->externalNetworkAccess };
+        std::vector<ResourceMapping> candidate = impl_->state->resourceMappings;
         candidate.push_back(std::move(mapping));
         if (!validateResourceMappings(&candidate, &error)
-            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty())
-            return { };
+            || resolveMappedResource(candidate.back(), application->urlForRoute({}), &error).empty())
+            return {};
         impl_->state->resourceMappings = std::move(candidate);
     }
     impl_->applicationIds.insert(application->id());

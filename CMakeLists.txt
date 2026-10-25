@@ -11,9 +11,12 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         "Install path prefix" FORCE)
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_OBJCXX_STANDARD 20)
+set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+set(CMAKE_OBJCXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
@@ -37,7 +40,7 @@ target_include_directories(system_webview PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(system_webview PUBLIC Qt5::Widgets)
-target_compile_features(system_webview PUBLIC cxx_std_17)
+target_compile_features(system_webview PUBLIC cxx_std_20)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
 set_target_properties(system_webview PROPERTIES
     CXX_VISIBILITY_PRESET hidden

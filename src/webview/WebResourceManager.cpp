@@ -286,7 +286,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     if (!expectedOrigin.isValid() || origin != expectedOrigin || sourceOrigin != impl_->documentOrigin) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << diagnosticOrigin(request.url) << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
+            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
+            << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
         return { httpStatus::kForbidden };
     }
 
@@ -296,20 +297,21 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         const int status = impl_->revoked.contains(token) ? httpStatus::kGone : httpStatus::kNotFound;
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << diagnosticOrigin(request.url) << "status=" << status;
+            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << "status=" << status;
         return { status };
     }
     const auto entry = it.value();
     if (entry->expiresAt <= QDateTime::currentDateTimeUtc()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << diagnosticOrigin(request.url) << QStringLiteral("status=%1").arg(httpStatus::kGone);
+            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << QStringLiteral("status=%1").arg(httpStatus::kGone);
         return { httpStatus::kGone };
     }
     if (!entry->document.isEmpty() && entry->document != request.documentToken) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << diagnosticOrigin(request.url) << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
+            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
+            << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
         return { httpStatus::kForbidden };
     }
 
@@ -349,7 +351,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         || (!hasRange && entry->size > 0 && (start < 0 || start > end))) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << diagnosticOrigin(request.url) << QStringLiteral("status=%1").arg(httpStatus::kRangeNotSatisfiable);
+            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
+            << QStringLiteral("status=%1").arg(httpStatus::kRangeNotSatisfiable);
         ResourceResponse response;
         response.status = httpStatus::kRangeNotSatisfiable;
         response.mimeType = entry->mime;

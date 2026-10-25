@@ -2,14 +2,14 @@
 
 # System WebView
 
-> Last modified: 2026-09-24 17:29 CST
-> Document version: v3
-> Change: Documented the single public header and shared-library build.
+> 最后修改时间：2026-10-25 21:51 CST
+> 文档版本：v4
+> 修改说明：Documented C++20 requirements and the isolated verification preset.
 
 A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
 <p>
-  <a href="https://en.cppreference.com/w/cpp/17"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&amp;logoColor=white" alt="C++17"></a>
+  <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/Qt-5.15-41CD52?logo=qt&amp;logoColor=white" alt="Qt 5.15"></a>
   <img src="https://img.shields.io/badge/Windows-WebView2-0078D4?logo=windows&amp;logoColor=white" alt="Windows WebView2">
   <img src="https://img.shields.io/badge/macOS-WKWebView-000000?logo=apple&amp;logoColor=white" alt="macOS WKWebView">
@@ -86,6 +86,16 @@ ctest --preset macos-appleclang-debug --output-on-failure
 
 Tests that create a real WKWebView need a logged-in GUI session with access to WindowServer.
 
+The project requires a C++20 compiler and standard library, including for Objective-C++ sources. Use an isolated build for temporary verification:
+
+```sh
+cmake --preset macos-appleclang-verify
+cmake --build --preset macos-appleclang-verify
+ctest --preset macos-appleclang-verify --output-on-failure
+```
+
+This preset writes to `build/verify-macos` and does not install artifacts.
+
 ## Use the library
 
 Create one session, register an application source, and attach a view to a Qt widget:
@@ -155,5 +165,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | v1 | Existing document | Initial project README. |
 | v2 | 2026-09-24 04:37 CEST | Added the public API reference link and standard metadata. |
 | v3 | 2026-09-24 17:29 CST | Documented the single public header and shared-library build. |
+| v4 | 2026-10-25 21:51 CST | Documented C++20 requirements and the isolated verification preset. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

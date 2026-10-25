@@ -12,13 +12,13 @@
 
 namespace webview
 {
-QString bridgePageScript(
-    const QString& documentTokenExpression,
-    const QString& nativePostExpression,
-    const QString& nativeReceiveRegistration,
-    const QString& prelude)
+std::string bridgePageScript(
+    std::string_view documentTokenExpression,
+    std::string_view nativePostExpression,
+    std::string_view nativeReceiveRegistration,
+    std::string_view prelude)
 {
-    return QStringLiteral(R"JS((() => {
+    constexpr std::string_view script = R"JS((() => {
   %4
   const pending = new Map();
   const handlers = new Map();
@@ -67,8 +67,20 @@ QString bridgePageScript(
     window.dispatchEvent(new CustomEvent('system-webview-message', { detail }));
   };
   %3
-})();)JS")
-        .arg(documentTokenExpression, nativePostExpression, nativeReceiveRegistration, prelude);
+})();)JS";
+    const std::string_view substitutions[] = { documentTokenExpression, nativePostExpression, nativeReceiveRegistration, prelude };
+    std::string result;
+    result.reserve(
+        script.size() + documentTokenExpression.size() + nativePostExpression.size() + nativeReceiveRegistration.size() + prelude.size());
+    for (std::size_t index = 0; index < script.size(); ++index) {
+        if (script[index] == '%' && index + 1 < script.size() && script[index + 1] >= '1' && script[index + 1] <= '4') {
+            result.append(substitutions[script[++index] - '1']);
+        }
+        else {
+            result.push_back(script[index]);
+        }
+    }
+    return result;
 }
 
 namespace

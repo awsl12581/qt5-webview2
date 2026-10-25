@@ -100,9 +100,9 @@ void installDocumentTransport(WebViewState& state, WKUserContentController* cont
     state.setResourceDocumentToken(state.documentToken);
     const auto escapedToken = QString::fromUtf8(QJsonDocument(QJsonArray { state.documentToken }).toJson(QJsonDocument::Compact));
     const auto tokenLiteral = escapedToken.mid(1, escapedToken.size() - 2);
-    const auto source = bridgePageScript(tokenLiteral, QStringLiteral("window.webkit.messageHandlers.systemWebView.postMessage"), { });
+    const auto source = bridgePageScript(tokenLiteral.toStdString(), "window.webkit.messageHandlers.systemWebView.postMessage", {});
     [content removeAllUserScripts];
-    auto* script = [[WKUserScript alloc] initWithSource:toNSString(source)
+    auto* script = [[WKUserScript alloc] initWithSource:[NSString stringWithUTF8String:source.c_str()]
                                           injectionTime:WKUserScriptInjectionTimeAtDocumentStart
                                        forMainFrameOnly:YES];
     [content addUserScript:script];
@@ -228,7 +228,8 @@ public:
     const webview::NewWindowRequest request { url, navigationAction.navigationType == WKNavigationTypeLinkActivated };
     if (self.state->policy->decideNewWindow(request) != webview::NewWindowDecision::Allow) {
         qCDebug(systemWebViewPolicy).noquote() << "event=policy.popup_denied" << "session=" << self.state->sessionDiagnosticId
-                                               << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(url);
+                                               << "view=" << self.state->diagnosticId
+                                               << "origin=" << QString::fromStdString(webview::diagnosticOrigin(url));
         return nil;
     }
     return static_cast<WKWebView*>(self.owner->createPopup(configuration, request));
@@ -251,7 +252,8 @@ public:
         = webview::decideNativePermission(*self.state->policy, { permissionKind(type), webview::normalizedOrigin(originUrl) });
     if (decision != webview::NativePermissionDecision::Grant) {
         qCDebug(systemWebViewPolicy).noquote() << "event=policy.permission_denied" << "session=" << self.state->sessionDiagnosticId
-                                               << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(originUrl);
+                                               << "view=" << self.state->diagnosticId
+                                               << "origin=" << QString::fromStdString(webview::diagnosticOrigin(originUrl));
     }
     decisionHandler(decision == webview::NativePermissionDecision::Grant ? WKPermissionDecisionGrant
             : decision == webview::NativePermissionDecision::Prompt      ? WKPermissionDecisionPrompt
@@ -412,7 +414,8 @@ public:
         self.state->callbacks.onOpenExternal(url);
     }
     qCDebug(systemWebViewPolicy).noquote() << "event=navigation.rejected" << "session=" << self.state->sessionDiagnosticId
-                                           << "view=" << self.state->diagnosticId << "origin=" << webview::diagnosticOrigin(url);
+                                           << "view=" << self.state->diagnosticId
+                                           << "origin=" << QString::fromStdString(webview::diagnosticOrigin(url));
     if (isMainFrame) {
         self.state->explicitMainFrameNavigationPending = false;
         self.state->provisionalMainFrameNavigation = false;
@@ -647,9 +650,9 @@ void WkWebView::open(WebApplicationPtr application, const QString& route)
     if (!application)
         return;
     impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : QUrl();
-    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(application->id()));
+    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(application->id())));
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
-    navigate(application->urlForRoute(route));
+    navigate(application->urlForRoute(route.toStdString()));
 }
 
 void WkWebView::navigate(const QUrl& url)

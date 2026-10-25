@@ -20,11 +20,11 @@ bool validId(const QString& id)
 }
 }
 
-WebApplicationPtr createApplication(WebApplicationOptions options, QString* error)
+WebApplicationPtr createApplication(WebApplicationOptions options, std::string* error)
 {
     if (!validId(options.id)) {
         if (error) {
-            *error = QStringLiteral("Application IDs must contain only letters, digits, and hyphens.");
+            *error = "Application IDs must contain only letters, digits, and hyphens.";
         }
         return { };
     }
@@ -34,14 +34,14 @@ WebApplicationPtr createApplication(WebApplicationOptions options, QString* erro
         if (root.canonicalFilePath().isEmpty() || !root.isDir() || bundle->entryDocument.isEmpty()
             || bundle->entryDocument.startsWith(QLatin1Char('/')) || entryParts.contains(QStringLiteral(".."))) {
             if (error) {
-                *error = QStringLiteral("LocalBundle requires an existing directory and entry document.");
+                *error = "LocalBundle requires an existing directory and entry document.";
             }
             return { };
         }
         if (bundle->externalNetworkAccess != ExternalNetworkAccess::Denied
             && bundle->externalNetworkAccess != ExternalNetworkAccess::Allowed) {
             if (error) {
-                *error = QStringLiteral("LocalBundle external network access is invalid.");
+                *error = "LocalBundle external network access is invalid.";
             }
             return { };
         }
@@ -55,13 +55,13 @@ WebApplicationPtr createApplication(WebApplicationOptions options, QString* erro
                                   : scheme != QStringLiteral("https"))
             || (url.path() != QStringLiteral("/") && !url.path().isEmpty()) || url.hasQuery() || url.hasFragment()) {
             if (error) {
-                *error = QStringLiteral("Application URL sources require an absolute origin URL.");
+                *error = "Application URL sources require an absolute origin URL.";
             }
             return { };
         }
     }
     auto application = std::make_shared<WebApplication>();
-    application->id_ = std::move(options.id);
+    application->id_ = options.id.toStdString();
     application->source_ = std::move(options.source);
     application->bridgeAccess_ = options.bridgeAccess;
     return application;
@@ -70,16 +70,17 @@ WebApplicationPtr createApplication(WebApplicationOptions options, QString* erro
 QUrl WebApplication::origin() const
 {
     if (std::holds_alternative<LocalBundle>(source_)) {
-        return QUrl(QStringLiteral("app://%1").arg(id_));
+        return QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(id_)));
     }
     return std::get_if<DevelopmentServer>(&source_) ? std::get<DevelopmentServer>(source_).url : std::get<RemoteOrigin>(source_).url;
 }
 
-QUrl WebApplication::urlForRoute(const QString& route) const
+QUrl WebApplication::urlForRoute(std::string_view route) const
 {
     QUrl url = origin();
-    const auto cleanRoute =
-        route.isEmpty() ? (std::holds_alternative<LocalBundle>(source_) ? std::get<LocalBundle>(source_).entryDocument : QString()) : route;
+    const auto cleanRoute = route.empty()
+                                ? (std::holds_alternative<LocalBundle>(source_) ? std::get<LocalBundle>(source_).entryDocument : QString())
+                                : QString::fromUtf8(route.data(), static_cast<int>(route.size()));
     url.setPath(cleanRoute.startsWith(QLatin1Char('/')) ? cleanRoute : QStringLiteral("/") + cleanRoute);
     return url;
 }

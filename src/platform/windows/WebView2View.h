@@ -44,7 +44,7 @@ private:
         std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState,
         WebViewPolicyPtr policy,
-        std::shared_ptr<QVector<ResourceMapping>> resourceMappings,
+        std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
         SessionMode sessionMode,
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose = { });

@@ -298,7 +298,7 @@ public:
         std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState,
         WebViewPolicyPtr policy,
-        std::shared_ptr<QVector<ResourceMapping>> resourceMappings,
+        std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
         SessionMode sessionMode,
         std::function<QString(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose)
@@ -467,14 +467,14 @@ public:
                                 }
                                 else {
                                     mapping = findResourceMapping(*mappings, url);
-                                    QString error;
-                                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT context { };
+                                    std::string error;
+                                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT context {};
                                     args->get_ResourceContext(&context);
-                                    filePath = mapping ? resolveMappedResource(
+                                    filePath = mapping ? QString::fromStdString(resolveMappedResource(
                                                              *mapping,
                                                              url,
                                                              &error,
-                                                             context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)
+                                                             context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT))
                                                        : QString();
                                     if (filePath.isEmpty()) {
                                         return S_OK;
@@ -526,8 +526,9 @@ public:
                                     + L"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
                                 if (mapping && mime == QStringLiteral("text/html")) {
                                     const auto policy = localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
-                                    if (!policy.isEmpty()) {
-                                        headerText += L"Content-Security-Policy: " + policy.toStdWString() + L"\r\n";
+                                    if (!policy.empty()) {
+                                        headerText +=
+                                            L"Content-Security-Policy: " + QString::fromStdString(policy).toStdWString() + L"\r\n";
                                     }
                                 }
                                 if (status == httpStatus::kPartialContent) {
@@ -579,7 +580,7 @@ public:
                                 if (decision != PermissionDecision::Allow) {
                                     qCDebug(systemWebViewPolicy).noquote()
                                         << "event=policy.permission_denied" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(origin);
+                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(origin));
                                 }
                                 args->put_State(
                                     decision == PermissionDecision::Allow ? COREWEBVIEW2_PERMISSION_STATE_ALLOW
@@ -613,7 +614,7 @@ public:
                                 if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow) {
                                     qCDebug(systemWebViewPolicy).noquote()
                                         << "event=policy.popup_denied" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
+                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
                                     args->put_Handled(TRUE);
                                     if (deferral) {
                                         deferral->Complete();
@@ -727,7 +728,7 @@ public:
                                         || !state->callbacks.onResolveDownload) {
                                         qCDebug(systemWebViewPolicy).noquote()
                                             << "event=policy.download_denied" << "session=" << state->sessionDiagnosticId
-                                            << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
+                                            << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
                                         args->put_Cancel(TRUE);
                                         return S_OK;
                                     }
@@ -814,14 +815,14 @@ public:
                                 if (decision == NavigationDecision::Cancel) {
                                     qCDebug(systemWebViewPolicy).noquote()
                                         << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
+                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
                                     args->put_Cancel(TRUE);
                                     return S_OK;
                                 }
                                 if (decision == NavigationDecision::OpenExternally) {
                                     qCDebug(systemWebViewPolicy).noquote()
                                         << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
+                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
                                     args->put_Cancel(TRUE);
                                     if (state->callbacks.onOpenExternal) {
                                         state->callbacks.onOpenExternal(url);
@@ -963,14 +964,13 @@ public:
                             })
                             .Get(),
                         &processFailedToken);
-                    const QString transport = bridgePageScript(
-                        QStringLiteral("window.__systemWebViewToken"),
-                        QStringLiteral("window.chrome.webview.postMessage"),
-                        QStringLiteral(
-                            "window.chrome.webview.addEventListener('message', event => window.__systemWebViewReceive(event.data));"),
-                        QStringLiteral("window.__systemWebViewToken = null;"));
+                    const auto transport = bridgePageScript(
+                        "window.__systemWebViewToken",
+                        "window.chrome.webview.postMessage",
+                        "window.chrome.webview.addEventListener('message', event => window.__systemWebViewReceive(event.data));",
+                        "window.__systemWebViewToken = null;");
                     const HRESULT transportResult = webview->AddScriptToExecuteOnDocumentCreated(
-                        transport.toStdWString().c_str(),
+                        QString::fromStdString(transport).toStdWString().c_str(),
                         Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
                             [state, owner](HRESULT result, LPCWSTR) -> HRESULT {
                                 if (FAILED(result)) {
@@ -1031,7 +1031,7 @@ public:
     EventRegistrationToken newWindowToken { };
     EventRegistrationToken downloadToken { };
     WebViewPolicyPtr policy;
-    std::shared_ptr<QVector<ResourceMapping>> resourceMappings;
+    std::shared_ptr<std::vector<ResourceMapping>> resourceMappings;
     SessionMode sessionMode = SessionMode::Persistent;
     std::function<QString(ICoreWebView2*)> registerProfile;
     std::function<void(std::function<void()>)> registerSessionClose;
@@ -1143,7 +1143,7 @@ WebView2View::WebView2View(
     std::function<ICoreWebView2Environment*()> environmentProvider,
     std::shared_ptr<WebViewState> sessionState,
     WebViewPolicyPtr policy,
-    std::shared_ptr<QVector<ResourceMapping>> resourceMappings,
+    std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
     SessionMode sessionMode,
     std::function<QString(ICoreWebView2*)> registerProfile,
     std::function<void(std::function<void()>)> registerSessionClose)
@@ -1200,9 +1200,9 @@ void WebView2View::open(WebApplicationPtr application, const QString& route)
         return;
     }
     impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : QUrl();
-    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(application->id()));
+    impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(application->id())));
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
-    navigate(application->urlForRoute(route));
+    navigate(application->urlForRoute(route.toStdString()));
 }
 
 void WebView2View::navigate(const QUrl& url)

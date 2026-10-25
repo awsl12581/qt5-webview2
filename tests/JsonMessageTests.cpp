@@ -1,4 +1,5 @@
 #include "internal/Application.h"
+#include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
 #include "webview/DocumentLifetime.h"
@@ -42,6 +43,11 @@ public:
 
 int main()
 {
+    const auto pageScript = webview::bridgePageScript("'%2-文档'", "native.send", "native.listen();", "const label = '%1';");
+    assert(pageScript.find("const send = message => native.send({ documentToken: ('%2-文档'), message });") != std::string::npos);
+    assert(pageScript.find("const label = '%1';") != std::string::npos);
+    assert(pageScript.find("native.listen();") != std::string::npos);
+
     const auto previousHandler = qInstallMessageHandler(captureMessage);
     QLoggingCategory::setFilterRules(QStringLiteral("system_webview.*.debug=true\nsystem_webview.*.info=true"));
     {
@@ -425,28 +431,28 @@ int main()
         webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, { selectedRoot.path() }, { } });
     assert(directory.status == webview::FileSelectionStatus::InvalidResult);
 
-    QVector<webview::ResourceMapping> mappings {
-        { QUrl(QStringLiteral("app://demo")), selectedRoot.path(), QStringLiteral("index.html"), true }
+    std::vector<webview::ResourceMapping> mappings {
+        { QUrl(QStringLiteral("app://demo")), selectedRoot.path().toStdString(), "index.html", true }
     };
-    QString mappingError;
+    std::string mappingError;
     assert(webview::validateResourceMappings(&mappings, &mappingError));
-    assert(mappings.front().localDirectory == QFileInfo(selectedRoot.path()).canonicalFilePath());
+    assert(mappings.front().localDirectory == QFileInfo(selectedRoot.path()).canonicalFilePath().toStdString());
     const auto* mapping = webview::findResourceMapping(mappings, QUrl(QStringLiteral("app://demo/selected.txt")));
     assert(mapping);
     assert(
         webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/selected.txt")), &mappingError)
-        == QFileInfo(selectedFile).canonicalFilePath());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/%2e%2e/secret")), &mappingError).isEmpty());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.txt")), &mappingError).isEmpty());
+        == QFileInfo(selectedFile).canonicalFilePath().toStdString());
+    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/%2e%2e/secret")), &mappingError).empty());
+    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.txt")), &mappingError).empty());
     assert(
         webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/orders/42")), &mappingError, true)
-        == QFileInfo(indexFile.fileName()).canonicalFilePath());
-    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.js")), &mappingError, true).isEmpty());
+        == QFileInfo(indexFile.fileName()).canonicalFilePath().toStdString());
+    assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/missing.js")), &mappingError, true).empty());
     const auto deniedNetworkPolicy = webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Denied);
-    assert(deniedNetworkPolicy.contains(QStringLiteral("default-src 'self'")));
-    assert(deniedNetworkPolicy.contains(QStringLiteral("connect-src 'self'")));
-    assert(deniedNetworkPolicy.contains(QStringLiteral("form-action 'self'")));
-    assert(webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Allowed).isEmpty());
+    assert(deniedNetworkPolicy.find("default-src 'self'") != std::string::npos);
+    assert(deniedNetworkPolicy.find("connect-src 'self'") != std::string::npos);
+    assert(deniedNetworkPolicy.find("form-action 'self'") != std::string::npos);
+    assert(webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Allowed).empty());
     QTemporaryDir outsideRoot;
     assert(outsideRoot.isValid());
     const auto outsideFile = outsideRoot.filePath(QStringLiteral("secret.txt"));
@@ -456,13 +462,14 @@ int main()
     const auto linkedFile = selectedRoot.filePath(QStringLiteral("linked.txt"));
     assert(QFile::link(outsideFile, linkedFile));
     if (QFileInfo(linkedFile).isSymLink()) {
-        assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError).isEmpty());
+        assert(webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/linked.txt")), &mappingError).empty());
     }
 
-    QVector<webview::ResourceMapping> duplicateMappings { { QUrl(QStringLiteral("app://demo")), selectedRoot.path() },
-                                                          { QUrl(QStringLiteral("APP://DEMO")), selectedRoot.path() } };
+    std::vector<webview::ResourceMapping> duplicateMappings { { QUrl(QStringLiteral("app://demo")), selectedRoot.path().toStdString() },
+                                                              { QUrl(QStringLiteral("APP://DEMO")), selectedRoot.path().toStdString() } };
     assert(!webview::validateResourceMappings(&duplicateMappings, &mappingError));
-    QVector<webview::ResourceMapping> invalidMappings { { QUrl(QStringLiteral("https://demo/path")), selectedRoot.path() } };
+    std::vector<webview::ResourceMapping> invalidMappings { { QUrl(QStringLiteral("https://demo/path")),
+                                                              selectedRoot.path().toStdString() } };
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
     webview::WebApplicationOptions bundleOptions;
@@ -471,7 +478,15 @@ int main()
     const auto bundleApplication = webview::createApplication(std::move(bundleOptions), &mappingError);
     assert(bundleApplication);
     assert(std::get<webview::LocalBundle>(bundleApplication->source()).externalNetworkAccess == webview::ExternalNetworkAccess::Denied);
-    assert(bundleApplication->urlForRoute(QStringLiteral("orders/42")) == QUrl(QStringLiteral("app://demo-app/orders/42")));
+    assert(bundleApplication->urlForRoute("orders/42") == QUrl(QStringLiteral("app://demo-app/orders/42")));
+    assert(bundleApplication->urlForRoute("订单/详情") == QUrl(QStringLiteral("app://demo-app/订单/详情")));
+    const auto unicodeFile = selectedRoot.filePath(QStringLiteral("数据.txt"));
+    QFile unicodeResource(unicodeFile);
+    assert(unicodeResource.open(QIODevice::WriteOnly));
+    unicodeResource.close();
+    assert(
+        webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/数据.txt")), &mappingError)
+        == QFileInfo(unicodeFile).canonicalFilePath().toStdString());
     webview::WebApplicationOptions invalidNetworkAccess;
     invalidNetworkAccess.id = QStringLiteral("invalid-network-access");
     invalidNetworkAccess.source =
@@ -481,9 +496,7 @@ int main()
     devOptions.id = QStringLiteral("demo-dev");
     devOptions.source = webview::DevelopmentServer { QUrl(QStringLiteral("http://127.0.0.1:5173")) };
     const auto devApplication = webview::createApplication(std::move(devOptions), &mappingError);
-    assert(
-        devApplication
-        && devApplication->urlForRoute(QStringLiteral("assets/main.js")) == QUrl(QStringLiteral("http://127.0.0.1:5173/assets/main.js")));
+    assert(devApplication && devApplication->urlForRoute("assets/main.js") == QUrl(QStringLiteral("http://127.0.0.1:5173/assets/main.js")));
     webview::WebApplicationOptions remoteOptions;
     remoteOptions.id = QStringLiteral("demo-remote");
     remoteOptions.source = webview::RemoteOrigin { QUrl(QStringLiteral("https://example.com")) };

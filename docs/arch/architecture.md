@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> Last modified: 2026-09-24 18:29 CST
-> Document version: v10
-> Change: Documented diagnostic logging, runtime-failure callbacks, and crash-dump ownership.
+> 最后修改时间：2026-10-25 21:51 CST
+> 文档版本：v11
+> 修改说明：Documented C++20 and standard-library types at internal boundaries.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -12,6 +12,12 @@ implemented public classes and factory functions; on Windows it selects `dllexpo
 Public classes with library-owned state use PImpl, so changes to bridge, resource-manager, and policy internals do not change their public
 object layout. Pure interfaces and value types remain direct declarations.
 Public scoped enums explicitly use `int` as their underlying type, keeping their representation stable across the shared-library boundary.
+
+The project builds C++ and Objective-C++ sources as C++20 and exports the C++20 requirement to consumers.
+Internal application IDs, routes, diagnostic text, resource paths, and script text use UTF-8 standard strings;
+resource mappings use `std::vector`, and application-ID sets use `std::unordered_set`.
+Qt URL, JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
+boundaries; URL parsing, path authorization, message schemas, and the public Qt API retain their existing contracts.
 
 ## Ownership model
 
@@ -130,3 +136,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v8 | 2026-09-24 18:05 CST | Fixed the public enum underlying type and documented every enum value. |
 | v9 | 2026-09-24 18:17 CST | Documented host-enforced external network isolation for local bundles. |
 | v10 | 2026-09-24 18:29 CST | Documented diagnostic logging, runtime-failure callbacks, redaction, and crash-dump ownership. |
+| v11 | 2026-10-25 21:51 CST | Documented C++20 and standard-library types at internal boundaries. |

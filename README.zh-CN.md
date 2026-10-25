@@ -2,14 +2,14 @@
 
 # System WebView
 
-> 最后修改时间：2026-09-24 17:29 CST
-> 文档版本：v3
-> 修改说明：说明单一公开头文件和动态库构建方式。
+> 最后修改时间：2026-10-25 21:51 CST
+> 文档版本：v4
+> 修改说明：更新 C++20 要求，并补充独立验证 preset。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
 <p>
-  <a href="https://en.cppreference.com/w/cpp/17"><img src="https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&amp;logoColor=white" alt="C++17"></a>
+  <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
   <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/Qt-5.15-41CD52?logo=qt&amp;logoColor=white" alt="Qt 5.15"></a>
   <img src="https://img.shields.io/badge/Windows-WebView2-0078D4?logo=windows&amp;logoColor=white" alt="Windows WebView2">
   <img src="https://img.shields.io/badge/macOS-WKWebView-000000?logo=apple&amp;logoColor=white" alt="macOS WKWebView">
@@ -84,6 +84,16 @@ ctest --preset macos-appleclang-debug --output-on-failure
 ./build/macos-appleclang-debug/samples/demo/system_webview_demo
 ```
 
+项目要求支持 C++20 的编译器和标准库，Objective-C++ 后端也使用 C++20。临时验证使用独立构建目录，不覆盖开发构建或安装产物：
+
+```sh
+cmake --preset macos-appleclang-verify
+cmake --build --preset macos-appleclang-verify
+ctest --preset macos-appleclang-verify --output-on-failure
+```
+
+该预设输出到 `build/verify-macos`，不执行安装。
+
 创建真实 WKWebView 的测试需要在已登录的图形桌面中运行，并且能够访问 WindowServer。
 
 ## 接入项目
@@ -155,5 +165,6 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | v1 | 创建时 | 初始项目说明。 |
 | v2 | 2026-09-24 04:37 CEST | 增加公开接口速查链接，并补充统一文档元数据。 |
 | v3 | 2026-09-24 17:29 CST | 说明单一公开头文件和动态库构建方式。 |
+| v4 | 2026-10-25 21:51 CST | 更新 C++20 要求，并补充独立验证 preset。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

@@ -6,8 +6,8 @@
 #include "platform/windows/WebView2View.h"
 #include "webview/WebViewState.h"
 
-#include <QSet>
 #include <QWidget>
+#include <unordered_set>
 
 #include <WebView2.h>
 #if defined(_MSC_VER) && defined(__has_attribute)
@@ -201,8 +201,8 @@ public:
     }
 
     WebViewSessionOptions options;
-    std::shared_ptr<QVector<ResourceMapping>> resourceMappings = std::make_shared<QVector<ResourceMapping>>();
-    QSet<QString> applicationIds;
+    std::shared_ptr<std::vector<ResourceMapping>> resourceMappings = std::make_shared<std::vector<ResourceMapping>>();
+    std::unordered_set<std::string> applicationIds;
     QVector<WebApplicationPtr> applications;
     WebViewPolicyPtr policy;
     std::shared_ptr<AsyncState> async;
@@ -251,18 +251,22 @@ void WebView2Session::whenInitialized(InitializationCompletion completion)
 
 WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions options)
 {
-    QString error;
+    std::string error;
     const auto application = webview::createApplication(std::move(options), &error);
     if (!application || impl_->applicationIds.contains(application->id())) {
         return { };
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
-        QVector<ResourceMapping> candidate = *impl_->resourceMappings;
+        std::vector<ResourceMapping> candidate = *impl_->resourceMappings;
         candidate.push_back(
-            { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback, bundle->externalNetworkAccess });
+            { application->origin(),
+              bundle->directory.toStdString(),
+              bundle->entryDocument.toStdString(),
+              bundle->spaFallback,
+              bundle->externalNetworkAccess });
         if (!validateResourceMappings(&candidate, &error)
-            || resolveMappedResource(candidate.back(), application->urlForRoute({ }), &error).isEmpty()) {
-            return { };
+            || resolveMappedResource(candidate.back(), application->urlForRoute({}), &error).empty()) {
+            return {};
         }
         *impl_->resourceMappings = std::move(candidate);
     }

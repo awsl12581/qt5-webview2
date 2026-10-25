@@ -23,7 +23,7 @@ struct WkSessionState
     quint64 diagnosticId = 0;
     InitializationScheduler initialization;
     WebViewSessionHostCallbacks callbacks;
-    QVector<ResourceMapping> resourceMappings;
+    std::vector<ResourceMapping> resourceMappings;
     std::unordered_set<WkWebView*> views;
     std::mutex viewsMutex;
 };

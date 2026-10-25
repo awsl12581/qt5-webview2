@@ -125,6 +125,12 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
+        },
+        {
+            "name": "macos-appleclang-verify",
+            "displayName": "Apple Clang verification (Ninja)",
+            "inherits": "macos-appleclang-debug",
+            "binaryDir": "${sourceDir}/build/verify-macos"
         }
     ],
     "buildPresets": [
@@ -171,6 +177,10 @@
                 "lhs": "$env{PROCESSOR_ARCHITECTURE}",
                 "rhs": "AMD64"
             }
+        },
+        {
+            "name": "macos-appleclang-verify",
+            "configurePreset": "macos-appleclang-verify"
         }
     ],
     "testPresets": [
@@ -195,6 +205,10 @@
                 "lhs": "$env{PROCESSOR_ARCHITECTURE}",
                 "rhs": "AMD64"
             }
+        },
+        {
+            "name": "macos-appleclang-verify",
+            "configurePreset": "macos-appleclang-verify"
         }
     ]
 }
