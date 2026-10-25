@@ -64,8 +64,8 @@ private:
 
 DemoWindow::DemoWindow()
 {
-    setWindowFlag(Qt::FramelessWindowHint);
 #ifdef Q_OS_WIN
+    setWindowFlag(Qt::FramelessWindowHint);
     const auto hwnd = reinterpret_cast<HWND>(winId());
     const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
     const MARGINS shadow { 1, 1, 1, 1 };
