@@ -2,7 +2,7 @@
 
 namespace webview
 {
-bool hasExternalFileLink(const QString&)
+bool hasExternalFileLink(const std::filesystem::path&)
 {
     return false;
 }

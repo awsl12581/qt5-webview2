@@ -6,7 +6,8 @@
 #include <QJsonParseError>
 #include <QUuid>
 
-#include <QHash>
+#include <cstdint>
+#include <unordered_map>
 
 #include <utility>
 
@@ -144,19 +145,25 @@ class WebViewBridge::Impl
 public:
     struct Pending
     {
-        QString type;
+        std::string type;
         RequestCompletion completion;
     };
 
     std::unique_ptr<BridgeTransport> transport;
-    QHash<QString, Pending> pending;
-    QHash<QString, EventHandler> handlers;
-    QHash<QString, RequestHandler> requestHandlers;
+    std::unordered_map<std::string, Pending> pending;
+    std::unordered_map<std::string, EventHandler> handlers;
+    std::unordered_map<std::string, RequestHandler> requestHandlers;
     Validator validator;
-    quint64 sessionDiagnosticId = 0;
-    quint64 viewDiagnosticId = 0;
+    std::uint64_t sessionDiagnosticId = 0;
+    std::uint64_t viewDiagnosticId = 0;
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     bool valid = true;
+
+    Pending takePending(const std::string& requestId)
+    {
+        auto node = pending.extract(requestId);
+        return node.empty() ? Pending {} : std::move(node.mapped());
+    }
 };
 
 WebViewBridge::WebViewBridge(std::unique_ptr<BridgeTransport> transport)
@@ -194,25 +201,25 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
         }
         return;
     }
-    const auto requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto requestId = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
     const bool hasCompletion = static_cast<bool>(completion);
     if (hasCompletion) {
-        impl_->pending.insert(requestId, { type, std::move(completion) });
+        impl_->pending.insert_or_assign(requestId, Impl::Pending { type.toStdString(), std::move(completion) });
     }
     if (!impl_->transport) {
         qCDebug(systemWebViewBridge).noquote() << "event=bridge.transport_unavailable" << "session=" << impl_->sessionDiagnosticId
                                                << "view=" << impl_->viewDiagnosticId;
         if (hasCompletion) {
-            auto callback = impl_->pending.take(requestId);
-            callback.completion({ }, QStringLiteral("Bridge transport is unavailable."));
+            auto callback = impl_->takePending(requestId);
+            callback.completion({}, QStringLiteral("Bridge transport is unavailable."));
         }
         return;
     }
-    BridgeMessage message { 1, BridgeMessageKind::Request, type, requestId, payload, { } };
+    BridgeMessage message { 1, BridgeMessageKind::Request, type, QString::fromStdString(requestId), payload, {} };
     QString error;
     const auto bytes = encode(message);
     if (impl_->validator && !impl_->validator(message, true, bytes.size(), &error)) {
-        auto callback = impl_->pending.take(requestId);
+        auto callback = impl_->takePending(requestId);
         if (callback.completion) {
             callback.completion({ }, error);
         }
@@ -221,7 +228,7 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
     if (!impl_->transport->send(bytes)) {
         qCWarning(systemWebViewBridge).noquote()
             << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-        auto callback = impl_->pending.take(requestId);
+        auto callback = impl_->takePending(requestId);
         if (callback.completion) {
             callback.completion({ }, QStringLiteral("Bridge transport rejected the message."));
         }
@@ -231,10 +238,10 @@ void WebViewBridge::call(const QString& type, const QJsonObject& payload, Reques
 void WebViewBridge::setEventHandler(const QString& type, EventHandler handler)
 {
     if (handler) {
-        impl_->handlers.insert(type, std::move(handler));
+        impl_->handlers.insert_or_assign(type.toStdString(), std::move(handler));
     }
     else {
-        impl_->handlers.remove(type);
+        impl_->handlers.erase(type.toStdString());
     }
 }
 
@@ -247,10 +254,10 @@ void WebViewBridge::setDiagnosticContext(quint64 sessionId, quint64 viewId)
 void WebViewBridge::setRequestHandler(const QString& type, RequestHandler handler)
 {
     if (handler) {
-        impl_->requestHandlers.insert(type, std::move(handler));
+        impl_->requestHandlers.insert_or_assign(type.toStdString(), std::move(handler));
     }
     else {
-        impl_->requestHandlers.remove(type);
+        impl_->requestHandlers.erase(type.toStdString());
     }
 }
 
@@ -283,13 +290,13 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
         return;
     }
     if (envelope.kind == BridgeMessageKind::Response) {
-        const auto it = impl_->pending.find(envelope.requestId);
-        if (it == impl_->pending.end() || it->type != envelope.type) {
+        const auto it = impl_->pending.find(envelope.requestId.toStdString());
+        if (it == impl_->pending.end() || it->second.type != envelope.type.toStdString()) {
             qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
                                                    << "view=" << impl_->viewDiagnosticId << "reason=unexpected_response";
             return;
         }
-        auto callback = std::move(it->completion);
+        auto callback = std::move(it->second.completion);
         impl_->pending.erase(it);
         if (callback) {
             callback(envelope.payload, envelope.error);
@@ -297,7 +304,8 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
         return;
     }
     if (envelope.kind == BridgeMessageKind::Request) {
-        const auto handler = impl_->requestHandlers.value(envelope.type);
+        const auto found = impl_->requestHandlers.find(envelope.type.toStdString());
+        const auto handler = found == impl_->requestHandlers.end() ? RequestHandler {} : found->second;
         if (!impl_->transport) {
             return;
         }
@@ -326,7 +334,8 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
         }
         return;
     }
-    const auto handler = impl_->handlers.value(envelope.type);
+    const auto found = impl_->handlers.find(envelope.type.toStdString());
+    const auto handler = found == impl_->handlers.end() ? EventHandler {} : found->second;
     if (handler) {
         handler(envelope.payload);
     }
@@ -334,8 +343,8 @@ void WebViewBridge::receive(const QByteArray& message, const QUrl&)
 
 void WebViewBridge::cancelPending(const QString& error)
 {
-    const auto pending = std::exchange(impl_->pending, { });
-    for (const auto& callback : pending) {
+    const auto pending = std::exchange(impl_->pending, {});
+    for (const auto& [requestId, callback] : pending) {
         if (callback.completion) {
             callback.completion({ }, error);
         }

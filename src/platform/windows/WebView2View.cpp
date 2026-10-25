@@ -338,12 +338,12 @@ public:
                 return;
             }
             if (result.state != InitializationState::Ready) {
-                owner->state->failInitialization(result.error);
+                owner->state->failInitialization(result.error.toStdString());
                 return;
             }
             owner->environment = owner->environmentProvider ? owner->environmentProvider() : nullptr;
             if (!owner->environment) {
-                owner->state->failInitialization(QStringLiteral("WebView2 environment is unavailable."));
+                owner->state->failInitialization("WebView2 environment is unavailable.");
                 return;
             }
             const HWND hwnd = reinterpret_cast<HWND>(owner->container->winId());
@@ -365,15 +365,17 @@ public:
                     auto& webMessageToken = owner->webMessageToken;
                     auto& processFailedToken = owner->processFailedToken;
                     if (FAILED(hr) || !created) {
-                        state->failInitialization(QStringLiteral("WebView2 controller creation failed (HRESULT 0x%1).")
-                                                      .arg(QString::number(static_cast<quint32>(hr), 16)));
+                        state->failInitialization((QStringLiteral("WebView2 controller creation failed (HRESULT 0x%1).")
+                                                       .arg(QString::number(static_cast<quint32>(hr), 16)))
+                                                      .toStdString());
                         return S_OK;
                     }
                     controller = created;
                     const HRESULT coreResult = controller->get_CoreWebView2(webview.GetAddressOf());
                     if (FAILED(coreResult) || !webview) {
-                        state->failInitialization(QStringLiteral("WebView2 core object unavailable (HRESULT 0x%1).")
-                                                      .arg(QString::number(static_cast<quint32>(coreResult), 16)));
+                        state->failInitialization((QStringLiteral("WebView2 core object unavailable (HRESULT 0x%1).")
+                                                       .arg(QString::number(static_cast<quint32>(coreResult), 16)))
+                                                      .toStdString());
                         return S_OK;
                     }
                     state->bridge->setTransport(std::make_unique<WebView2BridgeTransport>(webview));
@@ -383,7 +385,7 @@ public:
                         controller->Close();
                         controller.Reset();
                         webview.Reset();
-                        state->failInitialization(profileError);
+                        state->failInitialization(profileError.toStdString());
                         return S_OK;
                     }
                     const auto environmentForRequests = owner->environment;
@@ -451,8 +453,8 @@ public:
                                         rangeHeader = QString::fromWCharArray(rawRange);
                                         CoTaskMemFree(rawRange);
                                     }
-                                    resourceResponse =
-                                        state->resources->open({ url, state->committedUrl, state->documentToken, rangeHeader });
+                                    resourceResponse = state->resources->open(
+                                        { url, state->committedUrl, QString::fromStdString(state->documentToken), rangeHeader });
                                     status = resourceResponse.status;
                                     mime = resourceResponse.mimeType;
                                     totalSize = resourceResponse.totalSize;
@@ -831,7 +833,7 @@ public:
                                 }
                                 if (!redirected) {
                                     state->invalidateDocument();
-                                    state->documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                                    state->documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
                                     state->setResourceDocumentToken(state->documentToken);
                                 }
                                 state->emitLoad(redirected ? LoadState::Redirected : LoadState::Started, id, url);
@@ -864,7 +866,8 @@ public:
                                 }
                                 CoTaskMemFree(rawSource);
                                 const QString tokenLiteral =
-                                    QString::fromUtf8(QJsonDocument(QJsonArray { state->documentToken }).toJson(QJsonDocument::Compact));
+                                    QString::fromUtf8(QJsonDocument(QJsonArray { QString::fromStdString(state->documentToken) })
+                                                          .toJson(QJsonDocument::Compact));
                                 const QString tokenScript = QStringLiteral("window.__systemWebViewToken=%1[0];").arg(tokenLiteral);
                                 sender->ExecuteScript(
                                     tokenScript.toStdWString().c_str(),
@@ -898,7 +901,8 @@ public:
                                         LoadState::Failed,
                                         id,
                                         url,
-                                        QStringLiteral("WebView2 navigation failed (status %1).").arg(static_cast<int>(status)));
+                                        (QStringLiteral("WebView2 navigation failed (status %1).").arg(static_cast<int>(status)))
+                                            .toStdString());
                                 }
                                 return S_OK;
                             })
@@ -924,13 +928,13 @@ public:
                                     return S_OK;
                                 }
                                 QJsonObject object;
-                                QString error;
+                                std::string error;
                                 if (state->bridgeOrigin != normalizedOrigin(source) || !state->policy
                                     || !state->policy->allowsBridge(source)
                                     || source.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
                                            != state->committedUrl.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
-                                    || !parseMessage(json, &object, &error)
-                                    || object.value(QStringLiteral("documentToken")).toString() != state->documentToken) {
+                                    || !parseMessage(json.toStdString(), &object, &error)
+                                    || object.value(QStringLiteral("documentToken")).toString().toStdString() != state->documentToken) {
                                     qCDebug(systemWebViewBridge).noquote()
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                         << "view=" << state->diagnosticId << "reason=native_boundary";
@@ -975,8 +979,9 @@ public:
                             [state, owner](HRESULT result, LPCWSTR) -> HRESULT {
                                 if (FAILED(result)) {
                                     state->failInitialization(
-                                        QStringLiteral("WebView2 document transport registration failed (HRESULT 0x%1).")
-                                            .arg(QString::number(static_cast<quint32>(result), 16)));
+                                        (QStringLiteral("WebView2 document transport registration failed (HRESULT 0x%1).")
+                                             .arg(QString::number(static_cast<quint32>(result), 16)))
+                                            .toStdString());
                                     return S_OK;
                                 }
                                 state->documentTransportPrepared = true;
@@ -986,8 +991,9 @@ public:
                             })
                             .Get());
                     if (FAILED(transportResult)) {
-                        state->failInitialization(QStringLiteral("WebView2 document transport request failed (HRESULT 0x%1).")
-                                                      .arg(QString::number(static_cast<quint32>(transportResult), 16)));
+                        state->failInitialization((QStringLiteral("WebView2 document transport request failed (HRESULT 0x%1).")
+                                                       .arg(QString::number(static_cast<quint32>(transportResult), 16)))
+                                                      .toStdString());
                     }
                     return S_OK;
                 });
@@ -1007,8 +1013,9 @@ public:
             if (FAILED(createResult)) {
                 const QString operation =
                     owner->sessionMode == SessionMode::Ephemeral ? QStringLiteral("InPrivate controller") : QStringLiteral("controller");
-                owner->state->failInitialization(QStringLiteral("WebView2 %1 request failed (HRESULT 0x%2).")
-                                                     .arg(operation, QString::number(static_cast<quint32>(createResult), 16)));
+                owner->state->failInitialization((QStringLiteral("WebView2 %1 request failed (HRESULT 0x%2).")
+                                                      .arg(operation, QString::number(static_cast<quint32>(createResult), 16)))
+                                                     .toStdString());
             }
         });
     }
@@ -1209,14 +1216,14 @@ void WebView2View::navigate(const QUrl& url)
 {
     impl_->state->runWhenReady([state = impl_->state, url, owner = std::weak_ptr<Impl>(impl_)](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
-            state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error);
+            state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error.toStdString());
             return;
         }
         const auto view = owner.lock();
         const auto webview = view ? view->webview : nullptr;
         const auto text = url.toString().toStdWString();
         if (!webview) {
-            state->emitLoad(LoadState::Failed, ++state->navigationId, url, QStringLiteral("WebView2 core object is unavailable."));
+            state->emitLoad(LoadState::Failed, ++state->navigationId, url, "WebView2 core object is unavailable.");
             return;
         }
         const HRESULT navigateResult = webview->Navigate(text.c_str());
@@ -1225,8 +1232,9 @@ void WebView2View::navigate(const QUrl& url)
                 LoadState::Failed,
                 ++state->navigationId,
                 url,
-                QStringLiteral("WebView2 navigation request failed (HRESULT 0x%1).")
-                    .arg(QString::number(static_cast<quint32>(navigateResult), 16)));
+                (QStringLiteral("WebView2 navigation request failed (HRESULT 0x%1).")
+                     .arg(QString::number(static_cast<quint32>(navigateResult), 16)))
+                    .toStdString());
         }
     });
 }
@@ -1236,7 +1244,7 @@ void WebView2View::loadDocument(const QString& html, const QUrl& baseUrl)
     if (baseUrl.scheme() == QStringLiteral("app")
         && (!impl_->resourceMappings || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
         const auto id = ++impl_->state->navigationId;
-        impl_->state->emitLoad(LoadState::Failed, id, baseUrl, QStringLiteral("The document base URL is unavailable."));
+        impl_->state->emitLoad(LoadState::Failed, id, baseUrl, "The document base URL is unavailable.");
         return;
     }
     impl_->inlineDocuments->insert(baseUrl.toString(QUrl::FullyEncoded), html.toUtf8());

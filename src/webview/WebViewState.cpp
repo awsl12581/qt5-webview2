@@ -4,7 +4,7 @@
 
 namespace webview
 {
-WebViewState::WebViewState(DiagnosticScope scope, quint64 sessionId)
+WebViewState::WebViewState(DiagnosticScope scope, std::uint64_t sessionId)
     : diagnosticScope(scope)
     , diagnosticId(scope == DiagnosticScope::None ? 0 : nextDiagnosticId())
     , sessionDiagnosticId(sessionId)
@@ -35,14 +35,14 @@ void InitializationScheduler::markReady()
     finishInitializationCompletions({ InitializationState::Ready, { } });
 }
 
-void InitializationScheduler::fail(QString error)
+void InitializationScheduler::fail(std::string error)
 {
     if (state_ != InitializationState::Initializing) {
         return;
     }
     error_ = std::move(error);
     state_ = InitializationState::Failed;
-    const InitializationResult result { state_, error_ };
+    const InitializationResult result { state_, QString::fromStdString(error_) };
     finishQueuedOperations(result);
     finishInitializationCompletions(result);
 }
@@ -56,7 +56,7 @@ void InitializationScheduler::whenInitialized(Completion completion)
         initializationCompletions_.push_back(std::move(completion));
         return;
     }
-    completion({ state_, error_ });
+    completion({ state_, QString::fromStdString(error_) });
 }
 
 void InitializationScheduler::runWhenReady(Completion operation)
@@ -68,7 +68,7 @@ void InitializationScheduler::runWhenReady(Completion operation)
         readyOperations_.push_back(std::move(operation));
         return;
     }
-    operation({ state_, error_ });
+    operation({ state_, QString::fromStdString(error_) });
 }
 
 void InitializationScheduler::close()
@@ -77,8 +77,8 @@ void InitializationScheduler::close()
         return;
     }
     state_ = InitializationState::Closed;
-    error_ = QStringLiteral("The web view is closed.");
-    const InitializationResult result { state_, error_ };
+    error_ = "The web view is closed.";
+    const InitializationResult result { state_, QString::fromStdString(error_) };
     finishQueuedOperations(result);
     finishInitializationCompletions(result);
 }
@@ -128,7 +128,7 @@ void WebViewState::markReady()
     }
 }
 
-void WebViewState::failInitialization(QString error)
+void WebViewState::failInitialization(std::string error)
 {
     if (initialization_.state() != InitializationState::Initializing) {
         return;
@@ -235,21 +235,21 @@ void WebViewState::invalidateDocument()
     setResourceDocumentToken({ });
 }
 
-void WebViewState::setResourceDocumentToken(const QString& token)
+void WebViewState::setResourceDocumentToken(std::string_view token)
 {
     if (resources) {
-        resources->setDocumentToken(token);
+        resources->setDocumentToken(QString::fromUtf8(token.data(), static_cast<int>(token.size())));
     }
 }
 
-void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOrigin, const QString& token)
+void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOrigin, std::string_view token)
 {
     if (resources) {
-        resources->setContext(origin, documentOrigin, token);
+        resources->setContext(origin, documentOrigin, QString::fromUtf8(token.data(), static_cast<int>(token.size())));
     }
 }
 
-void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url, const QString& error)
+void WebViewState::emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const QUrl& url, std::string_view error)
 {
     if (loadState == LoadState::Failed) {
         qCWarning(systemWebViewNavigation).noquote()
@@ -257,7 +257,7 @@ void WebViewState::emitLoad(LoadState loadState, quint64 eventNavigationId, cons
             << "navigation=" << eventNavigationId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
     }
     if (!lifetime.isClosed() && callbacks.onLoad) {
-        callbacks.onLoad({ loadState, url, error, eventNavigationId, true });
+        callbacks.onLoad({ loadState, url, QString::fromUtf8(error.data(), static_cast<int>(error.size())), eventNavigationId, true });
     }
 }
 

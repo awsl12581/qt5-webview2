@@ -4,10 +4,10 @@
 
 namespace webview
 {
-bool hasExternalFileLink(const QString& path)
+bool hasExternalFileLink(const std::filesystem::path& path)
 {
     const auto handle = CreateFileW(
-        reinterpret_cast<LPCWSTR>(path.utf16()),
+        path.c_str(),
         0,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr,
@@ -19,7 +19,7 @@ bool hasExternalFileLink(const QString& path)
     }
     FILE_STANDARD_INFO information { };
     const auto success = GetFileInformationByHandleEx(handle, FileStandardInfo, &information, sizeof(information)) != FALSE;
-    const auto attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.utf16()));
+    const auto attributes = GetFileAttributesW(path.c_str());
     CloseHandle(handle);
     return !success || attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
            || information.NumberOfLinks > 1;

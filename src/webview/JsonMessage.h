@@ -1,10 +1,11 @@
 #pragma once
 
 #include <QJsonObject>
-#include <QString>
+#include <string>
+#include <string_view>
 
 namespace webview
 {
-QString jsonForJavaScriptArgument(const QJsonObject& message);
-bool parseMessage(const QString& text, QJsonObject* message, QString* error = nullptr);
+std::string jsonForJavaScriptArgument(const QJsonObject& message);
+bool parseMessage(std::string_view text, QJsonObject* message, std::string* error = nullptr);
 } // namespace webview

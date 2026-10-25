@@ -5,8 +5,11 @@
 
 #include <system_webview/system_webview.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace webview
@@ -18,7 +21,7 @@ public:
 
     InitializationState state() const;
     void markReady();
-    void fail(QString error);
+    void fail(std::string error);
     void whenInitialized(Completion completion);
     void runWhenReady(Completion operation);
     void close();
@@ -28,7 +31,7 @@ private:
     void finishInitializationCompletions(const InitializationResult& result);
 
     InitializationState state_ = InitializationState::Initializing;
-    QString error_;
+    std::string error_;
     std::vector<Completion> initializationCompletions_;
     std::vector<Completion> readyOperations_;
     bool drainingReadyOperations_ = false;
@@ -37,7 +40,7 @@ private:
 class WebViewState final : public std::enable_shared_from_this<WebViewState>
 {
 public:
-    explicit WebViewState(DiagnosticScope diagnosticScope = DiagnosticScope::None, quint64 sessionDiagnosticId = 0);
+    explicit WebViewState(DiagnosticScope diagnosticScope = DiagnosticScope::None, std::uint64_t sessionDiagnosticId = 0);
 
     WebViewHostCallbacks callbacks;
     std::shared_ptr<WebViewBridge> bridge = std::make_shared<WebViewBridge>();
@@ -46,27 +49,27 @@ public:
     QUrl committedUrl;
     QUrl bridgeOrigin;
     QUrl resourceOrigin;
-    QString documentToken;
+    std::string documentToken;
     bool documentTransportPrepared = false;
     bool provisionalMainFrameNavigation = false;
     bool explicitMainFrameNavigationPending = false;
-    quint64 navigationId = 0;
+    std::uint64_t navigationId = 0;
     DiagnosticScope diagnosticScope = DiagnosticScope::None;
-    quint64 diagnosticId = 0;
-    quint64 sessionDiagnosticId = 0;
+    std::uint64_t diagnosticId = 0;
+    std::uint64_t sessionDiagnosticId = 0;
     DocumentLifetime lifetime;
     InitializationState initializationState() const;
     void markReady();
-    void failInitialization(QString error);
+    void failInitialization(std::string error);
     void whenInitialized(IWebView::InitializationCompletion completion);
     void runWhenReady(std::function<void(const InitializationResult&)> operation);
     void close();
     void bindBridgePolicy();
     void invalidateDocument();
-    void setResourceDocumentToken(const QString& token);
-    void setResourceContext(const QUrl& origin, const QUrl& documentOrigin, const QString& token);
+    void setResourceDocumentToken(std::string_view token);
+    void setResourceContext(const QUrl& origin, const QUrl& documentOrigin, std::string_view token);
 
-    void emitLoad(LoadState loadState, quint64 eventNavigationId, const QUrl& url = { }, const QString& error = { });
+    void emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const QUrl& url = {}, std::string_view error = {});
     void emitRuntimeFailure(const RuntimeFailureEvent& event);
 
 private:

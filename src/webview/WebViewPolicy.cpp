@@ -5,27 +5,30 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 
+#include <string>
+#include <string_view>
+
 namespace
 {
-QString jsonTypeName(QJsonValue::Type type)
+std::string_view jsonTypeName(QJsonValue::Type type)
 {
     switch (type) {
     case QJsonValue::Null:
-        return QStringLiteral("null");
+        return "null";
     case QJsonValue::Bool:
-        return QStringLiteral("boolean");
+        return "boolean";
     case QJsonValue::Double:
-        return QStringLiteral("number");
+        return "number";
     case QJsonValue::String:
-        return QStringLiteral("string");
+        return "string";
     case QJsonValue::Array:
-        return QStringLiteral("array");
+        return "array";
     case QJsonValue::Object:
-        return QStringLiteral("object");
+        return "object";
     case QJsonValue::Undefined:
-        return QStringLiteral("undefined");
+        return "undefined";
     }
-    return QStringLiteral("unknown");
+    return "unknown";
 }
 
 bool validateMessage(
@@ -46,42 +49,43 @@ bool validateMessage(
         { QStringLiteral("error"), message.error },
     };
     const auto serialized = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
-    QString detail;
+    std::string detail;
     const auto schema = schemas.constFind(message.type);
     if (serialized.size() > maximumBytes) {
-        detail = QStringLiteral("Bridge message exceeds the configured size limit.");
+        detail = "Bridge message exceeds the configured size limit.";
     }
     else if (message.version != 1) {
-        detail = QStringLiteral("Unsupported bridge protocol version.");
+        detail = "Unsupported bridge protocol version.";
     }
     else if (schema == schemas.cend()) {
-        detail = QStringLiteral("Bridge message type is not allowed.");
+        detail = "Bridge message type is not allowed.";
     }
     else if (!(message.kind == webview::BridgeMessageKind::Response && !message.error.isEmpty())) {
         for (auto field = schema->requiredPayloadFields.cbegin(); field != schema->requiredPayloadFields.cend(); ++field) {
             const auto value = message.payload.value(field.key());
             if (value.isUndefined()) {
-                detail = QStringLiteral("Bridge message payload is missing required field: %1").arg(field.key());
+                detail = "Bridge message payload is missing required field: " + field.key().toStdString();
                 break;
             }
             if (value.type() != field.value()) {
-                detail = QStringLiteral("Bridge message payload field %1 must be %2.").arg(field.key(), jsonTypeName(field.value()));
+                detail = "Bridge message payload field " + field.key().toStdString() + " must be "
+                         + std::string(jsonTypeName(field.value())) + ".";
                 break;
             }
         }
-        if (detail.isEmpty() && !schema->allowAdditionalPayloadFields) {
+        if (detail.empty() && !schema->allowAdditionalPayloadFields) {
             for (auto field = message.payload.constBegin(); field != message.payload.constEnd(); ++field) {
                 if (!schema->requiredPayloadFields.contains(field.key())) {
-                    detail = QStringLiteral("Bridge message payload contains unexpected field: %1").arg(field.key());
+                    detail = "Bridge message payload contains unexpected field: " + field.key().toStdString();
                     break;
                 }
             }
         }
     }
     if (error) {
-        *error = detail;
+        *error = QString::fromStdString(detail);
     }
-    return detail.isEmpty();
+    return detail.empty();
 }
 
 bool isWithinRoot(const QString& filePath, const QString& rootPath)

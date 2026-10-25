@@ -91,7 +91,8 @@ std::string resolveMappedResource(const ResourceMapping& mapping, const QUrl& ur
         const auto pathWithinRoot = QDir(QString::fromStdString(mapping.localDirectory)).relativeFilePath(canonicalPath);
         const bool outsideRoot = pathWithinRoot == QStringLiteral("..") || pathWithinRoot.startsWith(QStringLiteral("../"))
                                  || pathWithinRoot.startsWith(QStringLiteral("..\\"));
-        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot || hasExternalFileLink(canonicalPath)
+        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot
+                       || hasExternalFileLink(std::filesystem::path(canonicalPath.toStdU16String()))
                    ? std::string()
                    : canonicalPath.toStdString();
     };

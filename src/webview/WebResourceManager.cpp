@@ -3,37 +3,41 @@
 #include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
 #include <QMimeDatabase>
 #include <QRegularExpression>
 #include <QSaveFile>
-#include <QSet>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
 
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace webview
 {
 namespace
 {
-constexpr qint64 kMaximumFileSize = 2LL * 1024 * 1024 * 1024;
-constexpr qint64 kMaximumPublishedBytes = 8LL * 1024 * 1024 * 1024;
+constexpr std::int64_t kMaximumFileSize = 2LL * 1024 * 1024 * 1024;
+constexpr std::int64_t kMaximumPublishedBytes = 8LL * 1024 * 1024 * 1024;
 constexpr int kMaximumResourceCount = 128;
-constexpr qint64 kCopyBufferSize = 1024 * 1024;
-constexpr qint64 kResourceLifetimeMs = 30LL * 60 * 1000;
+constexpr std::int64_t kCopyBufferSize = 1024 * 1024;
+constexpr std::int64_t kResourceLifetimeMs = 30LL * 60 * 1000;
 
 class RangeFile final : public QFile
 {
 public:
-    RangeFile(const QString& path, qint64 length)
-        : QFile(path)
+    RangeFile(const std::string& path, std::int64_t length)
+        : QFile(QString::fromStdString(path))
         , remaining_(length)
     {
     }
@@ -44,7 +48,7 @@ protected:
         if (remaining_ <= 0) {
             return 0;
         }
-        const auto count = QFile::readData(data, qMin(maximum, remaining_));
+        const auto count = QFile::readData(data, std::min<qint64>(maximum, remaining_));
         if (count > 0) {
             remaining_ -= count;
         }
@@ -52,7 +56,7 @@ protected:
     }
 
 private:
-    qint64 remaining_;
+    std::int64_t remaining_;
 };
 }
 
@@ -63,32 +67,32 @@ public:
     {
         QTemporaryDir directory;
         std::mutex mutex;
-        QHash<QString, qint64> retryPaths;
-        qint64 occupiedBytes = 0;
+        std::unordered_map<std::string, std::int64_t> retryPaths;
+        std::int64_t occupiedBytes = 0;
         bool retryScheduled = false;
 
-        qint64 occupied()
+        std::int64_t occupied()
         {
             std::lock_guard<std::mutex> lock(mutex);
             return occupiedBytes;
         }
 
-        void add(qint64 size)
+        void add(std::int64_t size)
         {
             std::lock_guard<std::mutex> lock(mutex);
             occupiedBytes += size;
         }
 
-        void remove(const QString& path, qint64 size)
+        void remove(const std::string& path, std::int64_t size)
         {
             bool schedule = false;
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (QFile::remove(path) || !QFileInfo::exists(path)) {
+                if (QFile::remove(QString::fromStdString(path)) || !QFileInfo::exists(QString::fromStdString(path))) {
                     occupiedBytes -= size;
                 }
                 else {
-                    retryPaths.insert(path, size);
+                    retryPaths.insert_or_assign(path, size);
                     if (!retryScheduled) {
                         retryScheduled = true;
                         schedule = true;
@@ -109,15 +113,15 @@ public:
                     retryScheduled = false;
                 }
                 for (auto it = retryPaths.begin(); it != retryPaths.end();) {
-                    if (QFile::remove(it.key()) || !QFileInfo::exists(it.key())) {
-                        occupiedBytes -= it.value();
+                    if (QFile::remove(QString::fromStdString(it->first)) || !QFileInfo::exists(QString::fromStdString(it->first))) {
+                        occupiedBytes -= it->second;
                         it = retryPaths.erase(it);
                     }
                     else {
                         ++it;
                     }
                 }
-                if (!retryPaths.isEmpty() && !retryScheduled) {
+                if (!retryPaths.empty() && !retryScheduled) {
                     retryScheduled = true;
                     schedule = true;
                 }
@@ -146,11 +150,11 @@ public:
 
     struct Entry
     {
-        QString path;
-        QString mime;
-        QString document;
-        qint64 size = 0;
-        QDateTime expiresAt;
+        std::string path;
+        std::string mime;
+        std::string document;
+        std::int64_t size = 0;
+        std::chrono::system_clock::time_point expiresAt;
         std::shared_ptr<SnapshotStore> snapshots;
 
         ~Entry()
@@ -163,13 +167,13 @@ public:
 
     QUrl origin;
     QUrl documentOrigin;
-    QString documentToken;
+    std::string documentToken;
     std::shared_ptr<SnapshotStore> snapshots = std::make_shared<SnapshotStore>();
-    QHash<QString, std::shared_ptr<Entry>> entries;
-    QSet<QString> revoked;
+    std::unordered_map<std::string, std::shared_ptr<Entry>> entries;
+    std::unordered_set<std::string> revoked;
     std::function<void(const QString&)> onRevoked;
-    quint64 sessionDiagnosticId = 0;
-    quint64 viewDiagnosticId = 0;
+    std::uint64_t sessionDiagnosticId = 0;
+    std::uint64_t viewDiagnosticId = 0;
 };
 
 WebResourceManager::WebResourceManager(QUrl origin)
@@ -203,19 +207,19 @@ void WebResourceManager::setContext(const QUrl& resourceOrigin, const QUrl& docu
 
 void WebResourceManager::setDocumentToken(const QString& documentToken)
 {
-    if (impl_->documentToken != documentToken) {
-        releaseForDocument(impl_->documentToken);
+    if (impl_->documentToken != documentToken.toStdString()) {
+        releaseForDocument(QString::fromStdString(impl_->documentToken));
     }
-    impl_->documentToken = documentToken;
+    impl_->documentToken = documentToken.toStdString();
 }
 
 PublishedResource WebResourceManager::publishFile(const QString& path, const QString& mimeType, const QString& documentToken)
 {
     impl_->snapshots->retry();
-    const auto now = QDateTime::currentDateTimeUtc();
+    const auto now = std::chrono::system_clock::now();
     for (auto it = impl_->entries.begin(); it != impl_->entries.end();) {
-        if (it.value()->expiresAt <= now) {
-            impl_->revoked.insert(it.key());
+        if (it->second->expiresAt <= now) {
+            impl_->revoked.insert(it->first);
             it = impl_->entries.erase(it);
         }
         else {
@@ -223,16 +227,17 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
         }
     }
     const QFileInfo info(path);
-    if (!impl_->origin.isValid() || impl_->documentToken.isEmpty() || (!documentToken.isEmpty() && documentToken != impl_->documentToken)
-        || !info.isFile() || !info.isReadable() || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
+    if (!impl_->origin.isValid() || impl_->documentToken.empty()
+        || (!documentToken.isEmpty() && documentToken.toStdString() != impl_->documentToken) || !info.isFile() || !info.isReadable()
+        || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
         || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes || !impl_->snapshots->directory.isValid()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.publish_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return { };
     }
 
-    const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    const auto snapshotPath = impl_->snapshots->directory.filePath(token);
+    const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    const auto snapshotPath = impl_->snapshots->directory.filePath(QString::fromStdString(token));
     QFile input(info.absoluteFilePath());
     QSaveFile output(snapshotPath);
     if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) {
@@ -240,11 +245,11 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return { };
     }
-    QByteArray buffer(static_cast<int>(kCopyBufferSize), Qt::Uninitialized);
-    qint64 copied = 0;
+    std::vector<char> buffer(static_cast<std::size_t>(kCopyBufferSize));
+    std::int64_t copied = 0;
     while (!input.atEnd()) {
         const auto count = input.read(buffer.data(), buffer.size());
-        if (count <= 0 || output.write(buffer.constData(), count) != count) {
+        if (count <= 0 || output.write(buffer.data(), count) != count) {
             output.cancelWriting();
             qCWarning(systemWebViewResource).noquote()
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
@@ -265,17 +270,17 @@ PublishedResource WebResourceManager::publishFile(const QString& path, const QSt
     }
 
     auto entry = std::make_shared<Impl::Entry>();
-    entry->path = snapshotPath;
-    entry->mime = mimeType.isEmpty() ? QMimeDatabase().mimeTypeForFile(info).name() : mimeType;
+    entry->path = snapshotPath.toStdString();
+    entry->mime = (mimeType.isEmpty() ? QMimeDatabase().mimeTypeForFile(info).name() : mimeType).toStdString();
     entry->document = impl_->documentToken;
     entry->size = copied;
-    entry->expiresAt = now.addMSecs(kResourceLifetimeMs);
+    entry->expiresAt = now + std::chrono::milliseconds(kResourceLifetimeMs);
     entry->snapshots = impl_->snapshots;
     impl_->snapshots->add(copied);
-    impl_->entries.insert(token, entry);
-    impl_->revoked.remove(token);
-    const auto url = impl_->origin.resolved(QUrl(QStringLiteral("resource/%1").arg(token)));
-    return { token, url, entry->mime, copied };
+    impl_->entries.insert_or_assign(token, entry);
+    impl_->revoked.erase(token);
+    const auto url = impl_->origin.resolved(QUrl(QString::fromStdString("resource/" + token)));
+    return { QString::fromStdString(token), url, QString::fromStdString(entry->mime), copied };
 }
 
 ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
@@ -291,8 +296,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         return { httpStatus::kForbidden };
     }
 
-    const auto token = request.url.path().section(QLatin1Char('/'), -1);
-    const auto it = impl_->entries.constFind(token);
+    const auto token = request.url.path().section(QLatin1Char('/'), -1).toStdString();
+    const auto it = impl_->entries.find(token);
     if (it == impl_->entries.cend()) {
         const int status = impl_->revoked.contains(token) ? httpStatus::kGone : httpStatus::kNotFound;
         qCDebug(systemWebViewResource).noquote()
@@ -300,14 +305,14 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
             << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << "status=" << status;
         return { status };
     }
-    const auto entry = it.value();
-    if (entry->expiresAt <= QDateTime::currentDateTimeUtc()) {
+    const auto entry = it->second;
+    if (entry->expiresAt <= std::chrono::system_clock::now()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
             << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << QStringLiteral("status=%1").arg(httpStatus::kGone);
         return { httpStatus::kGone };
     }
-    if (!entry->document.isEmpty() && entry->document != request.documentToken) {
+    if (!entry->document.empty() && entry->document != request.documentToken.toStdString()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
             << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
@@ -315,8 +320,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         return { httpStatus::kForbidden };
     }
 
-    qint64 start = request.rangeStart < 0 ? 0 : request.rangeStart;
-    qint64 end = request.rangeEnd < 0 ? entry->size - 1 : request.rangeEnd;
+    std::int64_t start = request.rangeStart < 0 ? 0 : request.rangeStart;
+    std::int64_t end = request.rangeEnd < 0 ? entry->size - 1 : request.rangeEnd;
     const bool hasRange = !request.rangeHeader.isEmpty() || request.rangeStart >= 0;
     if (!request.rangeHeader.isEmpty()) {
         static const QRegularExpression rangePattern(QStringLiteral("^bytes=(\\d*)-(\\d*)$"));
@@ -330,7 +335,7 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         }
         else if (first.isEmpty()) {
             const auto suffix = last.toLongLong(&endOk);
-            start = endOk && suffix > 0 ? qMax<qint64>(0, entry->size - suffix) : -1;
+            start = endOk && suffix > 0 ? std::max<std::int64_t>(0, entry->size - suffix) : -1;
             end = entry->size - 1;
         }
         else {
@@ -355,25 +360,25 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
             << QStringLiteral("status=%1").arg(httpStatus::kRangeNotSatisfiable);
         ResourceResponse response;
         response.status = httpStatus::kRangeNotSatisfiable;
-        response.mimeType = entry->mime;
+        response.mimeType = QString::fromStdString(entry->mime);
         response.totalSize = entry->size;
         response.acceptRanges = true;
         return response;
     }
-    const qint64 length = entry->size == 0 ? 0 : end - start + 1;
+    const std::int64_t length = entry->size == 0 ? 0 : end - start + 1;
     auto file = std::make_unique<RangeFile>(entry->path, length);
     if (!file->open(QIODevice::ReadOnly) || !file->seek(start)) {
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.read_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         ResourceResponse response;
         response.status = httpStatus::kInternalServerError;
-        response.mimeType = entry->mime;
+        response.mimeType = QString::fromStdString(entry->mime);
         response.totalSize = entry->size;
         return response;
     }
     ResourceResponse response;
     response.status = hasRange ? httpStatus::kPartialContent : httpStatus::kOk;
-    response.mimeType = entry->mime;
+    response.mimeType = QString::fromStdString(entry->mime);
     response.totalSize = entry->size;
     response.offset = start;
     response.length = length;
@@ -385,11 +390,11 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
 
 void WebResourceManager::release(const QString& token)
 {
-    const auto it = impl_->entries.find(token);
+    const auto it = impl_->entries.find(token.toStdString());
     if (it == impl_->entries.end()) {
         return;
     }
-    impl_->revoked.insert(token);
+    impl_->revoked.insert(token.toStdString());
     impl_->entries.erase(it);
     if (impl_->onRevoked) {
         impl_->onRevoked(token);
@@ -402,8 +407,8 @@ void WebResourceManager::releaseForDocument(const QString& documentToken)
         return;
     }
     for (auto it = impl_->entries.begin(); it != impl_->entries.end();) {
-        if (it.value()->document == documentToken) {
-            impl_->revoked.insert(it.key());
+        if (it->second->document == documentToken.toStdString()) {
+            impl_->revoked.insert(it->first);
             it = impl_->entries.erase(it);
         }
         else {
@@ -415,7 +420,7 @@ void WebResourceManager::releaseForDocument(const QString& documentToken)
 void WebResourceManager::releaseAll()
 {
     for (auto it = impl_->entries.cbegin(); it != impl_->entries.cend(); ++it) {
-        impl_->revoked.insert(it.key());
+        impl_->revoked.insert(it->first);
     }
     impl_->entries.clear();
 }

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <QString>
+#include <filesystem>
 
 namespace webview
 {
-bool hasExternalFileLink(const QString& path);
+bool hasExternalFileLink(const std::filesystem::path& path);
 }

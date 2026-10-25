@@ -54,8 +54,8 @@
     const bool published = url.path().startsWith(QStringLiteral("/resource/"));
     if (published && pageState) {
         const auto range = [task.request valueForHTTPHeaderField:@"Range"];
-        resource = pageState->resources->open(
-            { url, documentUrl, pageState->documentToken, range ? QString::fromUtf8(range.UTF8String) : QString() });
+        resource = pageState->resources->open({ url, documentUrl, QString::fromStdString(pageState->documentToken),
+            range ? QString::fromUtf8(range.UTF8String) : QString() });
     }
 
     QString path;

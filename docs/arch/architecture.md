@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-25 21:51 CST
-> 文档版本：v11
-> 修改说明：Documented C++20 and standard-library types at internal boundaries.
+> 最后修改时间：2026-10-25 22:04 CST
+> 文档版本：v12
+> 修改说明：Documented standard-library storage in portable webview implementation.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -16,6 +16,11 @@ Public scoped enums explicitly use `int` as their underlying type, keeping their
 The project builds C++ and Objective-C++ sources as C++20 and exports the C++20 requirement to consumers.
 Internal application IDs, routes, diagnostic text, resource paths, and script text use UTF-8 standard strings;
 resource mappings use `std::vector`, and application-ID sets use `std::unordered_set`.
+The portable webview implementation also stores document tokens, initialization errors, bridge handler keys,
+pending-request keys, and resource metadata in UTF-8 standard strings. Bridge and resource indexes use
+`std::unordered_map` and `std::unordered_set`; snapshot copying uses `std::vector<char>`, and resource expiry
+uses `std::chrono::system_clock`. Private lifecycle and diagnostic counters use fixed-width standard integers.
+Native file-link checks accept `std::filesystem::path`, preserving Windows UTF-16 paths.
 Qt URL, JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
 boundaries; URL parsing, path authorization, message schemas, and the public Qt API retain their existing contracts.
 
@@ -137,3 +142,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v9 | 2026-09-24 18:17 CST | Documented host-enforced external network isolation for local bundles. |
 | v10 | 2026-09-24 18:29 CST | Documented diagnostic logging, runtime-failure callbacks, redaction, and crash-dump ownership. |
 | v11 | 2026-10-25 21:51 CST | Documented C++20 and standard-library types at internal boundaries. |
+| v12 | 2026-10-25 22:04 CST | Documented standard-library storage in portable webview implementation. |

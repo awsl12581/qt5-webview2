@@ -96,9 +96,10 @@ struct WkNavigationState {
 
 void installDocumentTransport(WebViewState& state, WKUserContentController* content)
 {
-    state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
     state.setResourceDocumentToken(state.documentToken);
-    const auto escapedToken = QString::fromUtf8(QJsonDocument(QJsonArray { state.documentToken }).toJson(QJsonDocument::Compact));
+    const auto escapedToken
+        = QString::fromUtf8(QJsonDocument(QJsonArray { QString::fromStdString(state.documentToken) }).toJson(QJsonDocument::Compact));
     const auto tokenLiteral = escapedToken.mid(1, escapedToken.size() - 2);
     const auto source = bridgePageScript(tokenLiteral.toStdString(), "window.webkit.messageHandlers.systemWebView.postMessage", {});
     [content removeAllUserScripts];
@@ -203,8 +204,8 @@ public:
         return;
     }
     QJsonObject wrapper;
-    if (webview::parseMessage(QString::fromUtf8(static_cast<const char*>(data.bytes), data.length), &wrapper)
-        && wrapper.value(QStringLiteral("documentToken")).toString() == self.state->documentToken
+    if (webview::parseMessage(std::string_view(static_cast<const char*>(data.bytes), data.length), &wrapper)
+        && wrapper.value(QStringLiteral("documentToken")).toString().toStdString() == self.state->documentToken
         && wrapper.value(QStringLiteral("message")).isObject()) {
         const auto object = wrapper.value(QStringLiteral("message")).toObject();
         if (!object.value(QStringLiteral("type")).isString() || !object.value(QStringLiteral("payload")).isObject()) {
@@ -501,7 +502,7 @@ public:
             QUrl(QString::fromUtf8(error.userInfo[NSURLErrorFailingURLErrorKey]
                     ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
                     : "")),
-            QString::fromUtf8(error.localizedDescription.UTF8String));
+            QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
@@ -512,7 +513,7 @@ public:
     if (self.state) {
         const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
         self.state->emitLoad(webview::LoadState::Failed, navigationId, QUrl(QString::fromUtf8(webView.URL.absoluteString.UTF8String)),
-            QString::fromUtf8(error.localizedDescription.UTF8String));
+            QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
@@ -681,14 +682,13 @@ void WkWebView::loadDocument(const QString& html, const QUrl& baseUrl)
         }
         const NavigationRequest request { baseUrl, true, false, false };
         if (impl_->state->policy->decideNavigation(request) != NavigationDecision::Allow) {
-            impl_->state->emitLoad(
-                LoadState::Failed, ++impl_->state->navigationId, baseUrl, QStringLiteral("The HTML base URL was rejected by policy."));
+            impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl, "The HTML base URL was rejected by policy.");
             return;
         }
         if (baseUrl.scheme().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0
             && (!impl_->sessionState || !findResourceMapping(impl_->sessionState->resourceMappings, baseUrl))) {
-            impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl,
-                QStringLiteral("The app origin has no configured resource mapping."));
+            impl_->state->emitLoad(
+                LoadState::Failed, ++impl_->state->navigationId, baseUrl, "The app origin has no configured resource mapping.");
             return;
         }
         impl_->state->invalidateDocument();

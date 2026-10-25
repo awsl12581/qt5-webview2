@@ -63,12 +63,13 @@ public:
         const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         ownsApartment = SUCCEEDED(apartment);
         if (!ownsApartment) {
-            async->scheduler->failInitialization(QStringLiteral("WebView2 requires a COM STA UI thread (HRESULT 0x%1).")
-                                                     .arg(QString::number(static_cast<quint32>(apartment), 16)));
+            async->scheduler->failInitialization((QStringLiteral("WebView2 requires a COM STA UI thread (HRESULT 0x%1).")
+                                                      .arg(QString::number(static_cast<quint32>(apartment), 16)))
+                                                     .toStdString());
             return;
         }
         if (this->options.mode == SessionMode::Persistent && this->options.profilePath.isEmpty()) {
-            async->scheduler->failInitialization(QStringLiteral("Persistent WebView2 sessions require a profilePath."));
+            async->scheduler->failInitialization("Persistent WebView2 sessions require a profilePath.");
             return;
         }
         std::filesystem::path profilePath;
@@ -78,7 +79,7 @@ public:
             std::filesystem::create_directories(profilePath, error);
             if (error) {
                 async->scheduler->failInitialization(
-                    QStringLiteral("WebView2 profile is not writable: %1").arg(QString::fromStdString(error.message())));
+                    (QStringLiteral("WebView2 profile is not writable: %1").arg(QString::fromStdString(error.message()))).toStdString());
                 return;
             }
         }
@@ -88,13 +89,14 @@ public:
         appScheme = Microsoft::WRL::Make<CoreWebView2CustomSchemeRegistration>(L"app");
         if (!environmentOptions || !appScheme || FAILED(appScheme->put_TreatAsSecure(TRUE))
             || FAILED(appScheme->put_HasAuthorityComponent(TRUE))) {
-            async->scheduler->failInitialization(QStringLiteral("WebView2 app custom-scheme options are unavailable."));
+            async->scheduler->failInitialization("WebView2 app custom-scheme options are unavailable.");
             return;
         }
         ICoreWebView2CustomSchemeRegistration* schemes[] = { appScheme.Get() };
         const HRESULT registration = environmentOptions->SetCustomSchemeRegistrations(1, schemes);
         if (FAILED(registration)) {
-            async->scheduler->failInitialization(hresultError(QStringLiteral("WebView2 app custom-scheme registration"), registration));
+            async->scheduler->failInitialization(
+                (hresultError(QStringLiteral("WebView2 app custom-scheme registration"), registration)).toStdString());
             return;
         }
         const HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
@@ -110,8 +112,8 @@ public:
                     if (FAILED(hr) || !created) {
                         const auto error = QStringLiteral("WebView2 Runtime environment creation failed (HRESULT 0x%1).")
                                                .arg(QString::number(static_cast<quint32>(hr), 16));
-                        owner->scheduler->failInitialization(error);
-                        owner->profileScheduler->failInitialization(error);
+                        owner->scheduler->failInitialization(error.toStdString());
+                        owner->profileScheduler->failInitialization(error.toStdString());
                         return S_OK;
                     }
                     owner->environment = created;
@@ -153,8 +155,8 @@ public:
         if (FAILED(result)) {
             const auto error =
                 QStringLiteral("WebView2 Runtime is unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(result), 16));
-            async->scheduler->failInitialization(error);
-            async->profileScheduler->failInitialization(error);
+            async->scheduler->failInitialization(error.toStdString());
+            async->profileScheduler->failInitialization(error.toStdString());
         }
     }
 

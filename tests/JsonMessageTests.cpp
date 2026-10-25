@@ -4,6 +4,7 @@
 #include "internal/ResourceMapping.h"
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
+#include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 #include <system_webview/system_webview.h>
 
@@ -43,6 +44,16 @@ public:
 
 int main()
 {
+    const QJsonObject unicodeMessage { { QStringLiteral("文本"), QStringLiteral("你好🌍") } };
+    const auto jsonText = webview::jsonForJavaScriptArgument(unicodeMessage);
+    const auto framedJson = "prefix" + jsonText + "suffix";
+    QJsonObject parsedMessage;
+    std::string parseError;
+    assert(webview::parseMessage(std::string_view(framedJson).substr(6, jsonText.size()), &parsedMessage, &parseError));
+    assert(parsedMessage == unicodeMessage);
+    assert(!webview::parseMessage("[]", &parsedMessage, &parseError));
+    assert(!parseError.empty());
+
     const auto pageScript = webview::bridgePageScript("'%2-文档'", "native.send", "native.listen();", "const label = '%1';");
     assert(pageScript.find("const send = message => native.send({ documentToken: ('%2-文档'), message });") != std::string::npos);
     assert(pageScript.find("const label = '%1';") != std::string::npos);
@@ -62,7 +73,7 @@ int main()
             webview::LoadState::Failed,
             7,
             QUrl(QStringLiteral("https://user:password@example.com/private?token=secret#fragment")),
-            QStringLiteral("failure with /private/path"));
+            "failure with /private/path");
         diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, QStringLiteral("terminated"), 9 });
         assert(runtimeFailureReceived);
         runtimeFailureReceived = false;
@@ -110,18 +121,41 @@ int main()
                                      { "error", "" } })
                        .toJson(QJsonDocument::Compact));
     assert(!eventReceived);
+    int unicodeEvents = 0;
+    const auto unicodeType = QStringLiteral("通知🌍");
+    bridge.setEventHandler(unicodeType, [&](const QJsonObject&) { unicodeEvents = -1; });
+    bridge.setEventHandler(unicodeType, [&](const QJsonObject&) {
+        ++unicodeEvents;
+        bridge.setEventHandler(unicodeType, {});
+    });
+    const auto unicodeEvent = QJsonDocument(
+                                  QJsonObject { { "version", 1 },
+                                                { "kind", "event" },
+                                                { "type", unicodeType },
+                                                { "requestId", "" },
+                                                { "payload", QJsonObject {} },
+                                                { "error", "" } })
+                                  .toJson(QJsonDocument::Compact);
+    bridge.receive(unicodeEvent);
+    bridge.receive(unicodeEvent);
+    assert(unicodeEvents == 1);
     bool callCompleted = false;
-    bridge.call(QStringLiteral("lookup"), { { "id", 9 } }, [&](const QJsonObject& payload, const QString& error) {
+    bridge.call(QStringLiteral("查询🌍"), { { "id", 9 } }, [&](const QJsonObject& payload, const QString& error) {
         callCompleted = error.isEmpty() && payload.value("name").toString() == QStringLiteral("item");
     });
     QJsonObject request;
     request = QJsonDocument::fromJson(transportProbe->sent.back()).object();
     assert(!request.isEmpty());
     const auto requestId = request.value(QStringLiteral("requestId")).toString();
+    auto mismatchedResponse = request;
+    mismatchedResponse.insert(QStringLiteral("kind"), QStringLiteral("response"));
+    mismatchedResponse.insert(QStringLiteral("type"), QStringLiteral("other"));
+    bridge.receive(QJsonDocument(mismatchedResponse).toJson(QJsonDocument::Compact));
+    assert(!callCompleted);
     bridge.receive(QJsonDocument(
                        QJsonObject { { "version", 1 },
                                      { "kind", "response" },
-                                     { "type", "lookup" },
+                                     { "type", QStringLiteral("查询🌍") },
                                      { "requestId", requestId },
                                      { "payload", QJsonObject { { "name", "item" } } },
                                      { "error", "" } })
@@ -171,21 +205,21 @@ int main()
     auto resourceState = std::make_shared<webview::WebViewState>();
     auto& resources = *resourceState->resources;
     const QUrl documentOrigin(QStringLiteral("https://trusted.example"));
-    resourceState->setResourceContext(QUrl(QStringLiteral("app://ui")), documentOrigin, QStringLiteral("doc-1"));
-    assert(resources.publishFile(sourceFile.fileName(), { }, QStringLiteral("other-doc")).token.isEmpty());
+    resourceState->setResourceContext(QUrl(QStringLiteral("app://ui")), documentOrigin, "文档-1");
+    assert(resources.publishFile(sourceFile.fileName(), {}, QStringLiteral("other-doc")).token.isEmpty());
     const auto published = resources.publishFile(sourceFile.fileName());
     assert(!published.token.isEmpty());
     assert(!published.url.toString().contains(sourceFile.fileName()));
     assert(sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
     assert(sourceFile.write("abcdefghij") == 10);
     sourceFile.close();
-    auto rangeResponse = resources.open({ published.url, documentOrigin, QStringLiteral("doc-1"), QStringLiteral("bytes=2-5") });
+    auto rangeResponse = resources.open({ published.url, documentOrigin, QStringLiteral("文档-1"), QStringLiteral("bytes=2-5") });
     assert(rangeResponse.status == 206 && rangeResponse.offset == 2 && rangeResponse.length == 4);
     assert(rangeResponse.body->readAll() == QByteArray("2345"));
     const auto snapshotPath = qobject_cast<QFile*>(rangeResponse.body.get())->fileName();
     assert(resources.open({ published.url, documentOrigin, QStringLiteral("other-doc") }).status == 403);
     resources.release(published.token);
-    assert(resources.open({ published.url, documentOrigin, QStringLiteral("doc-1") }).status == 410);
+    assert(resources.open({ published.url, documentOrigin, QStringLiteral("文档-1") }).status == 410);
     assert(QFileInfo::exists(snapshotPath));
     rangeResponse.body.reset();
     rangeResponse.lease.reset();
@@ -197,9 +231,9 @@ int main()
     emptyFile.close();
     const auto emptyPublished = resources.publishFile(emptyFile.fileName());
     assert(!emptyPublished.token.isEmpty());
-    const auto emptyResponse = resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("doc-1") });
+    const auto emptyResponse = resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("文档-1") });
     assert(emptyResponse.status == 200 && emptyResponse.length == 0);
-    assert(resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("doc-1"), QStringLiteral("bytes=0-0") }).status == 416);
+    assert(resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("文档-1"), QStringLiteral("bytes=0-0") }).status == 416);
 
     webview::WebViewPolicyConfig resourcePolicyConfig;
     resourcePolicyConfig.trustedHttpsOrigins.insert(documentOrigin.toString());
@@ -222,9 +256,9 @@ int main()
             .toJson(QJsonDocument::Compact);
     };
     resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token }, { "extra", true } }));
-    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("doc-1") }).status == 200);
+    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("文档-1") }).status == 200);
     resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token } }));
-    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("doc-1") }).status == 410);
+    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("文档-1") }).status == 410);
     assert(!resourceTransportProbe->sent.isEmpty());
     const auto revokedEvent = QJsonDocument::fromJson(resourceTransportProbe->sent.back()).object();
     assert(revokedEvent.value(QStringLiteral("type")).toString() == QStringLiteral("resource-revoked"));
@@ -366,7 +400,7 @@ int main()
     failedState->whenInitialized([&](const webview::InitializationResult& result) {
         failed = result.state == webview::InitializationState::Failed && !result.error.isEmpty();
     });
-    failedState->failInitialization(QStringLiteral("test failure"));
+    failedState->failInitialization("test failure");
     assert(failed);
 
     bool queuedFailure = false;

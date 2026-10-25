@@ -1,8 +1,7 @@
 #pragma once
 
-#include <QtGlobal>
-
 #include <atomic>
+#include <cstdint>
 
 namespace webview
 {
@@ -16,7 +15,7 @@ enum class DocumentError
 class DocumentLifetime
 {
 public:
-    quint64 token() const { return token_.load(); }
+    std::uint64_t token() const { return token_.load(); }
 
     void invalidate()
     {
@@ -34,7 +33,7 @@ public:
 
     bool isClosed() const { return closed_.load(); }
 
-    DocumentError resultFor(quint64 token) const
+    DocumentError resultFor(std::uint64_t token) const
     {
         if (closed_.load()) {
             return DocumentError::Closed;
@@ -43,7 +42,7 @@ public:
     }
 
 private:
-    std::atomic<quint64> token_ { 0 };
+    std::atomic<std::uint64_t> token_ { 0 };
     std::atomic_bool closed_ = false;
 };
 } // namespace webview
