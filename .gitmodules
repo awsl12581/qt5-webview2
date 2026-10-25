@@ -1,0 +1,9 @@
+[submodule "3rdparty/json"]
+	path = 3rdparty/json
+	url = https://github.com/nlohmann/json.git
+[submodule "3rdparty/ada"]
+	path = 3rdparty/ada
+	url = https://github.com/ada-url/ada.git
+[submodule "3rdparty/utf8proc"]
+	path = 3rdparty/utf8proc
+	url = https://github.com/JuliaStrings/utf8proc.git
