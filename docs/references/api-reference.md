@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-09-24 18:53 CST
-> 文档版本：v11
-> 修改说明：明确 WebView2 browser process 故障的 view/session 回调作用域。
+> 最后修改时间：2026-10-25 22:20 CST
+> 文档版本：v12
+> 修改说明：将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -16,6 +16,10 @@
 所有公开枚举均为 `enum class ... : int`，头文件在每个枚举项旁说明其语义。
 
 `src/` 下的头文件属于库内部实现，不安装给使用方。
+
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；路径列表使用 `std::vector<std::string>`，配置集合和映射使用 `std::unordered_set`、`std::unordered_map`，计数使用标准定宽整数。`QUrl`、`QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget` 继续保留。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+
+这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
 ## 所有权
 
@@ -48,11 +52,15 @@ enum class SessionMode : int { Persistent, Ephemeral };
 
 struct WebViewSessionOptions {
     SessionMode mode = SessionMode::Ephemeral;
-    QString profilePath;
+    std::string profilePath;
 };
 ```
 
 `Persistent` 保留站点数据，`Ephemeral` 使用临时会话。Windows 将 `profilePath` 作为 WebView2 用户数据目录；macOS 的公开 WKWebView API 不保证数据存放在该物理路径。
+
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；路径列表使用 `std::vector<std::string>`，配置集合和映射使用 `std::unordered_set`、`std::unordered_map`，计数使用标准定宽整数。`QUrl`、`QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget` 继续保留。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+
+这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
 ## IWebViewSession
 
@@ -84,7 +92,7 @@ public:
 ```cpp
 struct WebsiteDataResult {
     bool success = true;
-    QString error;
+    std::string error;
 };
 ```
 
@@ -95,8 +103,8 @@ enum class BridgeAccess : int { Denied, Allowed };
 enum class ExternalNetworkAccess : int { Denied, Allowed };
 
 struct LocalBundle {
-    QString directory;
-    QString entryDocument = QStringLiteral("index.html");
+    std::string directory;
+    std::string entryDocument = "index.html";
     bool spaFallback = true;
     ExternalNetworkAccess externalNetworkAccess = ExternalNetworkAccess::Denied;
 };
@@ -107,7 +115,7 @@ struct RemoteOrigin { QUrl url; };
 using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOrigin>;
 
 struct WebApplicationOptions {
-    QString id;
+    std::string id;
     ApplicationSource source;
     BridgeAccess bridgeAccess = BridgeAccess::Denied;
 };
@@ -140,9 +148,9 @@ public:
     virtual void whenInitialized(InitializationCompletion completion) = 0;
     virtual void attachNativeView() = 0;
     virtual void detachNativeView() = 0;
-    virtual void open(WebApplicationPtr application, const QString& route = {}) = 0;
+    virtual void open(WebApplicationPtr application, const std::string& route = {}) = 0;
     virtual void navigate(const QUrl& url) = 0;
-    virtual void loadDocument(const QString& html, const QUrl& baseUrl = {}) = 0;
+    virtual void loadDocument(const std::string& html, const QUrl& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
     virtual void close() = 0;
@@ -170,7 +178,7 @@ enum class InitializationState : int { Initializing, Ready, Failed, Closed };
 
 struct InitializationResult {
     InitializationState state = InitializationState::Ready;
-    QString error;
+    std::string error;
 };
 
 enum class LoadState : int { Started, Redirected, Committed, Finished, Failed };
@@ -178,8 +186,8 @@ enum class LoadState : int { Started, Redirected, Committed, Finished, Failed };
 struct LoadEvent {
     LoadState state = LoadState::Started;
     QUrl url;
-    QString error;
-    quint64 navigationId = 0;
+    std::string error;
+    std::uint64_t navigationId = 0;
     bool isMainFrame = true;
 };
 ```
@@ -222,8 +230,8 @@ enum class RuntimeFailureKind : int {
 
 struct RuntimeFailureEvent {
     RuntimeFailureKind kind = RuntimeFailureKind::Unknown;
-    QString reason;
-    qint64 nativeCode = 0;
+    std::string reason;
+    std::int64_t nativeCode = 0;
 };
 ```
 
@@ -243,8 +251,8 @@ enum class FileSelectionStatus : int { Selected, Cancelled, Closed, InvalidResul
 
 struct FileSelectionResult {
     FileSelectionStatus status = FileSelectionStatus::Cancelled;
-    QStringList paths;
-    QString error;
+    std::vector<std::string> paths;
+    std::string error;
 };
 
 using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
@@ -257,14 +265,14 @@ struct DownloadRequest {
     QUrl url;
     QUrl origin;
     QUrl documentUrl;
-    QString suggestedFileName;
+    std::string suggestedFileName;
 };
 
 enum class DownloadHandling : int { Cancel, BrowserDefault, TargetPath };
 
 struct DownloadTarget {
     DownloadHandling handling = DownloadHandling::Cancel;
-    QString filePath;
+    std::string filePath;
 };
 
 enum class DownloadResolutionStatus : int { Resolved, Cancelled, Closed, InvalidResult };
@@ -272,7 +280,7 @@ enum class DownloadResolutionStatus : int { Resolved, Cancelled, Closed, Invalid
 struct DownloadResolution {
     DownloadResolutionStatus status = DownloadResolutionStatus::Cancelled;
     DownloadTarget target;
-    QString error;
+    std::string error;
 };
 
 using DownloadCompletion = std::function<void(DownloadResolution)>;
@@ -294,10 +302,10 @@ enum class BridgeMessageKind : int { Event, Request, Response };
 struct BridgeMessage {
     int version = 1;
     BridgeMessageKind kind = BridgeMessageKind::Event;
-    QString type;
-    QString requestId;
+    std::string type;
+    std::string requestId;
     QJsonObject payload;
-    QString error;
+    std::string error;
 };
 ```
 
@@ -315,15 +323,15 @@ window.systemWebView.postMessage({
 C++ 注册事件、发事件或发起请求：
 
 ```cpp
-view->bridge().setEventHandler(QStringLiteral("save-result"), [](const QJsonObject& payload) {
+view->bridge().setEventHandler("save-result", [](const QJsonObject& payload) {
     qDebug() << payload;
 });
 
-view->bridge().emitEvent(QStringLiteral("saved"), { { "id", "42" } });
+view->bridge().emitEvent("saved", { { "id", "42" } });
 
-view->bridge().call(QStringLiteral("get-user"), { { "id", "42" } },
-    [](const QJsonObject& payload, const QString& error) {
-        if (!error.isEmpty()) qWarning() << error;
+view->bridge().call("get-user", { { "id", "42" } },
+    [](const QJsonObject& payload, const std::string& error) {
+        if (!error.empty()) qWarning() << QString::fromStdString(error);
         else qDebug() << payload;
     });
 ```
@@ -343,12 +351,8 @@ const stopListening = window.systemWebView.on("saved", payload => {
 
 ```cpp
 webview::WebViewPolicyConfig config;
-config.pageToHostSchemas.insert(
-    QStringLiteral("save"),
-    { { { QStringLiteral("id"), QJsonValue::String } } });
-config.hostToPageSchemas.insert(
-    QStringLiteral("saved"),
-    { { { QStringLiteral("id"), QJsonValue::String } } });
+config.pageToHostSchemas["save"] = { { { "id", QJsonValue::String } } };
+config.hostToPageSchemas["saved"] = { { { "id", QJsonValue::String } } };
 ```
 
 `setEventHandler(type, handler)` 和 `setRequestHandler(type, handler)` 分别为每个类型设置唯一处理器；传入空处理器会移除已有处理器。请求处理器通过 `Reply` 返回 payload 或错误。导航或关闭会取消未完成的 C++ 请求。
@@ -358,12 +362,12 @@ config.hostToPageSchemas.insert(
 大文件不放入消息 payload。`publishFile()` 在 view 已打开应用后创建稳定快照，并返回页面可读取的 opaque URL：
 
 ```cpp
-const auto file = view->resources().publishFile(path, QStringLiteral("application/pdf"));
-if (!file.token.isEmpty()) {
-    view->bridge().emitEvent(QStringLiteral("show-file"), {
+const auto file = view->resources().publishFile(path, "application/pdf");
+if (!file.token.empty()) {
+    view->bridge().emitEvent("show-file", {
         { "url", file.url.toString() },
-        { "mime", file.mimeType },
-        { "token", file.token }
+        { "mime", QString::fromStdString(file.mimeType) },
+        { "token", QString::fromStdString(file.token) }
     });
 }
 ```
@@ -385,17 +389,17 @@ window.systemWebView.postMessage({ type: "release-resource", payload: { token } 
 
 ```cpp
 struct BridgeMessageSchema {
-    QHash<QString, QJsonValue::Type> requiredPayloadFields;
+    std::unordered_map<std::string, QJsonValue::Type> requiredPayloadFields;
     bool allowAdditionalPayloadFields = false;
 };
 
 struct WebViewPolicyConfig {
-    QSet<QString> allowedAppHosts;
-    QStringList allowedFileRoots;
-    QSet<QString> trustedDevelopmentOrigins;
-    QSet<QString> trustedHttpsOrigins;
-    QHash<QString, BridgeMessageSchema> pageToHostSchemas;
-    QHash<QString, BridgeMessageSchema> hostToPageSchemas;
+    std::unordered_set<std::string> allowedAppHosts;
+    std::vector<std::string> allowedFileRoots;
+    std::unordered_set<std::string> trustedDevelopmentOrigins;
+    std::unordered_set<std::string> trustedHttpsOrigins;
+    std::unordered_map<std::string, BridgeMessageSchema> pageToHostSchemas;
+    std::unordered_map<std::string, BridgeMessageSchema> hostToPageSchemas;
     int maximumBridgeMessageBytes = 64 * 1024;
 };
 
@@ -410,9 +414,9 @@ public:
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
     virtual bool allowsBridge(const QUrl& committedUrl) const;
     virtual bool validatePageToHostMessage(
-        const BridgeMessage& message, QString* error = nullptr) const;
+        const BridgeMessage& message, std::string* error = nullptr) const;
     virtual bool validateHostToPageMessage(
-        const BridgeMessage& message, QString* error = nullptr) const;
+        const BridgeMessage& message, std::string* error = nullptr) const;
     virtual PermissionDecision decidePermission(const PermissionRequest& request) const;
     virtual DownloadDecision decideDownload(const DownloadRequest& request) const;
 
@@ -494,7 +498,7 @@ int main(int argc, char* argv[])
     layout->setContentsMargins(0, 0, 0, 0);
 
     webview::WebViewPolicyConfig policyConfig;
-    policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
+    policyConfig.allowedAppHosts.insert("dashboard");
 
     webview::WebViewSessionOptions sessionOptions;
     sessionOptions.mode = webview::SessionMode::Ephemeral;
@@ -503,8 +507,8 @@ int main(int argc, char* argv[])
         webview::createDefaultWebViewPolicy(std::move(policyConfig)));
 
     webview::WebApplicationOptions appOptions;
-    appOptions.id = QStringLiteral("dashboard");
-    appOptions.source = webview::LocalBundle { QStringLiteral("/path/to/dist") };
+    appOptions.id = "dashboard";
+    appOptions.source = webview::LocalBundle { "/path/to/dist" };
     auto application = session->createApplication(std::move(appOptions));
     if (!application) {
         return 1;
@@ -516,7 +520,7 @@ int main(int argc, char* argv[])
     webview::WebViewHostCallbacks callbacks;
     callbacks.onLoad = [](const webview::LoadEvent& event) {
         if (event.state == webview::LoadState::Failed) {
-            qWarning() << event.error;
+            qWarning() << QString::fromStdString(event.error);
         }
     };
     view->setHostCallbacks(std::move(callbacks));
@@ -545,3 +549,4 @@ int main(int argc, char* argv[])
 | v9 | 2026-09-24 18:17 CST | 增加本地页面的外部网络访问控制，并说明默认拒绝行为。 |
 | v10 | 2026-09-24 18:29 CST | 增加运行时故障公共类型、session/view 回调和诊断日志说明。 |
 | v11 | 2026-09-24 18:53 CST | 明确 WebView2 browser process 故障在 view 和 session 两个作用域的回调语义。 |
+| v12 | 2026-10-25 22:20 CST | 将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。 |

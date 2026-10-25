@@ -25,7 +25,7 @@ HostCompletionAccess HostCompletionGuard::claim()
 
 FileSelectionResult normalizeFileSelectionResult(const FileSelectionRequest& request, FileSelectionResult result)
 {
-    if (result.status != FileSelectionStatus::Selected || result.paths.isEmpty()) {
+    if (result.status != FileSelectionStatus::Selected || result.paths.empty()) {
         if (result.status == FileSelectionStatus::Selected) {
             result.status = FileSelectionStatus::Cancelled;
         }
@@ -33,15 +33,15 @@ FileSelectionResult normalizeFileSelectionResult(const FileSelectionRequest& req
         return result;
     }
     if (!request.allowsMultiple && result.paths.size() != 1) {
-        return { FileSelectionStatus::InvalidResult, { }, QStringLiteral("The file request allows only one selection.") };
+        return { FileSelectionStatus::InvalidResult, {}, "The file request allows only one selection." };
     }
     for (const auto& path : result.paths) {
-        const QFileInfo entry(path);
-        if (path.isEmpty() || !entry.exists()) {
-            return { FileSelectionStatus::InvalidResult, { }, QStringLiteral("A selected path does not exist.") };
+        const QFileInfo entry(QString::fromStdString(path));
+        if (path.empty() || !entry.exists()) {
+            return { FileSelectionStatus::InvalidResult, {}, "A selected path does not exist." };
         }
         if (entry.isDir() && !request.allowsDirectories) {
-            return { FileSelectionStatus::InvalidResult, { }, QStringLiteral("The file request does not allow directories.") };
+            return { FileSelectionStatus::InvalidResult, {}, "The file request does not allow directories." };
         }
     }
     return result;

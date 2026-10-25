@@ -6,8 +6,9 @@ namespace webview
 {
 namespace
 {
-bool validId(const QString& id)
+bool validId(const std::string& text)
 {
+    const auto id = QString::fromStdString(text);
     if (id.isEmpty()) {
         return false;
     }
@@ -29,10 +30,10 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
         return { };
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&options.source)) {
-        const QFileInfo root(bundle->directory);
-        const auto entryParts = bundle->entryDocument.split(QLatin1Char('/'), Qt::SkipEmptyParts);
-        if (root.canonicalFilePath().isEmpty() || !root.isDir() || bundle->entryDocument.isEmpty()
-            || bundle->entryDocument.startsWith(QLatin1Char('/')) || entryParts.contains(QStringLiteral(".."))) {
+        const QFileInfo root(QString::fromStdString(bundle->directory));
+        const auto entryParts = QString::fromStdString(bundle->entryDocument).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (root.canonicalFilePath().isEmpty() || !root.isDir() || bundle->entryDocument.empty() || bundle->entryDocument.starts_with('/')
+            || entryParts.contains(QStringLiteral(".."))) {
             if (error) {
                 *error = "LocalBundle requires an existing directory and entry document.";
             }
@@ -61,7 +62,7 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
         }
     }
     auto application = std::make_shared<WebApplication>();
-    application->id_ = options.id.toStdString();
+    application->id_ = std::move(options.id);
     application->source_ = std::move(options.source);
     application->bridgeAccess_ = options.bridgeAccess;
     return application;
@@ -78,9 +79,10 @@ QUrl WebApplication::origin() const
 QUrl WebApplication::urlForRoute(std::string_view route) const
 {
     QUrl url = origin();
-    const auto cleanRoute = route.empty()
-                                ? (std::holds_alternative<LocalBundle>(source_) ? std::get<LocalBundle>(source_).entryDocument : QString())
-                                : QString::fromUtf8(route.data(), static_cast<int>(route.size()));
+    const auto cleanRoute =
+        route.empty() ? (std::holds_alternative<LocalBundle>(source_) ? QString::fromStdString(std::get<LocalBundle>(source_).entryDocument)
+                                                                      : QString())
+                      : QString::fromUtf8(route.data(), static_cast<int>(route.size()));
     url.setPath(cleanRoute.startsWith(QLatin1Char('/')) ? cleanRoute : QStringLiteral("/") + cleanRoute);
     return url;
 }

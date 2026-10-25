@@ -107,10 +107,10 @@ int main(int argc, char** argv)
     QApplication application(argc, argv);
 
     webview::WebViewPolicyConfig config;
-    config.allowedAppHosts.insert(QStringLiteral("bridge-test"));
-    config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
-    config.pageToHostSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } }, true });
-    config.hostToPageSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } } });
+    config.allowedAppHosts.insert("bridge-test");
+    config.trustedHttpsOrigins.insert("https://trusted.example");
+    config.pageToHostSchemas["hello"] = { { { "message", QJsonValue::String } }, true };
+    config.hostToPageSchemas["hello"] = { { { "message", QJsonValue::String } } };
     auto policy = std::make_shared<TestPolicy>(std::move(config));
     auto session = webview::createWebViewSession({ }, policy);
     auto view = session->createWebView();
@@ -135,7 +135,7 @@ int main(int argc, char** argv)
     };
     callbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
     view->setHostCallbacks(std::move(callbacks));
-    view->bridge().setEventHandler(QStringLiteral("hello"), [&](const QJsonObject& payload) {
+    view->bridge().setEventHandler("hello", [&](const QJsonObject& payload) {
         ++messageCount;
         if (payload.contains(QStringLiteral("executed"))) {
             hostileReturned = true;
@@ -185,8 +185,8 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(bridgeEntry.write(html.toUtf8()) == html.toUtf8().size());
     bridgeEntry.close();
     webview::WebApplicationOptions bridgeApplicationOptions;
-    bridgeApplicationOptions.id = QStringLiteral("bridge-test");
-    bridgeApplicationOptions.source = webview::LocalBundle { bridgeRoot.path() };
+    bridgeApplicationOptions.id = "bridge-test";
+    bridgeApplicationOptions.source = webview::LocalBundle { bridgeRoot.path().toStdString() };
     bridgeApplicationOptions.bridgeAccess = webview::BridgeAccess::Allowed;
     auto bridgeApplication = session->createApplication(std::move(bridgeApplicationOptions));
     assert(bridgeApplication);
@@ -217,7 +217,7 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(events.size() == eventCount);
 
     const QString hostilePayload = QStringLiteral("</script><script>window.__payloadExecuted=true</script>");
-    view->bridge().emitEvent(QStringLiteral("hello"), { { QStringLiteral("message"), hostilePayload } });
+    view->bridge().emitEvent("hello", { { QStringLiteral("message"), hostilePayload } });
     timeout.start(10000);
     loop.exec();
     assert(hostileReturned);
@@ -234,7 +234,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>)HTML");
     events.clear();
-    view->loadDocument(replayHtml, QUrl(QStringLiteral("https://trusted.example/next.html")));
+    view->loadDocument(replayHtml.toStdString(), QUrl(QStringLiteral("https://trusted.example/next.html")));
     timeout.start(10000);
     loop.exec();
     assert(events.back().state == webview::LoadState::Finished);
@@ -308,10 +308,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     policy->permissionRequests.clear();
     events.clear();
-    view->loadDocument(QStringLiteral(R"HTML(
+    view->loadDocument(R"HTML(
 <!doctype html><input id="file" type="file"><script>
 window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
-</script>)HTML"),
+</script>)HTML",
         QUrl(QStringLiteral("https://trusted.example/file-input.html")));
     timeout.start(10000);
     loop.exec();
@@ -364,7 +364,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     assert(!failureEvents.empty());
     assert(failureEvents.front().state == webview::LoadState::Started);
     assert(failureEvents.back().state == webview::LoadState::Failed);
-    assert(!failureEvents.back().error.isEmpty());
+    assert(!failureEvents.back().error.empty());
 
     QWidget popupHost;
     popupHost.resize(640, 480);
@@ -383,10 +383,10 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
         loop.quit();
     };
     view->setHostCallbacks(std::move(popupCallbacks));
-    view->loadDocument(QStringLiteral(R"HTML(
+    view->loadDocument(R"HTML(
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
-</script>)HTML"),
+</script>)HTML",
         QUrl(QStringLiteral("https://trusted.example/popup-opener.html")));
     timeout.start(10000);
     loop.exec();
@@ -401,8 +401,8 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(policy->navigationRequests.size() == navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;
-    view->bridge().call(QStringLiteral("hello"), { }, [&](const QJsonObject&, const QString& error) { rootClosed = !error.isEmpty(); });
-    popup->bridge().call(QStringLiteral("hello"), { }, [&](const QJsonObject&, const QString& error) { popupClosed = !error.isEmpty(); });
+    view->bridge().call("hello", {}, [&](const QJsonObject&, const std::string& error) { rootClosed = !error.empty(); });
+    popup->bridge().call("hello", {}, [&](const QJsonObject&, const std::string& error) { popupClosed = !error.empty(); });
     assert(rootClosed);
     assert(popupClosed);
 
@@ -410,7 +410,7 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     view->close();
     assert(view->isClosed());
     bool closed = false;
-    view->bridge().call(QStringLiteral("hello"), { { QStringLiteral("message"), QStringLiteral("late") } },
-        [&](const QJsonObject&, const QString& error) { closed = !error.isEmpty(); });
+    view->bridge().call("hello", { { QStringLiteral("message"), QStringLiteral("late") } },
+        [&](const QJsonObject&, const std::string& error) { closed = !error.empty(); });
     assert(closed);
 }

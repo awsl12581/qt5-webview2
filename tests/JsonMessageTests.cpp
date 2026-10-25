@@ -29,7 +29,7 @@ void captureMessage(QtMsgType, const QMessageLogContext& context, const QString&
 class MemoryBridgeTransport final : public webview::BridgeTransport
 {
 public:
-    bool send(const QByteArray& message) override
+    bool send(const std::string& message) override
     {
         sent.push_back(message);
         return true;
@@ -37,7 +37,7 @@ public:
 
     void invalidate() override { invalidated = true; }
 
-    QVector<QByteArray> sent;
+    std::vector<std::string> sent;
     bool invalidated = false;
 };
 }
@@ -74,11 +74,11 @@ int main()
             7,
             QUrl(QStringLiteral("https://user:password@example.com/private?token=secret#fragment")),
             "failure with /private/path");
-        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, QStringLiteral("terminated"), 9 });
+        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, "terminated", 9 });
         assert(runtimeFailureReceived);
         runtimeFailureReceived = false;
         diagnosticState.close();
-        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, QStringLiteral("terminated"), 9 });
+        diagnosticState.emitRuntimeFailure({ webview::RuntimeFailureKind::WebContentProcessTerminated, "terminated", 9 });
         assert(!runtimeFailureReceived);
     }
     const auto diagnosticText = capturedMessages.join(QLatin1Char('\n'));
@@ -100,7 +100,7 @@ int main()
     auto* transportProbe = transport.get();
     webview::WebViewBridge bridge(std::move(transport));
     bool eventReceived = false;
-    bridge.setEventHandler(QStringLiteral("notify"), [&](const QJsonObject& payload) {
+    bridge.setEventHandler("notify", [&](const QJsonObject& payload) {
         eventReceived = payload.value(QStringLiteral("value")).toInt() == 7;
     });
     bridge.receive(QJsonDocument(
@@ -110,7 +110,8 @@ int main()
                                      { "requestId", "" },
                                      { "payload", QJsonObject { { "value", 7 } } },
                                      { "error", "" } })
-                       .toJson(QJsonDocument::Compact));
+                       .toJson(QJsonDocument::Compact)
+                       .toStdString());
     assert(eventReceived);
     eventReceived = false;
     bridge.receive(QJsonDocument(
@@ -119,10 +120,11 @@ int main()
                                      { "requestId", "" },
                                      { "payload", QJsonObject { { "value", 7 } } },
                                      { "error", "" } })
-                       .toJson(QJsonDocument::Compact));
+                       .toJson(QJsonDocument::Compact)
+                       .toStdString());
     assert(!eventReceived);
     int unicodeEvents = 0;
-    const auto unicodeType = QStringLiteral("通知🌍");
+    const std::string unicodeType = "通知🌍";
     bridge.setEventHandler(unicodeType, [&](const QJsonObject&) { unicodeEvents = -1; });
     bridge.setEventHandler(unicodeType, [&](const QJsonObject&) {
         ++unicodeEvents;
@@ -131,26 +133,27 @@ int main()
     const auto unicodeEvent = QJsonDocument(
                                   QJsonObject { { "version", 1 },
                                                 { "kind", "event" },
-                                                { "type", unicodeType },
+                                                { "type", QString::fromStdString(unicodeType) },
                                                 { "requestId", "" },
                                                 { "payload", QJsonObject {} },
                                                 { "error", "" } })
-                                  .toJson(QJsonDocument::Compact);
+                                  .toJson(QJsonDocument::Compact)
+                                  .toStdString();
     bridge.receive(unicodeEvent);
     bridge.receive(unicodeEvent);
     assert(unicodeEvents == 1);
     bool callCompleted = false;
-    bridge.call(QStringLiteral("查询🌍"), { { "id", 9 } }, [&](const QJsonObject& payload, const QString& error) {
-        callCompleted = error.isEmpty() && payload.value("name").toString() == QStringLiteral("item");
+    bridge.call("查询🌍", { { "id", 9 } }, [&](const QJsonObject& payload, const std::string& error) {
+        callCompleted = error.empty() && payload.value("name").toString() == QStringLiteral("item");
     });
     QJsonObject request;
-    request = QJsonDocument::fromJson(transportProbe->sent.back()).object();
+    request = QJsonDocument::fromJson(QByteArray::fromStdString(transportProbe->sent.back())).object();
     assert(!request.isEmpty());
     const auto requestId = request.value(QStringLiteral("requestId")).toString();
     auto mismatchedResponse = request;
     mismatchedResponse.insert(QStringLiteral("kind"), QStringLiteral("response"));
     mismatchedResponse.insert(QStringLiteral("type"), QStringLiteral("other"));
-    bridge.receive(QJsonDocument(mismatchedResponse).toJson(QJsonDocument::Compact));
+    bridge.receive(QJsonDocument(mismatchedResponse).toJson(QJsonDocument::Compact).toStdString());
     assert(!callCompleted);
     bridge.receive(QJsonDocument(
                        QJsonObject { { "version", 1 },
@@ -159,10 +162,11 @@ int main()
                                      { "requestId", requestId },
                                      { "payload", QJsonObject { { "name", "item" } } },
                                      { "error", "" } })
-                       .toJson(QJsonDocument::Compact));
+                       .toJson(QJsonDocument::Compact)
+                       .toStdString());
     assert(callCompleted);
-    bridge.setRequestHandler(QStringLiteral("sum"), [](const QJsonObject& payload, webview::WebViewBridge::Reply reply) {
-        reply({ { "result", payload.value("left").toInt() + payload.value("right").toInt() } }, { });
+    bridge.setRequestHandler("sum", [](const QJsonObject& payload, webview::WebViewBridge::Reply reply) {
+        reply({ { "result", payload.value("left").toInt() + payload.value("right").toInt() } }, {});
     });
     bridge.receive(QJsonDocument(
                        QJsonObject { { "version", 1 },
@@ -171,20 +175,21 @@ int main()
                                      { "requestId", "request-1" },
                                      { "payload", QJsonObject { { "left", 2 }, { "right", 3 } } },
                                      { "error", "" } })
-                       .toJson(QJsonDocument::Compact));
+                       .toJson(QJsonDocument::Compact)
+                       .toStdString());
     QJsonObject response;
-    response = QJsonDocument::fromJson(transportProbe->sent.back()).object();
+    response = QJsonDocument::fromJson(QByteArray::fromStdString(transportProbe->sent.back())).object();
     assert(!response.isEmpty());
     assert(response.value("kind").toString() == QStringLiteral("response"));
     assert(response.value("payload").toObject().value("result").toInt() == 5);
     bool cancelled = false;
-    bridge.call(QStringLiteral("wait"), { }, [&](const QJsonObject&, const QString& error) { cancelled = !error.isEmpty(); });
+    bridge.call("wait", {}, [&](const QJsonObject&, const std::string& error) { cancelled = !error.empty(); });
     bridge.cancelPending();
     assert(cancelled);
     int invalidationCompletions = 0;
-    bridge.call(QStringLiteral("close"), { }, [&](const QJsonObject&, const QString&) {
+    bridge.call("close", {}, [&](const QJsonObject&, const std::string&) {
         ++invalidationCompletions;
-        bridge.call(QStringLiteral("reentrant"), { }, [&](const QJsonObject&, const QString&) { ++invalidationCompletions; });
+        bridge.call("reentrant", {}, [&](const QJsonObject&, const std::string&) { ++invalidationCompletions; });
     });
     bridge.invalidate();
     assert(transportProbe->invalidated);
@@ -196,30 +201,30 @@ int main()
     assert(allowedFile.open(QIODevice::WriteOnly));
     allowedFile.close();
 
-    QFile sourceFile(files.filePath(QStringLiteral("large.bin")));
+    QFile sourceFile(files.filePath(QStringLiteral("数据🌍.bin")));
     assert(sourceFile.open(QIODevice::WriteOnly));
     assert(sourceFile.write("0123456789") == 10);
     sourceFile.close();
     webview::WebResourceManager unboundResources(QUrl(QStringLiteral("app://ui")));
-    assert(unboundResources.publishFile(sourceFile.fileName()).token.isEmpty());
+    assert(unboundResources.publishFile(sourceFile.fileName().toStdString()).token.empty());
     auto resourceState = std::make_shared<webview::WebViewState>();
     auto& resources = *resourceState->resources;
     const QUrl documentOrigin(QStringLiteral("https://trusted.example"));
     resourceState->setResourceContext(QUrl(QStringLiteral("app://ui")), documentOrigin, "文档-1");
-    assert(resources.publishFile(sourceFile.fileName(), {}, QStringLiteral("other-doc")).token.isEmpty());
-    const auto published = resources.publishFile(sourceFile.fileName());
-    assert(!published.token.isEmpty());
+    assert(resources.publishFile(sourceFile.fileName().toStdString(), {}, "other-doc").token.empty());
+    const auto published = resources.publishFile(sourceFile.fileName().toStdString());
+    assert(!published.token.empty());
     assert(!published.url.toString().contains(sourceFile.fileName()));
     assert(sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
     assert(sourceFile.write("abcdefghij") == 10);
     sourceFile.close();
-    auto rangeResponse = resources.open({ published.url, documentOrigin, QStringLiteral("文档-1"), QStringLiteral("bytes=2-5") });
+    auto rangeResponse = resources.open({ published.url, documentOrigin, "文档-1", "bytes=2-5" });
     assert(rangeResponse.status == 206 && rangeResponse.offset == 2 && rangeResponse.length == 4);
     assert(rangeResponse.body->readAll() == QByteArray("2345"));
     const auto snapshotPath = qobject_cast<QFile*>(rangeResponse.body.get())->fileName();
-    assert(resources.open({ published.url, documentOrigin, QStringLiteral("other-doc") }).status == 403);
+    assert(resources.open({ published.url, documentOrigin, "other-doc" }).status == 403);
     resources.release(published.token);
-    assert(resources.open({ published.url, documentOrigin, QStringLiteral("文档-1") }).status == 410);
+    assert(resources.open({ published.url, documentOrigin, "文档-1" }).status == 410);
     assert(QFileInfo::exists(snapshotPath));
     rangeResponse.body.reset();
     rangeResponse.lease.reset();
@@ -229,22 +234,22 @@ int main()
     QFile emptyFile(files.filePath(QStringLiteral("empty.bin")));
     assert(emptyFile.open(QIODevice::WriteOnly));
     emptyFile.close();
-    const auto emptyPublished = resources.publishFile(emptyFile.fileName());
-    assert(!emptyPublished.token.isEmpty());
-    const auto emptyResponse = resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("文档-1") });
+    const auto emptyPublished = resources.publishFile(emptyFile.fileName().toStdString());
+    assert(!emptyPublished.token.empty());
+    const auto emptyResponse = resources.open({ emptyPublished.url, documentOrigin, "文档-1" });
     assert(emptyResponse.status == 200 && emptyResponse.length == 0);
-    assert(resources.open({ emptyPublished.url, documentOrigin, QStringLiteral("文档-1"), QStringLiteral("bytes=0-0") }).status == 416);
+    assert(resources.open({ emptyPublished.url, documentOrigin, "文档-1", "bytes=0-0" }).status == 416);
 
     webview::WebViewPolicyConfig resourcePolicyConfig;
-    resourcePolicyConfig.trustedHttpsOrigins.insert(documentOrigin.toString());
+    resourcePolicyConfig.trustedHttpsOrigins.insert(documentOrigin.toString().toStdString());
     auto resourceTransport = std::make_unique<MemoryBridgeTransport>();
     auto* resourceTransportProbe = resourceTransport.get();
     resourceState->policy = std::make_shared<webview::WebViewPolicy>(std::move(resourcePolicyConfig));
     resourceState->committedUrl = QUrl(QStringLiteral("https://trusted.example/index.html"));
     resourceState->bridge->setTransport(std::move(resourceTransport));
     resourceState->bindBridgePolicy();
-    const auto controlResource = resources.publishFile(sourceFile.fileName());
-    assert(!controlResource.token.isEmpty());
+    const auto controlResource = resources.publishFile(sourceFile.fileName().toStdString());
+    assert(!controlResource.token.empty());
     const auto releaseMessage = [&controlResource](const QJsonObject& payload) {
         return QJsonDocument(
                    QJsonObject { { "version", 1 },
@@ -253,24 +258,27 @@ int main()
                                  { "requestId", "" },
                                  { "payload", payload },
                                  { "error", "" } })
-            .toJson(QJsonDocument::Compact);
+            .toJson(QJsonDocument::Compact)
+            .toStdString();
     };
-    resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token }, { "extra", true } }));
-    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("文档-1") }).status == 200);
-    resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token } }));
-    assert(resources.open({ controlResource.url, documentOrigin, QStringLiteral("文档-1") }).status == 410);
-    assert(!resourceTransportProbe->sent.isEmpty());
-    const auto revokedEvent = QJsonDocument::fromJson(resourceTransportProbe->sent.back()).object();
+    resourceState->bridge->receive(releaseMessage({ { "token", QString::fromStdString(controlResource.token) }, { "extra", true } }));
+    assert(resources.open({ controlResource.url, documentOrigin, "文档-1" }).status == 200);
+    resourceState->bridge->receive(releaseMessage({ { "token", QString::fromStdString(controlResource.token) } }));
+    assert(resources.open({ controlResource.url, documentOrigin, "文档-1" }).status == 410);
+    assert(!resourceTransportProbe->sent.empty());
+    const auto revokedEvent = QJsonDocument::fromJson(QByteArray::fromStdString(resourceTransportProbe->sent.back())).object();
     assert(revokedEvent.value(QStringLiteral("type")).toString() == QStringLiteral("resource-revoked"));
-    assert(revokedEvent.value(QStringLiteral("payload")).toObject().value(QStringLiteral("token")).toString() == controlResource.token);
+    assert(
+        revokedEvent.value(QStringLiteral("payload")).toObject().value(QStringLiteral("token")).toString().toStdString()
+        == controlResource.token);
 
     webview::WebViewPolicyConfig config;
-    config.allowedAppHosts.insert(QStringLiteral("ui"));
-    config.allowedFileRoots.append(files.path());
-    config.trustedDevelopmentOrigins.insert(QStringLiteral("http://127.0.0.1:5173"));
-    config.trustedHttpsOrigins.insert(QStringLiteral("https://trusted.example"));
-    config.pageToHostSchemas.insert(QStringLiteral("ping"), { { { QStringLiteral("sequence"), QJsonValue::Double } } });
-    config.hostToPageSchemas.insert(QStringLiteral("pong"), { { { QStringLiteral("accepted"), QJsonValue::Bool } } });
+    config.allowedAppHosts.insert("ui");
+    config.allowedFileRoots.push_back(files.path().toStdString());
+    config.trustedDevelopmentOrigins.insert("http://127.0.0.1:5173");
+    config.trustedHttpsOrigins.insert("https://trusted.example");
+    config.pageToHostSchemas["ping"] = { { { "sequence", QJsonValue::Double } } };
+    config.hostToPageSchemas["pong"] = { { { "accepted", QJsonValue::Bool } } };
     config.maximumBridgeMessageBytes = 128;
     const webview::WebViewPolicy policy(std::move(config));
     webview::WebViewPolicy copiedPolicy(policy);
@@ -302,27 +310,27 @@ int main()
     assert(policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example/path"))));
     assert(!policy.allowsBridge(QUrl(QStringLiteral("https://trusted.example.evil/path"))));
 
-    QString validationError;
+    std::string validationError;
     const webview::BridgeMessage validMessage {
-        1, webview::BridgeMessageKind::Event, QStringLiteral("ping"), { }, QJsonObject { { QStringLiteral("sequence"), 1 } }, { }
+        1, webview::BridgeMessageKind::Event, "ping", {}, QJsonObject { { QStringLiteral("sequence"), 1 } }, {}
     };
     assert(policy.validatePageToHostMessage(validMessage, &validationError));
-    assert(validationError.isEmpty());
+    assert(validationError.empty());
     assert(!policy.validateHostToPageMessage(validMessage, &validationError));
-    assert(validationError.contains(QStringLiteral("type")));
+    assert(validationError.find("type") != std::string::npos);
     assert(policy.validateHostToPageMessage(
-        { 1, webview::BridgeMessageKind::Event, QStringLiteral("pong"), { }, { { QStringLiteral("accepted"), true } }, { } },
+        { 1, webview::BridgeMessageKind::Event, "pong", {}, { { QStringLiteral("accepted"), true } }, {} },
         &validationError));
     assert(!policy.validatePageToHostMessage(
         { 2, webview::BridgeMessageKind::Event, validMessage.type, { }, validMessage.payload, { } },
         &validationError));
-    assert(validationError.contains(QStringLiteral("version")));
+    assert(validationError.find("version") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
-        { 1, webview::BridgeMessageKind::Event, QStringLiteral("unknown"), { }, validMessage.payload, { } },
+        { 1, webview::BridgeMessageKind::Event, "unknown", {}, validMessage.payload, {} },
         &validationError));
-    assert(validationError.contains(QStringLiteral("type")));
-    assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, validMessage.type, { }, { }, { } }, &validationError));
-    assert(validationError.contains(QStringLiteral("sequence")));
+    assert(validationError.find("type") != std::string::npos);
+    assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, validMessage.type, {}, {}, {} }, &validationError));
+    assert(validationError.find("sequence") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
         { 1,
           webview::BridgeMessageKind::Event,
@@ -331,7 +339,7 @@ int main()
           QJsonObject { { QStringLiteral("sequence"), QStringLiteral("wrong type") } },
           { } },
         &validationError));
-    assert(validationError.contains(QStringLiteral("number")));
+    assert(validationError.find("number") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
         { 1,
           webview::BridgeMessageKind::Event,
@@ -339,7 +347,7 @@ int main()
           { },
           QJsonObject { { QStringLiteral("sequence"), 1 }, { QStringLiteral("extra"), true } } },
         &validationError));
-    assert(validationError.contains(QStringLiteral("unexpected")));
+    assert(validationError.find("unexpected") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
         { 1,
           webview::BridgeMessageKind::Event,
@@ -348,27 +356,38 @@ int main()
           QJsonObject { { QStringLiteral("sequence"), QString(200, QLatin1Char('x')) } },
           { } },
         &validationError));
-    assert(validationError.contains(QStringLiteral("size")));
+    assert(validationError.find("size") != std::string::npos);
+
+    webview::WebViewPolicyConfig unicodeConfig;
+    unicodeConfig.pageToHostSchemas["查询🌍"] = { { { "名称", QJsonValue::String } } };
+    webview::WebViewPolicy unicodePolicy(std::move(unicodeConfig));
+    webview::BridgeMessage unicodeEnvelope { 1, webview::BridgeMessageKind::Event, "查询🌍", {}, unicodeMessage, {} };
+    assert(!unicodePolicy.validatePageToHostMessage(unicodeEnvelope, &validationError));
+    assert(validationError == "Bridge message payload is missing required field: 名称");
+    unicodeEnvelope.payload = { { QStringLiteral("名称"), QStringLiteral("你好🌍") } };
+    assert(unicodePolicy.validatePageToHostMessage(unicodeEnvelope, &validationError));
+    assert(validationError.empty());
 
     webview::WebViewPolicyConfig wireLimitConfig;
-    wireLimitConfig.allowedAppHosts.insert(QStringLiteral("ui"));
-    wireLimitConfig.pageToHostSchemas.insert(QStringLiteral("notify"), { });
+    wireLimitConfig.allowedAppHosts.insert("ui");
+    wireLimitConfig.pageToHostSchemas["notify"] = {};
     wireLimitConfig.maximumBridgeMessageBytes = 128;
     auto wireLimitState = std::make_shared<webview::WebViewState>();
     wireLimitState->policy = std::make_shared<webview::WebViewPolicy>(std::move(wireLimitConfig));
     wireLimitState->committedUrl = QUrl(QStringLiteral("app://ui/index.html"));
     wireLimitState->bindBridgePolicy();
     bool oversizedMessageReceived = false;
-    wireLimitState->bridge->setEventHandler(QStringLiteral("notify"), [&](const QJsonObject&) { oversizedMessageReceived = true; });
-    const QByteArray compactMessage = QJsonDocument(
-                                          QJsonObject { { "version", 1 },
-                                                        { "kind", "event" },
-                                                        { "type", "notify" },
-                                                        { "requestId", "" },
-                                                        { "payload", QJsonObject() },
-                                                        { "error", "" } })
-                                          .toJson(QJsonDocument::Compact);
-    wireLimitState->bridge->receive(compactMessage + QByteArray(128, ' '));
+    wireLimitState->bridge->setEventHandler("notify", [&](const QJsonObject&) { oversizedMessageReceived = true; });
+    const std::string compactMessage = QJsonDocument(
+                                           QJsonObject { { "version", 1 },
+                                                         { "kind", "event" },
+                                                         { "type", "notify" },
+                                                         { "requestId", "" },
+                                                         { "payload", QJsonObject() },
+                                                         { "error", "" } })
+                                           .toJson(QJsonDocument::Compact)
+                                           .toStdString();
+    wireLimitState->bridge->receive(compactMessage + std::string(128, ' '));
     assert(!oversizedMessageReceived);
 
     webview::DocumentLifetime lifetime;
@@ -398,14 +417,14 @@ int main()
     auto failedState = std::make_shared<webview::WebViewState>();
     bool failed = false;
     failedState->whenInitialized([&](const webview::InitializationResult& result) {
-        failed = result.state == webview::InitializationState::Failed && !result.error.isEmpty();
+        failed = result.state == webview::InitializationState::Failed && !result.error.empty();
     });
     failedState->failInitialization("test failure");
     assert(failed);
 
     bool queuedFailure = false;
     failedState->runWhenReady([&](const webview::InitializationResult& result) {
-        queuedFailure = result.state == webview::InitializationState::Failed && result.error == QStringLiteral("test failure");
+        queuedFailure = result.state == webview::InitializationState::Failed && result.error == "test failure";
     });
     assert(queuedFailure);
 
@@ -451,18 +470,20 @@ int main()
     QFile indexFile(selectedRoot.filePath(QStringLiteral("index.html")));
     assert(indexFile.open(QIODevice::WriteOnly));
     indexFile.close();
-    const webview::FileSelectionRequest singleFileRequest { { }, { }, false, false };
-    const auto selected =
-        webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, { selectedFile }, { } });
+    const webview::FileSelectionRequest singleFileRequest { {}, {}, false, false };
+    const auto selected = webview::normalizeFileSelectionResult(
+        singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { selectedFile.toStdString() }, {} });
     assert(selected.status == webview::FileSelectionStatus::Selected);
     const auto empty = webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, { }, { } });
     assert(empty.status == webview::FileSelectionStatus::Cancelled);
     const auto multiple = webview::normalizeFileSelectionResult(
         singleFileRequest,
-        { webview::FileSelectionStatus::Selected, { selectedFile, selectedFile }, { } });
+        { webview::FileSelectionStatus::Selected, { selectedFile.toStdString(), selectedFile.toStdString() }, {} });
     assert(multiple.status == webview::FileSelectionStatus::InvalidResult);
-    const auto directory =
-        webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, { selectedRoot.path() }, { } });
+    const auto directory = webview::normalizeFileSelectionResult(
+        singleFileRequest,
+        { webview::FileSelectionStatus::Selected, { selectedRoot.path().toStdString() }, {} });
     assert(directory.status == webview::FileSelectionStatus::InvalidResult);
 
     std::vector<webview::ResourceMapping> mappings {
@@ -507,8 +528,8 @@ int main()
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
     webview::WebApplicationOptions bundleOptions;
-    bundleOptions.id = QStringLiteral("demo-app");
-    bundleOptions.source = webview::LocalBundle { selectedRoot.path() };
+    bundleOptions.id = "demo-app";
+    bundleOptions.source = webview::LocalBundle { selectedRoot.path().toStdString() };
     const auto bundleApplication = webview::createApplication(std::move(bundleOptions), &mappingError);
     assert(bundleApplication);
     assert(std::get<webview::LocalBundle>(bundleApplication->source()).externalNetworkAccess == webview::ExternalNetworkAccess::Denied);
@@ -522,21 +543,21 @@ int main()
         webview::resolveMappedResource(*mapping, QUrl(QStringLiteral("app://demo/数据.txt")), &mappingError)
         == QFileInfo(unicodeFile).canonicalFilePath().toStdString());
     webview::WebApplicationOptions invalidNetworkAccess;
-    invalidNetworkAccess.id = QStringLiteral("invalid-network-access");
+    invalidNetworkAccess.id = "invalid-network-access";
     invalidNetworkAccess.source =
-        webview::LocalBundle { selectedRoot.path(), QStringLiteral("index.html"), true, static_cast<webview::ExternalNetworkAccess>(-1) };
+        webview::LocalBundle { selectedRoot.path().toStdString(), "index.html", true, static_cast<webview::ExternalNetworkAccess>(-1) };
     assert(!webview::createApplication(std::move(invalidNetworkAccess), &mappingError));
     webview::WebApplicationOptions devOptions;
-    devOptions.id = QStringLiteral("demo-dev");
+    devOptions.id = "demo-dev";
     devOptions.source = webview::DevelopmentServer { QUrl(QStringLiteral("http://127.0.0.1:5173")) };
     const auto devApplication = webview::createApplication(std::move(devOptions), &mappingError);
     assert(devApplication && devApplication->urlForRoute("assets/main.js") == QUrl(QStringLiteral("http://127.0.0.1:5173/assets/main.js")));
     webview::WebApplicationOptions remoteOptions;
-    remoteOptions.id = QStringLiteral("demo-remote");
+    remoteOptions.id = "demo-remote";
     remoteOptions.source = webview::RemoteOrigin { QUrl(QStringLiteral("https://example.com")) };
     assert(webview::createApplication(std::move(remoteOptions), &mappingError));
     webview::WebApplicationOptions invalidRemote;
-    invalidRemote.id = QStringLiteral("invalid-remote");
+    invalidRemote.id = "invalid-remote";
     invalidRemote.source = webview::RemoteOrigin { QUrl(QStringLiteral("http://example.com")) };
     assert(!webview::createApplication(std::move(invalidRemote), &mappingError));
 }

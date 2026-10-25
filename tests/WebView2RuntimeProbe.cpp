@@ -84,8 +84,8 @@ private:
             return false;
         }
         bool completionCalled = false;
-        retainedView->bridge().call(QStringLiteral("closed-probe"), { }, [&completionCalled](const QJsonObject&, const QString& error) {
-            completionCalled = !error.isEmpty();
+        retainedView->bridge().call("closed-probe", {}, [&completionCalled](const QJsonObject&, const std::string& error) {
+            completionCalled = !error.empty();
         });
         if (!completionCalled) {
             fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));
@@ -117,7 +117,7 @@ private:
         webview::WebViewSessionOptions options;
         options.mode = current.mode;
         if (current.mode == webview::SessionMode::Persistent) {
-            options.profilePath = profile.path() + QStringLiteral("/%1").arg(static_cast<int>(caseIndex));
+            options.profilePath = (profile.path() + QStringLiteral("/%1").arg(static_cast<int>(caseIndex))).toStdString();
         }
         session = webview::createWebViewSession(std::move(options));
         armTimeout(QStringLiteral("session initialization"));
@@ -128,7 +128,7 @@ private:
             }
             ++owner->generation;
             if (result.state != webview::InitializationState::Ready) {
-                owner->fail(QStringLiteral("WebView2 session failed: %1").arg(result.error));
+                owner->fail(QStringLiteral("WebView2 session failed: %1").arg(QString::fromStdString(result.error)));
                 return;
             }
             owner->createController();
@@ -152,7 +152,7 @@ private:
             }
             ++owner->generation;
             if (result.state != webview::InitializationState::Ready) {
-                owner->fail(QStringLiteral("WebView2 controller/profile failed: %1").arg(result.error));
+                owner->fail(QStringLiteral("WebView2 controller/profile failed: %1").arg(QString::fromStdString(result.error)));
                 return;
             }
             QTimer::singleShot(0, &owner->application, [weak] {
@@ -191,7 +191,8 @@ private:
             }
             ++owner->generation;
             if (!result.success) {
-                owner->fail(QStringLiteral("WebView2 %1 clear failed: %2").arg(QString::fromLatin1(clearName), result.error));
+                owner->fail(QStringLiteral("WebView2 %1 clear failed: %2")
+                                .arg(QString::fromLatin1(clearName), QString::fromStdString(result.error)));
                 return;
             }
             owner->finishCase(clearName);
@@ -234,7 +235,7 @@ private:
     {
         webview::WebViewSessionOptions options;
         options.mode = webview::SessionMode::Persistent;
-        options.profilePath = profile.path() + QStringLiteral("/closing");
+        options.profilePath = (profile.path() + QStringLiteral("/closing")).toStdString();
         auto closingSession = webview::createWebViewSession(std::move(options));
         auto retainedView = closingSession->createWebView(&parent);
         closingSession.reset();
@@ -243,8 +244,8 @@ private:
             return;
         }
         bool completionCalled = false;
-        retainedView->bridge().call(QStringLiteral("closed-probe"), { }, [&completionCalled](const QJsonObject&, const QString& error) {
-            completionCalled = !error.isEmpty();
+        retainedView->bridge().call("closed-probe", {}, [&completionCalled](const QJsonObject&, const std::string& error) {
+            completionCalled = !error.empty();
         });
         if (!completionCalled) {
             fail(QStringLiteral("A retained WebView2 view accepted work after its session was destroyed."));

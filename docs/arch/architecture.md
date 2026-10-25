@@ -1,12 +1,12 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-25 22:11 CST
-> 文档版本：v13
-> 修改说明：Documented standard-library storage and conversion boundaries in platform backends.
+> 最后修改时间：2026-10-25 22:20 CST
+> 文档版本：v14
+> 修改说明：Documented standard value types in the public API and the required consumer rebuild.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
-`include/system_webview/system_webview.h` is the only public header. It exposes Qt value types and C++ interfaces but no native WebKit,
+`include/system_webview/system_webview.h` is the only public header. It exposes standard value types, selected Qt types, and C++ interfaces but no native WebKit,
 WebView2, or WebKitGTK types. The CMake target is a shared library with hidden symbols by default. `SYSTEM_WEBVIEW_API` exports only the
 implemented public classes and factory functions; on Windows it selects `dllexport` while building and `dllimport` for consumers.
 Public classes with library-owned state use PImpl, so changes to bridge, resource-manager, and policy internals do not change their public
@@ -28,7 +28,13 @@ resource reader uses `std::vector<char>`; bridge script text uses standard strin
 as standard strings, formats internal errors with `std::format`, and opens native file streams through
 `std::filesystem::path`. Qt/native text conversions occur at the corresponding API boundaries.
 Qt URL, JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
-boundaries; URL parsing, path authorization, message schemas, and the public Qt API retain their existing contracts.
+boundaries; URL parsing, path authorization, and message schemas retain their existing behavior.
+The public API uses UTF-8 `std::string` for text, filesystem paths, bridge metadata, errors, and serialized bridge
+messages; `std::vector<std::string>` for path lists; standard unordered sets/maps for policy configuration;
+and fixed-width standard integers for counters. `QUrl`, `QJsonObject`, `QJsonValue`, `QIODevice`, and `QWidget`
+remain at the URL, JSON, stream, and widget boundaries. This migration changes public signatures and value
+layouts, so consumers must update their calls, callbacks, and policy overrides and rebuild against the library.
+There are no compatibility overloads for the replaced Qt value types.
 
 ## Ownership model
 
@@ -150,3 +156,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v11 | 2026-10-25 21:51 CST | Documented C++20 and standard-library types at internal boundaries. |
 | v12 | 2026-10-25 22:04 CST | Documented standard-library storage in portable webview implementation. |
 | v13 | 2026-10-25 22:11 CST | Documented standard-library storage and conversion boundaries in platform backends. |
+| v14 | 2026-10-25 22:20 CST | Documented standard value types in the public API and the required consumer rebuild. |

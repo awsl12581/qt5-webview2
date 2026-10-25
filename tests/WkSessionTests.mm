@@ -36,19 +36,19 @@ int main(int argc, char** argv)
 
     webview::WebViewSessionOptions persistentOptions;
     persistentOptions.mode = webview::SessionMode::Persistent;
-    persistentOptions.profilePath = profile.path();
+    persistentOptions.profilePath = (profile.path()).toStdString();
     auto session = webview::createWebViewSession(std::move(persistentOptions));
     auto ephemeral = webview::createWebViewSession({ });
     webview::WebApplicationOptions invalidBundle;
-    invalidBundle.id = QStringLiteral("demo");
-    invalidBundle.source = webview::LocalBundle { profile.path(), QStringLiteral("../index.html") };
+    invalidBundle.id = "demo";
+    invalidBundle.source = webview::LocalBundle { profile.path().toStdString(), "../index.html" };
     assert(!session->createApplication(std::move(invalidBundle)));
     QFile bundleEntry(profile.filePath(QStringLiteral("index.html")));
     assert(bundleEntry.open(QIODevice::WriteOnly));
     bundleEntry.close();
     webview::WebApplicationOptions bundle;
-    bundle.id = QStringLiteral("bundle");
-    bundle.source = webview::LocalBundle { profile.path() };
+    bundle.id = "bundle";
+    bundle.source = webview::LocalBundle { profile.path().toStdString() };
     assert(session->createApplication(bundle));
     assert(!session->createApplication(std::move(bundle)));
     assert(session->supports(webview::WebViewCapability::PersistentProfile));

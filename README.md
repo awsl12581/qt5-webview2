@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-25 21:51 CST
-> 文档版本：v4
-> 修改说明：Documented C++20 requirements and the isolated verification preset.
+> 最后修改时间：2026-10-25 22:20 CST
+> 文档版本：v5
+> 修改说明：Updated examples for UTF-8 standard strings and standard containers in the public API.
 
 A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
@@ -23,7 +23,7 @@ A small Qt 5 library for embedding the operating system's web view in a C++ appl
   <img src="docs/image.png" alt="System WebView demo">
 </p>
 
-System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code deals only with Qt values and the public C++ interfaces.
+System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code uses standard strings and containers alongside Qt URL, JSON, I/O, and widget types. All API strings, including paths, use UTF-8. This value-type migration changes the source and binary interface; consumers must update their calls and rebuild with the library.
 
 ## What it provides
 
@@ -104,7 +104,7 @@ Create one session, register an application source, and attach a view to a Qt wi
 #include <system_webview/system_webview.h>
 
 webview::WebViewPolicyConfig policyConfig;
-policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
+policyConfig.allowedAppHosts.insert("dashboard");
 
 webview::WebViewSessionOptions sessionOptions;
 sessionOptions.mode = webview::SessionMode::Ephemeral;
@@ -114,13 +114,13 @@ auto session = webview::createWebViewSession(
     webview::createDefaultWebViewPolicy(std::move(policyConfig)));
 
 webview::WebApplicationOptions appOptions;
-appOptions.id = QStringLiteral("dashboard");
-appOptions.source = webview::LocalBundle { QStringLiteral("/path/to/vite/dist") };
+appOptions.id = "dashboard";
+appOptions.source = webview::LocalBundle { "/path/to/vite/dist" };
 appOptions.bridgeAccess = webview::BridgeAccess::Allowed;
 
 auto application = session->createApplication(std::move(appOptions));
 auto view = session->createWebView(parentWidget);
-view->open(application, QStringLiteral("/orders/42"));
+view->open(application, "/orders/42");
 view->attachNativeView();
 ```
 
@@ -166,5 +166,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | v2 | 2026-09-24 04:37 CEST | Added the public API reference link and standard metadata. |
 | v3 | 2026-09-24 17:29 CST | Documented the single public header and shared-library build. |
 | v4 | 2026-10-25 21:51 CST | Documented C++20 requirements and the isolated verification preset. |
+| v5 | 2026-10-25 22:20 CST | Updated examples for UTF-8 standard strings and standard containers in the public API. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

@@ -10,7 +10,7 @@
  * auto session = webview::createWebViewSession(std::move(sessionOptions));
  *
  * webview::WebApplicationOptions appOptions;
- * appOptions.id = QStringLiteral("main");
+ * appOptions.id = "main";
  * appOptions.source = webview::LocalBundle { resourceDirectory };
  * auto application = session->createApplication(std::move(appOptions));
  * if (!application)
@@ -40,24 +40,26 @@
 #define SYSTEM_WEBVIEW_API
 #endif
 
-#include <QHash>
 #include <QIODevice>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QSet>
-#include <QString>
-#include <QStringList>
 #include <QUrl>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
+#include <vector>
 
-class QByteArray;
 class QWidget;
 
 namespace webview
 {
+// All standard strings in this API contain UTF-8 text (including filesystem paths).
+// BridgeTransport strings contain length-delimited UTF-8 JSON bytes.
 class IWebView;
 /// Owns one web view. Destroying it closes the underlying native view.
 using WebViewPtr = std::unique_ptr<IWebView>;
@@ -85,15 +87,15 @@ enum class InitializationState : int
 struct InitializationResult
 {
     InitializationState state = InitializationState::Ready;
-    QString error;
+    std::string error;
 };
 
 struct LoadEvent
 {
     LoadState state = LoadState::Started;
     QUrl url;
-    QString error;
-    quint64 navigationId = 0;
+    std::string error;
+    std::uint64_t navigationId = 0;
     bool isMainFrame = true;
 };
 
@@ -183,9 +185,9 @@ enum class ExternalNetworkAccess : int
 struct LocalBundle
 {
     /// Absolute directory containing the bundle.
-    QString directory;
+    std::string directory;
     /// Document served when a route resolves to a directory.
-    QString entryDocument = QStringLiteral("index.html");
+    std::string entryDocument = "index.html";
     /// Fall back to entryDocument for routes without a matching file.
     bool spaFallback = true;
     /// Controls external subresources, fetch, XHR, WebSocket, and form targets.
@@ -207,7 +209,7 @@ using ApplicationSource = std::variant<LocalBundle, DevelopmentServer, RemoteOri
 struct WebApplicationOptions
 {
     /// Unique within the session; also becomes the host of a local app:// URL.
-    QString id;
+    std::string id;
     ApplicationSource source;
     /// Bridge access still requires the committed origin to be trusted by policy.
     BridgeAccess bridgeAccess = BridgeAccess::Denied;
@@ -217,7 +219,7 @@ struct WebViewSessionOptions
 {
     SessionMode mode = SessionMode::Ephemeral;
     /// User-data directory for a persistent WebView2 profile; ignored by WKWebView.
-    QString profilePath;
+    std::string profilePath;
 };
 
 struct PermissionRequest
@@ -231,7 +233,7 @@ struct DownloadRequest
     QUrl url;
     QUrl origin;
     QUrl documentUrl;
-    QString suggestedFileName;
+    std::string suggestedFileName;
 };
 
 struct FileSelectionRequest
@@ -253,8 +255,8 @@ enum class FileSelectionStatus : int
 struct FileSelectionResult
 {
     FileSelectionStatus status = FileSelectionStatus::Cancelled;
-    QStringList paths;
-    QString error;
+    std::vector<std::string> paths;
+    std::string error;
 };
 
 using FileSelectionCompletion = std::function<void(FileSelectionResult)>;
@@ -269,7 +271,7 @@ enum class DownloadHandling : int
 struct DownloadTarget
 {
     DownloadHandling handling = DownloadHandling::Cancel;
-    QString filePath;
+    std::string filePath;
 };
 
 enum class DownloadResolutionStatus : int
@@ -284,7 +286,7 @@ struct DownloadResolution
 {
     DownloadResolutionStatus status = DownloadResolutionStatus::Cancelled;
     DownloadTarget target;
-    QString error;
+    std::string error;
 };
 
 using DownloadCompletion = std::function<void(DownloadResolution)>;
@@ -292,7 +294,7 @@ using DownloadCompletion = std::function<void(DownloadResolution)>;
 struct WebsiteDataResult
 {
     bool success = true;
-    QString error;
+    std::string error;
 };
 
 enum class RuntimeFailureKind : int
@@ -307,8 +309,8 @@ enum class RuntimeFailureKind : int
 struct RuntimeFailureEvent
 {
     RuntimeFailureKind kind = RuntimeFailureKind::Unknown;
-    QString reason;
-    qint64 nativeCode = 0;
+    std::string reason;
+    std::int64_t nativeCode = 0;
 };
 
 struct WebViewHostCallbacks
@@ -344,10 +346,10 @@ struct BridgeMessage
 {
     int version = 1;
     BridgeMessageKind kind = BridgeMessageKind::Event;
-    QString type;
-    QString requestId;
+    std::string type;
+    std::string requestId;
     QJsonObject payload;
-    QString error;
+    std::string error;
 };
 
 class BridgeTransport
@@ -355,7 +357,7 @@ class BridgeTransport
 public:
     virtual ~BridgeTransport() = default;
     /// Returns false when the message could not be handed to the page.
-    virtual bool send(const QByteArray& message) = 0;
+    virtual bool send(const std::string& message) = 0;
     /// Permanently disconnects this transport.
     virtual void invalidate() = 0;
 };
@@ -364,11 +366,11 @@ public:
 class SYSTEM_WEBVIEW_API WebViewBridge final
 {
 public:
-    using RequestCompletion = std::function<void(const QJsonObject&, const QString&)>;
+    using RequestCompletion = std::function<void(const QJsonObject&, const std::string&)>;
     using EventHandler = std::function<void(const QJsonObject&)>;
-    using Reply = std::function<void(const QJsonObject&, const QString&)>;
+    using Reply = std::function<void(const QJsonObject&, const std::string&)>;
     using RequestHandler = std::function<void(const QJsonObject&, Reply)>;
-    using Validator = std::function<bool(const BridgeMessage&, bool, int, QString*)>;
+    using Validator = std::function<bool(const BridgeMessage&, bool, int, std::string*)>;
 
     explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport = { });
     ~WebViewBridge();
@@ -377,22 +379,22 @@ public:
     WebViewBridge& operator=(const WebViewBridge&) = delete;
 
     /// Sends a fire-and-forget event to the page.
-    void emitEvent(const QString& type, const QJsonObject& payload = { });
+    void emitEvent(const std::string& type, const QJsonObject& payload = {});
     /// Sends a request; pending completions are cancelled on navigation or close.
-    void call(const QString& type, const QJsonObject& payload, RequestCompletion completion = { });
+    void call(const std::string& type, const QJsonObject& payload, RequestCompletion completion = {});
     /// Sets the sole page-event handler for type; pass an empty handler to remove it.
-    void setEventHandler(const QString& type, EventHandler handler);
+    void setEventHandler(const std::string& type, EventHandler handler);
     /// Sets the sole request handler for type; pass empty to remove it. Replies once.
-    void setRequestHandler(const QString& type, RequestHandler handler);
+    void setRequestHandler(const std::string& type, RequestHandler handler);
     void setValidator(Validator validator);
     void setTransport(std::unique_ptr<BridgeTransport> transport);
-    void receive(const QByteArray& message, const QUrl& source = { });
-    void cancelPending(const QString& error = QStringLiteral("Bridge request cancelled."));
+    void receive(const std::string& message, const QUrl& source = {});
+    void cancelPending(const std::string& error = "Bridge request cancelled.");
     void invalidate();
 
 private:
     friend class WebViewState;
-    void setDiagnosticContext(quint64 sessionId, quint64 viewId);
+    void setDiagnosticContext(std::uint64_t sessionId, std::uint64_t viewId);
 
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -400,29 +402,29 @@ private:
 
 struct PublishedResource
 {
-    QString token;
+    std::string token;
     QUrl url;
-    QString mimeType;
-    qint64 size = -1;
+    std::string mimeType;
+    std::int64_t size = -1;
 };
 
 struct ResourceRequest
 {
     QUrl url;
     QUrl sourceOrigin;
-    QString documentToken;
-    QString rangeHeader;
-    qint64 rangeStart = -1;
-    qint64 rangeEnd = -1;
+    std::string documentToken;
+    std::string rangeHeader;
+    std::int64_t rangeStart = -1;
+    std::int64_t rangeEnd = -1;
 };
 
 struct ResourceResponse
 {
     int status = 404;
-    QString mimeType;
-    qint64 totalSize = 0;
-    qint64 offset = 0;
-    qint64 length = 0;
+    std::string mimeType;
+    std::int64_t totalSize = 0;
+    std::int64_t offset = 0;
+    std::int64_t length = 0;
     std::shared_ptr<void> lease;
     std::unique_ptr<QIODevice> body;
     bool acceptRanges = false;
@@ -437,18 +439,18 @@ public:
     /// Publishes an immutable snapshot of path to the current document.
     /// An empty token indicates failure. Release the token when the page is done.
     SYSTEM_WEBVIEW_API PublishedResource
-        publishFile(const QString& path, const QString& mimeType = { }, const QString& documentToken = { });
+        publishFile(const std::string& path, const std::string& mimeType = {}, const std::string& documentToken = {});
     /// Resolves a published URL. Intended for platform backends and tests.
     SYSTEM_WEBVIEW_API ResourceResponse open(const ResourceRequest& request) const;
-    SYSTEM_WEBVIEW_API void release(const QString& token);
+    SYSTEM_WEBVIEW_API void release(const std::string& token);
 
 private:
     friend class WebViewState;
-    void setDiagnosticContext(quint64 sessionId, quint64 viewId);
-    void setRevocationHandler(std::function<void(const QString&)> handler);
-    void setContext(const QUrl& resourceOrigin, const QUrl& documentOrigin, const QString& documentToken);
-    void setDocumentToken(const QString& documentToken);
-    void releaseForDocument(const QString& documentToken);
+    void setDiagnosticContext(std::uint64_t sessionId, std::uint64_t viewId);
+    void setRevocationHandler(std::function<void(const std::string&)> handler);
+    void setContext(const QUrl& resourceOrigin, const QUrl& documentOrigin, const std::string& documentToken);
+    void setDocumentToken(const std::string& documentToken);
+    void releaseForDocument(const std::string& documentToken);
     void releaseAll();
 
     class Impl;
@@ -471,11 +473,11 @@ public:
     /// Detaches the native view before its Qt host is destroyed or reparented.
     virtual void detachNativeView() = 0;
     /// Opens a session-registered application at an optional application route.
-    virtual void open(WebApplicationPtr application, const QString& route = { }) = 0;
+    virtual void open(WebApplicationPtr application, const std::string& route = {}) = 0;
     /// Navigates directly; WebViewPolicy still decides whether the URL is allowed.
     virtual void navigate(const QUrl& url) = 0;
     /// Loads an HTML string. Set baseUrl when the document uses relative URLs.
-    virtual void loadDocument(const QString& html, const QUrl& baseUrl = { }) = 0;
+    virtual void loadDocument(const std::string& html, const QUrl& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
     /// Idempotently closes the native view and cancels pending callbacks.
@@ -514,23 +516,23 @@ using WebViewSessionPtr = std::unique_ptr<IWebViewSession>;
 
 struct BridgeMessageSchema
 {
-    QHash<QString, QJsonValue::Type> requiredPayloadFields;
+    std::unordered_map<std::string, QJsonValue::Type> requiredPayloadFields;
     bool allowAdditionalPayloadFields = false;
 };
 
 struct WebViewPolicyConfig
 {
     /// app:// hosts that may be loaded and granted bridge access.
-    QSet<QString> allowedAppHosts;
+    std::unordered_set<std::string> allowedAppHosts;
     /// Canonical roots from which file:// navigation is allowed.
-    QStringList allowedFileRoots;
+    std::vector<std::string> allowedFileRoots;
     /// Exact normalized HTTP(S) origins trusted during local development.
-    QSet<QString> trustedDevelopmentOrigins;
+    std::unordered_set<std::string> trustedDevelopmentOrigins;
     /// Exact normalized HTTPS origins allowed to use the bridge.
-    QSet<QString> trustedHttpsOrigins;
+    std::unordered_set<std::string> trustedHttpsOrigins;
     /// Allowed message types and payload shapes in each direction.
-    QHash<QString, BridgeMessageSchema> pageToHostSchemas;
-    QHash<QString, BridgeMessageSchema> hostToPageSchemas;
+    std::unordered_map<std::string, BridgeMessageSchema> pageToHostSchemas;
+    std::unordered_map<std::string, BridgeMessageSchema> hostToPageSchemas;
     /// Maximum serialized bridge message size in either direction.
     int maximumBridgeMessageBytes = 64 * 1024;
 };
@@ -547,8 +549,8 @@ public:
     virtual NavigationDecision decideNavigation(const NavigationRequest& request) const;
     virtual NewWindowDecision decideNewWindow(const NewWindowRequest& request) const;
     virtual bool allowsBridge(const QUrl& committedUrl) const;
-    virtual bool validatePageToHostMessage(const BridgeMessage& message, QString* error = nullptr) const;
-    virtual bool validateHostToPageMessage(const BridgeMessage& message, QString* error = nullptr) const;
+    virtual bool validatePageToHostMessage(const BridgeMessage& message, std::string* error = nullptr) const;
+    virtual bool validateHostToPageMessage(const BridgeMessage& message, std::string* error = nullptr) const;
     int maximumBridgeMessageBytes() const;
     virtual PermissionDecision decidePermission(const PermissionRequest& request) const;
     virtual DownloadDecision decideDownload(const DownloadRequest& request) const;

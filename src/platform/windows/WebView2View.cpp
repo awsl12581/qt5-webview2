@@ -46,16 +46,16 @@ RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
     switch (kind) {
     case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
         return { RuntimeFailureKind::BrowserProcessTerminated,
-                 QStringLiteral("The WebView2 browser process terminated."),
+                 "The WebView2 browser process terminated.",
                  static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:
         return { RuntimeFailureKind::WebContentProcessUnresponsive,
-                 QStringLiteral("The WebView2 render process is unresponsive."),
+                 "The WebView2 render process is unresponsive.",
                  static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED:
         return { RuntimeFailureKind::WebContentProcessTerminated,
-                 QStringLiteral("A WebView2 render process terminated."),
+                 "A WebView2 render process terminated.",
                  static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED:
@@ -63,12 +63,12 @@ RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
     case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_PLUGIN_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED:
         return { RuntimeFailureKind::AuxiliaryProcessTerminated,
-                 QStringLiteral("A WebView2 auxiliary process terminated."),
+                 "A WebView2 auxiliary process terminated.",
                  static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED:
         break;
     }
-    return { RuntimeFailureKind::Unknown, QStringLiteral("An unknown WebView2 process terminated."), static_cast<std::int64_t>(kind) };
+    return { RuntimeFailureKind::Unknown, "An unknown WebView2 process terminated.", static_cast<std::int64_t>(kind) };
 }
 
 class WebView2BridgeTransport final : public BridgeTransport
@@ -79,12 +79,12 @@ public:
     {
     }
 
-    bool send(const QByteArray& message) override
+    bool send(const std::string& message) override
     {
         if (!view_) {
             return false;
         }
-        const auto text = QString::fromUtf8(message).toStdWString();
+        const auto text = QString::fromStdString(message).toStdWString();
         return SUCCEEDED(view_->PostWebMessageAsJson(text.c_str()));
     }
 
@@ -346,7 +346,7 @@ public:
                 return;
             }
             if (result.state != InitializationState::Ready) {
-                owner->state->failInitialization(result.error.toStdString());
+                owner->state->failInitialization(result.error);
                 return;
             }
             owner->environment = owner->environmentProvider ? owner->environmentProvider() : nullptr;
@@ -450,18 +450,18 @@ public:
                                 }
                                 ResourceResponse resourceResponse;
                                 if (url.path().startsWith(QStringLiteral("/resource/"))) {
-                                    QString rangeHeader;
+                                    std::string rangeHeader;
                                     Microsoft::WRL::ComPtr<ICoreWebView2HttpRequestHeaders> headers;
                                     LPWSTR rawRange = nullptr;
                                     if (SUCCEEDED(request->get_Headers(headers.GetAddressOf())) && headers
                                         && SUCCEEDED(headers->GetHeader(L"Range", &rawRange)) && rawRange) {
-                                        rangeHeader = QString::fromWCharArray(rawRange);
+                                        rangeHeader = QString::fromWCharArray(rawRange).toStdString();
                                         CoTaskMemFree(rawRange);
                                     }
-                                    resourceResponse = state->resources->open(
-                                        { url, state->committedUrl, QString::fromStdString(state->documentToken), rangeHeader });
+                                    resourceResponse =
+                                        state->resources->open({ url, state->committedUrl, state->documentToken, rangeHeader });
                                     status = resourceResponse.status;
-                                    mime = resourceResponse.mimeType.toStdString();
+                                    mime = resourceResponse.mimeType;
                                     totalSize = resourceResponse.totalSize;
                                     offset = resourceResponse.offset;
                                     length = resourceResponse.length;
@@ -730,7 +730,8 @@ public:
                                     CoTaskMemFree(rawUri);
                                     LPWSTR rawPath = nullptr;
                                     args->get_ResultFilePath(&rawPath);
-                                    const QString suggestedName = QFileInfo(QString::fromWCharArray(rawPath ? rawPath : L"")).fileName();
+                                    const auto suggestedName =
+                                        QFileInfo(QString::fromWCharArray(rawPath ? rawPath : L"")).fileName().toStdString();
                                     CoTaskMemFree(rawPath);
                                     const DownloadRequest request { url,
                                                                     normalizedOrigin(state->committedUrl),
@@ -786,12 +787,13 @@ public:
                                                         argsRef->put_Cancel(TRUE);
                                                     }
                                                     else if (resolution.target.handling == DownloadHandling::TargetPath) {
-                                                        const QFileInfo target(resolution.target.filePath);
+                                                        const QFileInfo target(QString::fromStdString(resolution.target.filePath));
                                                         if (!target.isAbsolute() || !target.dir().exists()) {
                                                             argsRef->put_Cancel(TRUE);
                                                         }
                                                         else {
-                                                            argsRef->put_ResultFilePath(resolution.target.filePath.toStdWString().c_str());
+                                                            argsRef->put_ResultFilePath(
+                                                                QString::fromStdString(resolution.target.filePath).toStdWString().c_str());
                                                         }
                                                     }
                                                     deferral->Complete();
@@ -954,7 +956,7 @@ public:
                                 if (!inner.value(QStringLiteral("type")).isString() || !inner.value(QStringLiteral("payload")).isObject()) {
                                     return S_OK;
                                 }
-                                state->bridge->receive(QJsonDocument(inner).toJson(QJsonDocument::Compact), source);
+                                state->bridge->receive(QJsonDocument(inner).toJson(QJsonDocument::Compact).toStdString(), source);
                                 return S_OK;
                             })
                             .Get(),
@@ -1210,7 +1212,7 @@ void WebView2View::detachNativeView()
     impl_->applyHostState();
 }
 
-void WebView2View::open(WebApplicationPtr application, const QString& route)
+void WebView2View::open(WebApplicationPtr application, const std::string& route)
 {
     if (!application) {
         return;
@@ -1218,14 +1220,14 @@ void WebView2View::open(WebApplicationPtr application, const QString& route)
     impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : QUrl();
     impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(application->id())));
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
-    navigate(application->urlForRoute(route.toStdString()));
+    navigate(application->urlForRoute(route));
 }
 
 void WebView2View::navigate(const QUrl& url)
 {
     impl_->state->runWhenReady([state = impl_->state, url, owner = std::weak_ptr<Impl>(impl_)](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {
-            state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error.toStdString());
+            state->emitLoad(LoadState::Failed, ++state->navigationId, url, result.error);
             return;
         }
         const auto view = owner.lock();
@@ -1246,7 +1248,7 @@ void WebView2View::navigate(const QUrl& url)
     });
 }
 
-void WebView2View::loadDocument(const QString& html, const QUrl& baseUrl)
+void WebView2View::loadDocument(const std::string& html, const QUrl& baseUrl)
 {
     if (baseUrl.scheme() == QStringLiteral("app")
         && (!impl_->resourceMappings || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
@@ -1254,7 +1256,7 @@ void WebView2View::loadDocument(const QString& html, const QUrl& baseUrl)
         impl_->state->emitLoad(LoadState::Failed, id, baseUrl, "The document base URL is unavailable.");
         return;
     }
-    impl_->inlineDocuments->insert_or_assign(baseUrl.toString(QUrl::FullyEncoded).toStdString(), html.toStdString());
+    impl_->inlineDocuments->insert_or_assign(baseUrl.toString(QUrl::FullyEncoded).toStdString(), html);
     navigate(baseUrl);
 }
 

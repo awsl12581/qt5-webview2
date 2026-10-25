@@ -42,7 +42,7 @@ void InitializationScheduler::fail(std::string error)
     }
     error_ = std::move(error);
     state_ = InitializationState::Failed;
-    const InitializationResult result { state_, QString::fromStdString(error_) };
+    const InitializationResult result { state_, error_ };
     finishQueuedOperations(result);
     finishInitializationCompletions(result);
 }
@@ -56,7 +56,7 @@ void InitializationScheduler::whenInitialized(Completion completion)
         initializationCompletions_.push_back(std::move(completion));
         return;
     }
-    completion({ state_, QString::fromStdString(error_) });
+    completion({ state_, error_ });
 }
 
 void InitializationScheduler::runWhenReady(Completion operation)
@@ -68,7 +68,7 @@ void InitializationScheduler::runWhenReady(Completion operation)
         readyOperations_.push_back(std::move(operation));
         return;
     }
-    operation({ state_, QString::fromStdString(error_) });
+    operation({ state_, error_ });
 }
 
 void InitializationScheduler::close()
@@ -78,7 +78,7 @@ void InitializationScheduler::close()
     }
     state_ = InitializationState::Closed;
     error_ = "The web view is closed.";
-    const InitializationResult result { state_, QString::fromStdString(error_) };
+    const InitializationResult result { state_, error_ };
     finishQueuedOperations(result);
     finishInitializationCompletions(result);
 }
@@ -177,19 +177,19 @@ void WebViewState::close()
 void WebViewState::bindBridgePolicy()
 {
     const std::weak_ptr<WebViewState> weak = shared_from_this();
-    bridge->setEventHandler(QStringLiteral("release-resource"), [weak](const QJsonObject& payload) {
+    bridge->setEventHandler("release-resource", [weak](const QJsonObject& payload) {
         if (const auto state = weak.lock()) {
-            state->resources->release(payload.value(QStringLiteral("token")).toString());
+            state->resources->release(payload.value(QStringLiteral("token")).toString().toStdString());
         }
     });
-    resources->setRevocationHandler([weak](const QString& token) {
+    resources->setRevocationHandler([weak](const std::string& token) {
         if (const auto state = weak.lock()) {
-            state->bridge->emitEvent(QStringLiteral("resource-revoked"), { { QStringLiteral("token"), token } });
+            state->bridge->emitEvent("resource-revoked", { { QStringLiteral("token"), QString::fromStdString(token) } });
         }
     });
-    bridge->setValidator([weak](const BridgeMessage& message, bool outbound, int wireSize, QString* error) {
+    bridge->setValidator([weak](const BridgeMessage& message, bool outbound, int wireSize, std::string* error) {
         const auto state = weak.lock();
-        const auto reject = [&state, error](const char* reason, const QString& detail) {
+        const auto reject = [&state, error](const char* reason, const std::string& detail) {
             if (error) {
                 *error = detail;
             }
@@ -200,18 +200,18 @@ void WebViewState::bindBridgePolicy()
             return false;
         };
         if (!state || state->lifetime.isClosed() || !state->policy || !state->policy->allowsBridge(state->committedUrl)) {
-            return reject("unauthorized_document", QStringLiteral("The current document is not authorized for bridge messages."));
+            return reject("unauthorized_document", "The current document is not authorized for bridge messages.");
         }
         if (wireSize > state->policy->maximumBridgeMessageBytes()) {
-            return reject("size_limit", QStringLiteral("Bridge message exceeds the configured size limit."));
+            return reject("size_limit", "Bridge message exceeds the configured size limit.");
         }
-        if (message.type == QStringLiteral("release-resource") || message.type == QStringLiteral("resource-revoked")) {
+        if (message.type == "release-resource" || message.type == "resource-revoked") {
             const bool allowed = message.kind == BridgeMessageKind::Event
-                                 && message.type == (outbound ? QStringLiteral("resource-revoked") : QStringLiteral("release-resource"))
-                                 && message.payload.size() == 1 && message.payload.value(QStringLiteral("token")).isString()
+                                 && message.type == (outbound ? "resource-revoked" : "release-resource") && message.payload.size() == 1
+                                 && message.payload.value(QStringLiteral("token")).isString()
                                  && !message.payload.value(QStringLiteral("token")).toString().isEmpty();
             if (!allowed) {
-                return reject("resource_control", QStringLiteral("Invalid resource control message."));
+                return reject("resource_control", "Invalid resource control message.");
             }
             return true;
         }
@@ -230,7 +230,7 @@ void WebViewState::invalidateDocument()
 {
     lifetime.invalidate();
     if (bridge) {
-        bridge->cancelPending(QStringLiteral("The document changed."));
+        bridge->cancelPending("The document changed.");
     }
     setResourceDocumentToken({ });
 }
@@ -238,14 +238,14 @@ void WebViewState::invalidateDocument()
 void WebViewState::setResourceDocumentToken(std::string_view token)
 {
     if (resources) {
-        resources->setDocumentToken(QString::fromUtf8(token.data(), static_cast<int>(token.size())));
+        resources->setDocumentToken(std::string(token));
     }
 }
 
 void WebViewState::setResourceContext(const QUrl& origin, const QUrl& documentOrigin, std::string_view token)
 {
     if (resources) {
-        resources->setContext(origin, documentOrigin, QString::fromUtf8(token.data(), static_cast<int>(token.size())));
+        resources->setContext(origin, documentOrigin, std::string(token));
     }
 }
 
@@ -257,7 +257,7 @@ void WebViewState::emitLoad(LoadState loadState, std::uint64_t eventNavigationId
             << "navigation=" << eventNavigationId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
     }
     if (!lifetime.isClosed() && callbacks.onLoad) {
-        callbacks.onLoad({ loadState, url, QString::fromUtf8(error.data(), static_cast<int>(error.size())), eventNavigationId, true });
+        callbacks.onLoad({ loadState, url, std::string(error), eventNavigationId, true });
     }
 }
 

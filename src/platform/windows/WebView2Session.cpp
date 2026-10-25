@@ -40,7 +40,7 @@ void finishClear(const std::shared_ptr<WebView2Session::ClearCompletion>& comple
     }
     auto callback = std::move(*completion);
     *completion = {};
-    callback({ success, QString::fromStdString(error) });
+    callback({ success, std::move(error) });
 }
 }
 
@@ -72,13 +72,13 @@ public:
                 std::format("WebView2 requires a COM STA UI thread (HRESULT 0x{:x}).", static_cast<std::uint32_t>(apartment)));
             return;
         }
-        if (this->options.mode == SessionMode::Persistent && this->options.profilePath.isEmpty()) {
+        if (this->options.mode == SessionMode::Persistent && this->options.profilePath.empty()) {
             async->scheduler->failInitialization("Persistent WebView2 sessions require a profilePath.");
             return;
         }
         std::filesystem::path profilePath;
         if (this->options.mode == SessionMode::Persistent) {
-            profilePath = std::filesystem::path(this->options.profilePath.toStdWString());
+            profilePath = std::filesystem::path(QString::fromStdString(this->options.profilePath).toStdWString());
             std::error_code error;
             std::filesystem::create_directories(profilePath, error);
             if (error) {
@@ -135,7 +135,7 @@ public:
                                     }
                                     const RuntimeFailureEvent event {
                                         RuntimeFailureKind::BrowserProcessTerminated,
-                                        QStringLiteral("The WebView2 browser process terminated unexpectedly."),
+                                        "The WebView2 browser process terminated unexpectedly.",
                                         static_cast<std::int64_t>(processId),
                                     };
                                     qCCritical(systemWebViewRuntime).noquote()
@@ -171,7 +171,7 @@ public:
                     return;
                 }
                 if (initialization.state != InitializationState::Ready) {
-                    finishClear(sharedCompletion, false, initialization.error.toStdString());
+                    finishClear(sharedCompletion, false, initialization.error);
                     return;
                 }
                 if (!owner->profile) {
@@ -258,11 +258,7 @@ WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions optio
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
         std::vector<ResourceMapping> candidate = *impl_->resourceMappings;
         candidate.push_back(
-            { application->origin(),
-              bundle->directory.toStdString(),
-              bundle->entryDocument.toStdString(),
-              bundle->spaFallback,
-              bundle->externalNetworkAccess });
+            { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback, bundle->externalNetworkAccess });
         if (!validateResourceMappings(&candidate, &error)
             || resolveMappedResource(candidate.back(), application->urlForRoute({}), &error).empty()) {
             return {};

@@ -57,8 +57,8 @@
     const bool published = url.path().startsWith(QStringLiteral("/resource/"));
     if (published && pageState) {
         const auto range = [task.request valueForHTTPHeaderField:@"Range"];
-        resource = pageState->resources->open({ url, documentUrl, QString::fromStdString(pageState->documentToken),
-            range ? QString::fromUtf8(range.UTF8String) : QString() });
+        resource = pageState->resources->open(
+            { url, documentUrl, pageState->documentToken, range ? std::string(range.UTF8String) : std::string() });
     }
 
     std::string path;
@@ -72,7 +72,7 @@
     std::unique_ptr<QIODevice> body = std::move(resource.body);
     const webview::ResourceMapping* mapping = nullptr;
     if (published) {
-        mimeType = resource.mimeType.toStdString();
+        mimeType = resource.mimeType;
         if (auto* file = qobject_cast<QFile*>(body.get()))
             path = file->fileName().toStdString();
         body.reset();
@@ -251,8 +251,8 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
     if (!application || impl_->applicationIds.contains(application->id()))
         return { };
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
-        ResourceMapping mapping { application->origin(), bundle->directory.toStdString(), bundle->entryDocument.toStdString(),
-            bundle->spaFallback, bundle->externalNetworkAccess };
+        ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback,
+            bundle->externalNetworkAccess };
         std::vector<ResourceMapping> candidate = impl_->state->resourceMappings;
         candidate.push_back(std::move(mapping));
         if (!validateResourceMappings(&candidate, &error)

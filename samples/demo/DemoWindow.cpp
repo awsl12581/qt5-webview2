@@ -20,11 +20,11 @@ public:
     DemoPolicy()
         : WebViewPolicy([] {
             webview::WebViewPolicyConfig config;
-            config.allowedAppHosts.insert(QStringLiteral("demo"));
-            config.pageToHostSchemas.insert(QStringLiteral("hello"), { { { QStringLiteral("message"), QJsonValue::String } } });
-            config.pageToHostSchemas.insert(QStringLiteral("window"), { { { QStringLiteral("action"), QJsonValue::String } } });
-            config.hostToPageSchemas.insert(QStringLiteral("ack"), { { { QStringLiteral("message"), QJsonValue::String } } });
-            config.hostToPageSchemas.insert(QStringLiteral("window-state"), { { { QStringLiteral("maximized"), QJsonValue::Bool } } });
+            config.allowedAppHosts.insert("demo");
+            config.pageToHostSchemas["hello"] = { { { "message", QJsonValue::String } } };
+            config.pageToHostSchemas["window"] = { { { "action", QJsonValue::String } } };
+            config.hostToPageSchemas["ack"] = { { { "message", QJsonValue::String } } };
+            config.hostToPageSchemas["window-state"] = { { { "maximized", QJsonValue::Bool } } };
             return config;
         }())
     {
@@ -93,8 +93,8 @@ DemoWindow::DemoWindow()
     options.mode = webview::SessionMode::Ephemeral;
     session_ = webview::createWebViewSession(std::move(options), std::make_shared<DemoPolicy>());
     webview::WebApplicationOptions app;
-    app.id = QStringLiteral("demo");
-    app.source = webview::LocalBundle { QString::fromUtf8(SYSTEM_WEBVIEW_RESOURCE_DIR), QStringLiteral("demo.html") };
+    app.id = "demo";
+    app.source = webview::LocalBundle { SYSTEM_WEBVIEW_RESOURCE_DIR, "demo.html" };
     app.bridgeAccess = webview::BridgeAccess::Allowed;
     const auto application = session_->createApplication(std::move(app));
     if (!application) {
@@ -113,10 +113,10 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     webview::WebViewHostCallbacks callbacks;
     callbacks.onLoad = [this](const webview::LoadEvent& event) {
         if (event.state == webview::LoadState::Failed) {
-            status_->setText(QStringLiteral("Load failed: %1").arg(event.error));
+            status_->setText(QStringLiteral("Load failed: %1").arg(QString::fromStdString(event.error)));
         }
     };
-    page->bridge().setEventHandler(QStringLiteral("window"), [this, page](const QJsonObject& payload) {
+    page->bridge().setEventHandler("window", [this, page](const QJsonObject& payload) {
         const auto action = payload.value(QStringLiteral("action")).toString();
         if (action == QStringLiteral("drag") && windowHandle()) {
             windowHandle()->startSystemMove();
@@ -127,15 +127,15 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
         else if (action == QStringLiteral("maximize")) {
             const bool maximize = !isMaximized();
             maximize ? showMaximized() : showNormal();
-            page->bridge().emitEvent(QStringLiteral("window-state"), { { "maximized", maximize } });
+            page->bridge().emitEvent("window-state", { { "maximized", maximize } });
         }
         else if (action == QStringLiteral("close")) {
             close();
         }
     });
-    page->bridge().setEventHandler(QStringLiteral("hello"), [this, page](const QJsonObject& payload) {
+    page->bridge().setEventHandler("hello", [this, page](const QJsonObject& payload) {
         status_->setText(QStringLiteral("Page: %1").arg(payload.value("message").toString()));
-        page->bridge().emitEvent(QStringLiteral("ack"), { { "message", "Native received your message." } });
+        page->bridge().emitEvent("ack", { { "message", "Native received your message." } });
     });
     callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
         addTab(std::move(child), request.url.host().isEmpty() ? QStringLiteral("New tab") : request.url.host());
@@ -143,7 +143,7 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const QString& title)
     page->setHostCallbacks(std::move(callbacks));
     page->whenInitialized([this](const webview::InitializationResult& result) {
         if (result.state == webview::InitializationState::Failed) {
-            status_->setText(QStringLiteral("Initialization failed: %1").arg(result.error));
+            status_->setText(QStringLiteral("Initialization failed: %1").arg(QString::fromStdString(result.error)));
         }
     });
     const int index = tabs_->addTab(tab, title);

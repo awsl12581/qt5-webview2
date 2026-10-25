@@ -33,9 +33,9 @@ std::string_view jsonTypeName(QJsonValue::Type type)
 
 bool validateMessage(
     const webview::BridgeMessage& message,
-    const QHash<QString, webview::BridgeMessageSchema>& schemas,
+    const std::unordered_map<std::string, webview::BridgeMessageSchema>& schemas,
     int maximumBytes,
-    QString* error)
+    std::string* error)
 {
     const QJsonObject envelope {
         { QStringLiteral("version"), message.version },
@@ -43,14 +43,14 @@ bool validateMessage(
           message.kind == webview::BridgeMessageKind::Request    ? QStringLiteral("request")
           : message.kind == webview::BridgeMessageKind::Response ? QStringLiteral("response")
                                                                  : QStringLiteral("event") },
-        { QStringLiteral("type"), message.type },
-        { QStringLiteral("requestId"), message.requestId },
+        { QStringLiteral("type"), QString::fromStdString(message.type) },
+        { QStringLiteral("requestId"), QString::fromStdString(message.requestId) },
         { QStringLiteral("payload"), message.payload },
-        { QStringLiteral("error"), message.error },
+        { QStringLiteral("error"), QString::fromStdString(message.error) },
     };
     const auto serialized = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
     std::string detail;
-    const auto schema = schemas.constFind(message.type);
+    const auto schema = schemas.find(message.type);
     if (serialized.size() > maximumBytes) {
         detail = "Bridge message exceeds the configured size limit.";
     }
@@ -60,22 +60,21 @@ bool validateMessage(
     else if (schema == schemas.cend()) {
         detail = "Bridge message type is not allowed.";
     }
-    else if (!(message.kind == webview::BridgeMessageKind::Response && !message.error.isEmpty())) {
-        for (auto field = schema->requiredPayloadFields.cbegin(); field != schema->requiredPayloadFields.cend(); ++field) {
-            const auto value = message.payload.value(field.key());
+    else if (!(message.kind == webview::BridgeMessageKind::Response && !message.error.empty())) {
+        for (auto field = schema->second.requiredPayloadFields.cbegin(); field != schema->second.requiredPayloadFields.cend(); ++field) {
+            const auto value = message.payload.value(QString::fromStdString(field->first));
             if (value.isUndefined()) {
-                detail = "Bridge message payload is missing required field: " + field.key().toStdString();
+                detail = "Bridge message payload is missing required field: " + field->first;
                 break;
             }
-            if (value.type() != field.value()) {
-                detail = "Bridge message payload field " + field.key().toStdString() + " must be "
-                         + std::string(jsonTypeName(field.value())) + ".";
+            if (value.type() != field->second) {
+                detail = "Bridge message payload field " + field->first + " must be " + std::string(jsonTypeName(field->second)) + ".";
                 break;
             }
         }
-        if (detail.empty() && !schema->allowAdditionalPayloadFields) {
+        if (detail.empty() && !schema->second.allowAdditionalPayloadFields) {
             for (auto field = message.payload.constBegin(); field != message.payload.constEnd(); ++field) {
-                if (!schema->requiredPayloadFields.contains(field.key())) {
+                if (!schema->second.requiredPayloadFields.contains(field.key().toStdString())) {
                     detail = "Bridge message payload contains unexpected field: " + field.key().toStdString();
                     break;
                 }
@@ -83,7 +82,7 @@ bool validateMessage(
         }
     }
     if (error) {
-        *error = QString::fromStdString(detail);
+        *error = detail;
     }
     return detail.empty();
 }
@@ -144,15 +143,15 @@ NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& requ
         return NavigationDecision::Allow;
     }
     if (scheme == QStringLiteral("http")
-        && impl_->config.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString())) {
+        && impl_->config.trustedDevelopmentOrigins.contains(webview::normalizedOrigin(request.url).toString().toStdString())) {
         return NavigationDecision::Allow;
     }
-    if (scheme == QStringLiteral("app") && impl_->config.allowedAppHosts.contains(request.url.host().toLower())) {
+    if (scheme == QStringLiteral("app") && impl_->config.allowedAppHosts.contains(request.url.host().toLower().toStdString())) {
         return NavigationDecision::Allow;
     }
     if (scheme == QStringLiteral("file")) {
         for (const auto& root : impl_->config.allowedFileRoots) {
-            if (isWithinRoot(request.url.toLocalFile(), root)) {
+            if (isWithinRoot(request.url.toLocalFile(), QString::fromStdString(root))) {
                 return NavigationDecision::Allow;
             }
         }
@@ -169,19 +168,19 @@ bool WebViewPolicy::allowsBridge(const QUrl& committedUrl) const
 {
     const auto scheme = committedUrl.scheme().toLower();
     if (scheme == QStringLiteral("app")) {
-        return impl_->config.allowedAppHosts.contains(committedUrl.host().toLower());
+        return impl_->config.allowedAppHosts.contains(committedUrl.host().toLower().toStdString());
     }
-    const auto origin = webview::normalizedOrigin(committedUrl).toString();
+    const auto origin = webview::normalizedOrigin(committedUrl).toString().toStdString();
     return (scheme == QStringLiteral("https") && impl_->config.trustedHttpsOrigins.contains(origin))
            || (scheme == QStringLiteral("http") && impl_->config.trustedDevelopmentOrigins.contains(origin));
 }
 
-bool WebViewPolicy::validatePageToHostMessage(const BridgeMessage& message, QString* error) const
+bool WebViewPolicy::validatePageToHostMessage(const BridgeMessage& message, std::string* error) const
 {
     return validateMessage(message, impl_->config.pageToHostSchemas, impl_->config.maximumBridgeMessageBytes, error);
 }
 
-bool WebViewPolicy::validateHostToPageMessage(const BridgeMessage& message, QString* error) const
+bool WebViewPolicy::validateHostToPageMessage(const BridgeMessage& message, std::string* error) const
 {
     return validateMessage(message, impl_->config.hostToPageSchemas, impl_->config.maximumBridgeMessageBytes, error);
 }

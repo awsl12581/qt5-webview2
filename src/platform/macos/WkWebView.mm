@@ -125,12 +125,12 @@ public:
         : view_(view)
     {
     }
-    bool send(const QByteArray& bytes) override
+    bool send(const std::string& bytes) override
     {
         if (!view_)
             return false;
         QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(bytes, &error);
+        const auto document = QJsonDocument::fromJson(QByteArray(bytes.data(), static_cast<int>(bytes.size())), &error);
         if (error.error != QJsonParseError::NoError || !document.isObject())
             return false;
         if (@available(macOS 11.0, *)) {
@@ -141,7 +141,7 @@ public:
                      completionHandler:^(id, NSError*) { }];
             return true;
         }
-        const auto script = "window.__systemWebViewReceive(" + bytes.toStdString() + ");";
+        const auto script = "window.__systemWebViewReceive(" + bytes + ");";
         [view_ evaluateJavaScript:toNSString(script) completionHandler:^(id, NSError*) {}];
         return true;
     }
@@ -218,7 +218,7 @@ public:
         if (!object.value(QStringLiteral("type")).isString() || !object.value(QStringLiteral("payload")).isObject()) {
             return;
         }
-        self.state->bridge->receive(QJsonDocument(object).toJson(QJsonDocument::Compact), frameUrl);
+        self.state->bridge->receive(QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString(), frameUrl);
     }
 }
 @end
@@ -323,9 +323,9 @@ public:
 {
     const auto currentState = state.lock();
     if (!currentState || currentState->lifetime.isClosed()
-        || currentState->policy->decideDownload(
-               { QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)), currentState->committedUrl,
-                   QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)), QString::fromUtf8(suggestedFilename.UTF8String) })
+        || currentState->policy->decideDownload({ QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+               currentState->committedUrl, QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
+               std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") })
             != webview::DownloadDecision::Allow
         || !currentState->callbacks.onResolveDownload || !context) {
         completionHandler(nil);
@@ -333,7 +333,7 @@ public:
     }
     const webview::DownloadRequest request { QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
         webview::normalizedOrigin(currentState->committedUrl), QUrl(QString::fromUtf8(response.URL.absoluteString.UTF8String)),
-        QString::fromUtf8(suggestedFilename.UTF8String) };
+        std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") };
     auto guard = std::make_shared<webview::HostCompletionGuard>(currentState);
     const QPointer<QWidget> dispatchContext = context;
     const auto completion = [completionHandler, guard, dispatchContext](webview::DownloadResolution resolution) {
@@ -345,7 +345,7 @@ public:
             dispatchContext.data(),
             [completionHandler, statePtr = access.state, resolution = std::move(resolution)] {
                 if (statePtr->lifetime.isClosed() || resolution.status != webview::DownloadResolutionStatus::Resolved
-                    || resolution.target.handling != webview::DownloadHandling::TargetPath || resolution.target.filePath.isEmpty()) {
+                    || resolution.target.handling != webview::DownloadHandling::TargetPath || resolution.target.filePath.empty()) {
                     completionHandler(nil);
                     return;
                 }
@@ -389,8 +389,8 @@ public:
                 self.state->explicitMainFrameNavigationPending = false;
                 self.state->provisionalMainFrameNavigation = false;
             }
-            decisionHandler(
-                self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
+            decisionHandler(self.state->policy->decideDownload(
+                                { url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName().toStdString() })
                             == webview::DownloadDecision::Allow
                         && self.state->callbacks.onResolveDownload
                     ? WKNavigationActionPolicyDownload
@@ -445,8 +445,8 @@ public:
     }
     const QUrl url(QString::fromUtf8(navigationResponse.response.URL.absoluteString.UTF8String));
     if (@available(macOS 11.3, *)) {
-        decisionHandler(
-            self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
+        decisionHandler(self.state->policy->decideDownload(
+                            { url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName().toStdString() })
                         == webview::DownloadDecision::Allow
                     && self.state->callbacks.onResolveDownload
                 ? WKNavigationResponsePolicyDownload
@@ -534,7 +534,7 @@ public:
     }
     const webview::RuntimeFailureEvent event {
         webview::RuntimeFailureKind::WebContentProcessTerminated,
-        QStringLiteral("The WKWebView content process terminated."),
+        "The WKWebView content process terminated.",
         0,
     };
     qCCritical(systemWebViewRuntime).noquote() << "event=runtime.web_content_terminated" << "session=" << self.state->sessionDiagnosticId
@@ -653,14 +653,14 @@ void WkWebView::detachNativeView()
     [impl_->view removeFromSuperview];
 }
 
-void WkWebView::open(WebApplicationPtr application, const QString& route)
+void WkWebView::open(WebApplicationPtr application, const std::string& route)
 {
     if (!application)
         return;
     impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : QUrl();
     impl_->state->resourceOrigin = QUrl(QStringLiteral("app://%1").arg(QString::fromStdString(application->id())));
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
-    navigate(application->urlForRoute(route.toStdString()));
+    navigate(application->urlForRoute(route));
 }
 
 void WkWebView::navigate(const QUrl& url)
@@ -678,7 +678,7 @@ void WkWebView::navigate(const QUrl& url)
     });
 }
 
-void WkWebView::loadDocument(const QString& html, const QUrl& baseUrl)
+void WkWebView::loadDocument(const std::string& html, const QUrl& baseUrl)
 {
     impl_->state->runWhenReady([this, html, baseUrl](const InitializationResult& result) {
         if (result.state != InitializationState::Ready) {

@@ -51,9 +51,9 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     auto state = std::make_shared<webview::WebViewState>();
     const QUrl origin(QStringLiteral("https://trusted.example"));
     state->setResourceContext(QUrl(QStringLiteral("app://resource-test")), origin, "doc-1");
-    const auto published = state->resources->publishFile(source.fileName());
-    assert(!published.token.isEmpty());
-    auto response = state->resources->open({ published.url, origin, QStringLiteral("doc-1") });
+    const auto published = state->resources->publishFile(source.fileName().toStdString());
+    assert(!published.token.empty());
+    auto response = state->resources->open({ published.url, origin, "doc-1" });
     assert(response.status == 200);
     const auto snapshotPath = qobject_cast<QFile*>(response.body.get())->fileName();
     response.body.reset();
@@ -64,7 +64,7 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     assert(lockedFile != INVALID_HANDLE_VALUE);
     state->resources->release(published.token);
     assert(QFileInfo::exists(snapshotPath));
-    assert(state->resources->open({ published.url, origin, QStringLiteral("doc-1") }).status == 410);
+    assert(state->resources->open({ published.url, origin, "doc-1" }).status == 410);
     CloseHandle(lockedFile);
 
     QEventLoop loop;

@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-25 21:51 CST
-> 文档版本：v4
-> 修改说明：更新 C++20 要求，并补充独立验证 preset。
+> 最后修改时间：2026-10-25 22:20 CST
+> 文档版本：v5
+> 修改说明：同步公开接口的 UTF-8 标准字符串和标准容器用法。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
@@ -23,7 +23,7 @@
   <img src="docs/image.png" alt="System WebView 示例界面">
 </p>
 
-System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebView2 和 macOS 上的 WKWebView。平台 SDK 类型不会暴露到业务代码中，应用层只需要使用 Qt 值类型和公开的 C++ 接口。
+System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebView2 和 macOS 上的 WKWebView。平台 SDK 类型不会暴露到业务代码中，应用层使用标准字符串和容器，以及 Qt 的 URL、JSON、I/O 和控件类型。接口中的所有字符串（包括路径）均使用 UTF-8。本次值类型迁移改变了源码和二进制接口，使用方需要更新调用并与库一起重新构建。
 
 ## 功能
 
@@ -104,7 +104,7 @@ ctest --preset macos-appleclang-verify --output-on-failure
 #include <system_webview/system_webview.h>
 
 webview::WebViewPolicyConfig policyConfig;
-policyConfig.allowedAppHosts.insert(QStringLiteral("dashboard"));
+policyConfig.allowedAppHosts.insert("dashboard");
 
 webview::WebViewSessionOptions sessionOptions;
 sessionOptions.mode = webview::SessionMode::Ephemeral;
@@ -114,13 +114,13 @@ auto session = webview::createWebViewSession(
     webview::createDefaultWebViewPolicy(std::move(policyConfig)));
 
 webview::WebApplicationOptions appOptions;
-appOptions.id = QStringLiteral("dashboard");
-appOptions.source = webview::LocalBundle { QStringLiteral("/path/to/vite/dist") };
+appOptions.id = "dashboard";
+appOptions.source = webview::LocalBundle { "/path/to/vite/dist" };
 appOptions.bridgeAccess = webview::BridgeAccess::Allowed;
 
 auto application = session->createApplication(std::move(appOptions));
 auto view = session->createWebView(parentWidget);
-view->open(application, QStringLiteral("/orders/42"));
+view->open(application, "/orders/42");
 view->attachNativeView();
 ```
 
@@ -166,5 +166,6 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | v2 | 2026-09-24 04:37 CEST | 增加公开接口速查链接，并补充统一文档元数据。 |
 | v3 | 2026-09-24 17:29 CST | 说明单一公开头文件和动态库构建方式。 |
 | v4 | 2026-10-25 21:51 CST | 更新 C++20 要求，并补充独立验证 preset。 |
+| v5 | 2026-10-25 22:20 CST | 同步公开接口的 UTF-8 标准字符串和标准容器用法。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。
