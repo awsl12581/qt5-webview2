@@ -5,6 +5,7 @@
 #include "webview/WebViewState.h"
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <unordered_set>
 
@@ -20,7 +21,7 @@ struct WkSessionState
     }
 
     std::atomic_bool valid = true;
-    quint64 diagnosticId = 0;
+    std::uint64_t diagnosticId = 0;
     InitializationScheduler initialization;
     WebViewSessionHostCallbacks callbacks;
     std::vector<ResourceMapping> resourceMappings;

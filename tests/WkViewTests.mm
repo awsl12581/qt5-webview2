@@ -145,10 +145,12 @@ int main(int argc, char** argv)
         }
         else {
             assert(payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
+            assert(payload.value(QStringLiteral("resourceVerified")).toBool());
         }
     });
     const QString html = QStringLiteral(R"HTML(
-<!doctype html><html><body>
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<script src="脚本.js"></script>
 <iframe srcdoc="<script>window.webkit.messageHandlers.systemWebView.postMessage({version:1,type:'hello',payload:{message:'frame'}})</script>"></iframe>
 <script>
 window.addEventListener('DOMContentLoaded', () => {
@@ -163,13 +165,21 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-  window.systemWebView.postMessage({version:1,type:'hello',payload:{message:'main'}});
+  window.systemWebView.postMessage({version:1,type:'hello',payload:{
+    message:'main',
+    resourceVerified: window.resourceText.length === 300 * 1024 + 2 && window.resourceText.endsWith('结束')
+  }});
   window.open('https://trusted.example/popup');
 });
 </script>
 </body></html>)HTML");
     QTemporaryDir bridgeRoot;
     assert(bridgeRoot.isValid());
+    QFile scriptResource(bridgeRoot.filePath(QStringLiteral("脚本.js")));
+    const auto scriptBytes = "window.resourceText='" + QByteArray(300 * 1024, 'x') + QStringLiteral("结束';").toUtf8();
+    assert(scriptResource.open(QIODevice::WriteOnly));
+    assert(scriptResource.write(scriptBytes) == scriptBytes.size());
+    scriptResource.close();
     QFile bridgeEntry(bridgeRoot.filePath(QStringLiteral("index.html")));
     assert(bridgeEntry.open(QIODevice::WriteOnly));
     assert(bridgeEntry.write(html.toUtf8()) == html.toUtf8().size());

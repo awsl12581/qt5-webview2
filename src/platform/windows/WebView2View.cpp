@@ -12,7 +12,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMetaObject>
@@ -30,6 +29,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <filesystem>
+#include <format>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace webview
@@ -42,16 +47,16 @@ RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
     case COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
         return { RuntimeFailureKind::BrowserProcessTerminated,
                  QStringLiteral("The WebView2 browser process terminated."),
-                 static_cast<qint64>(kind) };
+                 static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE:
         return { RuntimeFailureKind::WebContentProcessUnresponsive,
                  QStringLiteral("The WebView2 render process is unresponsive."),
-                 static_cast<qint64>(kind) };
+                 static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED:
         return { RuntimeFailureKind::WebContentProcessTerminated,
                  QStringLiteral("A WebView2 render process terminated."),
-                 static_cast<qint64>(kind) };
+                 static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_UTILITY_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_SANDBOX_HELPER_PROCESS_EXITED:
     case COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED:
@@ -59,11 +64,11 @@ RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
     case COREWEBVIEW2_PROCESS_FAILED_KIND_PPAPI_BROKER_PROCESS_EXITED:
         return { RuntimeFailureKind::AuxiliaryProcessTerminated,
                  QStringLiteral("A WebView2 auxiliary process terminated."),
-                 static_cast<qint64>(kind) };
+                 static_cast<std::int64_t>(kind) };
     case COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED:
         break;
     }
-    return { RuntimeFailureKind::Unknown, QStringLiteral("An unknown WebView2 process terminated."), static_cast<qint64>(kind) };
+    return { RuntimeFailureKind::Unknown, QStringLiteral("An unknown WebView2 process terminated."), static_cast<std::int64_t>(kind) };
 }
 
 class WebView2BridgeTransport final : public BridgeTransport
@@ -92,13 +97,13 @@ private:
 class FileRangeStream final : public IStream
 {
 public:
-    FileRangeStream(const QString& path, qint64 offset, qint64 length, std::shared_ptr<void> lease)
+    FileRangeStream(const std::filesystem::path& path, std::int64_t offset, std::int64_t length, std::shared_ptr<void> lease)
         : offset_(offset)
         , length_(length)
         , lease_(std::move(lease))
     {
         file_ = CreateFileW(
-            path.toStdWString().c_str(),
+            path.c_str(),
             GENERIC_READ,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr,
@@ -152,7 +157,7 @@ public:
             return E_POINTER;
         }
         const auto remaining = length_ - position_;
-        const DWORD amount = static_cast<DWORD>(qMin<qint64>(bytes, qMax<qint64>(0, remaining)));
+        const DWORD amount = static_cast<DWORD>(std::min<std::int64_t>(bytes, std::max<std::int64_t>(0, remaining)));
         DWORD actual = 0;
         if (amount && !ReadFile(file_, buffer, amount, &actual, nullptr)) {
             return HRESULT_FROM_WIN32(GetLastError());
@@ -168,11 +173,14 @@ public:
 
     HRESULT STDMETHODCALLTYPE Seek(LARGE_INTEGER move, DWORD origin, ULARGE_INTEGER* result) override
     {
-        qint64 base = origin == STREAM_SEEK_SET ? 0 : origin == STREAM_SEEK_CUR ? position_ : origin == STREAM_SEEK_END ? length_ : -1;
+        std::int64_t base = origin == STREAM_SEEK_SET   ? 0
+                            : origin == STREAM_SEEK_CUR ? position_
+                            : origin == STREAM_SEEK_END ? length_
+                                                        : -1;
         if (base < 0) {
             return STG_E_INVALIDFUNCTION;
         }
-        const qint64 next = base + move.QuadPart;
+        const std::int64_t next = base + move.QuadPart;
         if (next < 0 || next > length_) {
             return STG_E_INVALIDFUNCTION;
         }
@@ -199,7 +207,7 @@ public:
         BYTE buffer[64 * 1024];
         while (totalRead < count.QuadPart) {
             ULONG got = 0;
-            const ULONG request = static_cast<ULONG>(qMin<ULONGLONG>(sizeof(buffer), count.QuadPart - totalRead));
+            const ULONG request = static_cast<ULONG>(std::min<ULONGLONG>(sizeof(buffer), count.QuadPart - totalRead));
             const HRESULT result = Read(buffer, request, &got);
             if (FAILED(result) || !got) {
                 break;
@@ -245,9 +253,9 @@ public:
 private:
     std::atomic<ULONG> references_ { 1 };
     HANDLE file_ = INVALID_HANDLE_VALUE;
-    qint64 offset_ = 0;
-    qint64 length_ = 0;
-    qint64 position_ = 0;
+    std::int64_t offset_ = 0;
+    std::int64_t length_ = 0;
+    std::int64_t position_ = 0;
     std::shared_ptr<void> lease_;
 };
 
@@ -300,7 +308,7 @@ public:
         WebViewPolicyPtr policy,
         std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
         SessionMode sessionMode,
-        std::function<QString(ICoreWebView2*)> registerProfile,
+        std::function<std::string(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose)
         : container(new NativeViewHost(parent))
         , state(std::make_shared<WebViewState>(DiagnosticScope::View, sessionState ? sessionState->diagnosticId : 0))
@@ -311,7 +319,7 @@ public:
         , sessionMode(sessionMode)
         , registerProfile(std::move(registerProfile))
         , registerSessionClose(std::move(registerSessionClose))
-        , inlineDocuments(std::make_shared<QHash<QString, QByteArray>>())
+        , inlineDocuments(std::make_shared<std::unordered_map<std::string, std::string>>())
         , ownsContainer(parent == nullptr)
     {
         state->policy = this->policy;
@@ -365,27 +373,25 @@ public:
                     auto& webMessageToken = owner->webMessageToken;
                     auto& processFailedToken = owner->processFailedToken;
                     if (FAILED(hr) || !created) {
-                        state->failInitialization((QStringLiteral("WebView2 controller creation failed (HRESULT 0x%1).")
-                                                       .arg(QString::number(static_cast<quint32>(hr), 16)))
-                                                      .toStdString());
+                        state->failInitialization(
+                            std::format("WebView2 controller creation failed (HRESULT 0x{:x}).", static_cast<std::uint32_t>(hr)));
                         return S_OK;
                     }
                     controller = created;
                     const HRESULT coreResult = controller->get_CoreWebView2(webview.GetAddressOf());
                     if (FAILED(coreResult) || !webview) {
-                        state->failInitialization((QStringLiteral("WebView2 core object unavailable (HRESULT 0x%1).")
-                                                       .arg(QString::number(static_cast<quint32>(coreResult), 16)))
-                                                      .toStdString());
+                        state->failInitialization(
+                            std::format("WebView2 core object unavailable (HRESULT 0x{:x}).", static_cast<std::uint32_t>(coreResult)));
                         return S_OK;
                     }
                     state->bridge->setTransport(std::make_unique<WebView2BridgeTransport>(webview));
-                    const QString profileError = owner->registerProfile ? owner->registerProfile(webview.Get())
-                                                                        : QStringLiteral("WebView2 profile registration is unavailable.");
-                    if (!profileError.isEmpty()) {
+                    const std::string profileError =
+                        owner->registerProfile ? owner->registerProfile(webview.Get()) : "WebView2 profile registration is unavailable.";
+                    if (!profileError.empty()) {
                         controller->Close();
                         controller.Reset();
                         webview.Reset();
-                        state->failInitialization(profileError.toStdString());
+                        state->failInitialization(profileError);
                         return S_OK;
                     }
                     const auto environmentForRequests = owner->environment;
@@ -412,20 +418,19 @@ public:
                                 request->get_Uri(&rawUri);
                                 const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
                                 CoTaskMemFree(rawUri);
-                                QString mime = QStringLiteral("text/html");
+                                std::string mime = "text/html";
                                 int status = httpStatus::kOk;
-                                qint64 totalSize = 0;
-                                qint64 offset = 0;
-                                qint64 length = 0;
+                                std::int64_t totalSize = 0;
+                                std::int64_t offset = 0;
+                                std::int64_t length = 0;
                                 std::shared_ptr<void> lease;
-                                QString filePath;
+                                std::string filePath;
                                 const ResourceMapping* mapping = nullptr;
-                                const auto inlineDocument = inlineDocuments->constFind(url.toString(QUrl::FullyEncoded));
+                                const auto inlineDocument = inlineDocuments->find(url.toString(QUrl::FullyEncoded).toStdString());
                                 if (inlineDocument != inlineDocuments->cend()) {
-                                    const auto& bytes = inlineDocument.value();
-                                    Microsoft::WRL::ComPtr<IStream> stream(SHCreateMemStream(
-                                        reinterpret_cast<const BYTE*>(bytes.constData()),
-                                        static_cast<UINT>(bytes.size())));
+                                    const auto& bytes = inlineDocument->second;
+                                    Microsoft::WRL::ComPtr<IStream> stream(
+                                        SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()), static_cast<UINT>(bytes.size())));
                                     if (!stream) {
                                         return S_OK;
                                     }
@@ -456,14 +461,14 @@ public:
                                     resourceResponse = state->resources->open(
                                         { url, state->committedUrl, QString::fromStdString(state->documentToken), rangeHeader });
                                     status = resourceResponse.status;
-                                    mime = resourceResponse.mimeType;
+                                    mime = resourceResponse.mimeType.toStdString();
                                     totalSize = resourceResponse.totalSize;
                                     offset = resourceResponse.offset;
                                     length = resourceResponse.length;
                                     lease = std::move(resourceResponse.lease);
                                     auto* file = qobject_cast<QFile*>(resourceResponse.body.get());
                                     if (file) {
-                                        filePath = file->fileName();
+                                        filePath = file->fileName().toStdString();
                                     }
                                     resourceResponse.body.reset();
                                 }
@@ -472,21 +477,21 @@ public:
                                     std::string error;
                                     COREWEBVIEW2_WEB_RESOURCE_CONTEXT context {};
                                     args->get_ResourceContext(&context);
-                                    filePath = mapping ? QString::fromStdString(resolveMappedResource(
+                                    filePath = mapping ? resolveMappedResource(
                                                              *mapping,
                                                              url,
                                                              &error,
-                                                             context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT))
-                                                       : QString();
-                                    if (filePath.isEmpty()) {
+                                                             context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)
+                                                       : std::string();
+                                    if (filePath.empty()) {
                                         return S_OK;
                                     }
-                                    const QFileInfo info(filePath);
-                                    mime = QMimeDatabase().mimeTypeForFile(filePath).name();
+                                    const QFileInfo info(QString::fromStdString(filePath));
+                                    mime = QMimeDatabase().mimeTypeForFile(QString::fromStdString(filePath)).name().toStdString();
                                     totalSize = info.size();
                                     length = totalSize;
                                 }
-                                if (filePath.isEmpty()) {
+                                if (filePath.empty()) {
                                     if (!url.path().startsWith(QStringLiteral("/resource/"))) {
                                         return S_OK;
                                     }
@@ -517,16 +522,21 @@ public:
                                     return S_OK;
                                 }
                                 Microsoft::WRL::ComPtr<IStream> stream;
-                                auto* fileStream = new FileRangeStream(filePath, offset, length, std::move(lease));
+                                auto* fileStream = new FileRangeStream(
+                                    std::filesystem::path(QString::fromStdString(filePath).toStdWString()),
+                                    offset,
+                                    length,
+                                    std::move(lease));
                                 if (!fileStream->valid()) {
                                     fileStream->Release();
                                     return S_OK;
                                 }
                                 stream.Attach(fileStream);
                                 std::wstring headerText =
-                                    L"Content-Type: " + mime.toStdWString() + L"\r\nContent-Length: " + std::to_wstring(length)
+                                    L"Content-Type: " + QString::fromStdString(mime).toStdWString() + L"\r\nContent-Length: "
+                                    + std::to_wstring(length)
                                     + L"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
-                                if (mapping && mime == QStringLiteral("text/html")) {
+                                if (mapping && mime == "text/html") {
                                     const auto policy = localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
                                     if (!policy.empty()) {
                                         headerText +=
@@ -809,7 +819,7 @@ public:
                                 args->get_NavigationId(&webviewNavigationId);
                                 const QUrl url = QUrl(QString::fromWCharArray(rawUri ? rawUri : L""));
                                 CoTaskMemFree(rawUri);
-                                const quint64 id = state->navigationId = webviewNavigationId;
+                                const std::uint64_t id = state->navigationId = webviewNavigationId;
                                 const auto decision =
                                     state->policy
                                         ? state->policy->decideNavigation({ url, true, userInitiated != FALSE, redirected != FALSE })
@@ -865,12 +875,13 @@ public:
                                     state->setResourceContext(state->resourceOrigin, state->committedUrl, state->documentToken);
                                 }
                                 CoTaskMemFree(rawSource);
-                                const QString tokenLiteral =
+                                const auto tokenLiteral =
                                     QString::fromUtf8(QJsonDocument(QJsonArray { QString::fromStdString(state->documentToken) })
-                                                          .toJson(QJsonDocument::Compact));
-                                const QString tokenScript = QStringLiteral("window.__systemWebViewToken=%1[0];").arg(tokenLiteral);
+                                                          .toJson(QJsonDocument::Compact))
+                                        .toStdWString();
+                                const auto tokenScript = L"window.__systemWebViewToken=" + tokenLiteral + L"[0];";
                                 sender->ExecuteScript(
-                                    tokenScript.toStdWString().c_str(),
+                                    tokenScript.c_str(),
                                     Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>([](HRESULT, LPCWSTR) -> HRESULT {
                                         return S_OK;
                                     }).Get());
@@ -901,8 +912,7 @@ public:
                                         LoadState::Failed,
                                         id,
                                         url,
-                                        (QStringLiteral("WebView2 navigation failed (status %1).").arg(static_cast<int>(status)))
-                                            .toStdString());
+                                        std::format("WebView2 navigation failed (status {}).", static_cast<int>(status)));
                                 }
                                 return S_OK;
                             })
@@ -917,7 +927,7 @@ public:
                                 LPWSTR rawSource = nullptr;
                                 args->get_WebMessageAsJson(&rawJson);
                                 args->get_Source(&rawSource);
-                                const QString json = QString::fromWCharArray(rawJson ? rawJson : L"");
+                                const auto json = QString::fromWCharArray(rawJson ? rawJson : L"").toStdString();
                                 const QUrl source = QUrl(QString::fromWCharArray(rawSource ? rawSource : L""));
                                 CoTaskMemFree(rawJson);
                                 CoTaskMemFree(rawSource);
@@ -933,7 +943,7 @@ public:
                                     || !state->policy->allowsBridge(source)
                                     || source.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
                                            != state->committedUrl.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment)
-                                    || !parseMessage(json.toStdString(), &object, &error)
+                                    || !parseMessage(json, &object, &error)
                                     || object.value(QStringLiteral("documentToken")).toString().toStdString() != state->documentToken) {
                                     qCDebug(systemWebViewBridge).noquote()
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
@@ -979,9 +989,9 @@ public:
                             [state, owner](HRESULT result, LPCWSTR) -> HRESULT {
                                 if (FAILED(result)) {
                                     state->failInitialization(
-                                        (QStringLiteral("WebView2 document transport registration failed (HRESULT 0x%1).")
-                                             .arg(QString::number(static_cast<quint32>(result), 16)))
-                                            .toStdString());
+                                        std::format(
+                                            "WebView2 document transport registration failed (HRESULT 0x{:x}).",
+                                            static_cast<std::uint32_t>(result)));
                                     return S_OK;
                                 }
                                 state->documentTransportPrepared = true;
@@ -991,9 +1001,10 @@ public:
                             })
                             .Get());
                     if (FAILED(transportResult)) {
-                        state->failInitialization((QStringLiteral("WebView2 document transport request failed (HRESULT 0x%1).")
-                                                       .arg(QString::number(static_cast<quint32>(transportResult), 16)))
-                                                      .toStdString());
+                        state->failInitialization(
+                            std::format(
+                                "WebView2 document transport request failed (HRESULT 0x{:x}).",
+                                static_cast<std::uint32_t>(transportResult)));
                     }
                     return S_OK;
                 });
@@ -1011,11 +1022,9 @@ public:
                 createResult = owner->environment->CreateCoreWebView2Controller(hwnd, completed.Get());
             }
             if (FAILED(createResult)) {
-                const QString operation =
-                    owner->sessionMode == SessionMode::Ephemeral ? QStringLiteral("InPrivate controller") : QStringLiteral("controller");
-                owner->state->failInitialization((QStringLiteral("WebView2 %1 request failed (HRESULT 0x%2).")
-                                                      .arg(operation, QString::number(static_cast<quint32>(createResult), 16)))
-                                                     .toStdString());
+                const std::string_view operation = owner->sessionMode == SessionMode::Ephemeral ? "InPrivate controller" : "controller";
+                owner->state->failInitialization(
+                    std::format("WebView2 {} request failed (HRESULT 0x{:x}).", operation, static_cast<std::uint32_t>(createResult)));
             }
         });
     }
@@ -1040,9 +1049,9 @@ public:
     WebViewPolicyPtr policy;
     std::shared_ptr<std::vector<ResourceMapping>> resourceMappings;
     SessionMode sessionMode = SessionMode::Persistent;
-    std::function<QString(ICoreWebView2*)> registerProfile;
+    std::function<std::string(ICoreWebView2*)> registerProfile;
     std::function<void(std::function<void()>)> registerSessionClose;
-    std::shared_ptr<QHash<QString, QByteArray>> inlineDocuments;
+    std::shared_ptr<std::unordered_map<std::string, std::string>> inlineDocuments;
     std::vector<std::shared_ptr<PendingAction>> pendingActions;
     bool attached = false;
     bool eventsRemoved = false;
@@ -1152,7 +1161,7 @@ WebView2View::WebView2View(
     WebViewPolicyPtr policy,
     std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
     SessionMode sessionMode,
-    std::function<QString(ICoreWebView2*)> registerProfile,
+    std::function<std::string(ICoreWebView2*)> registerProfile,
     std::function<void(std::function<void()>)> registerSessionClose)
     : impl_(
           std::make_shared<Impl>(
@@ -1232,9 +1241,7 @@ void WebView2View::navigate(const QUrl& url)
                 LoadState::Failed,
                 ++state->navigationId,
                 url,
-                (QStringLiteral("WebView2 navigation request failed (HRESULT 0x%1).")
-                     .arg(QString::number(static_cast<quint32>(navigateResult), 16)))
-                    .toStdString());
+                std::format("WebView2 navigation request failed (HRESULT 0x{:x}).", static_cast<std::uint32_t>(navigateResult)));
         }
     });
 }
@@ -1247,7 +1254,7 @@ void WebView2View::loadDocument(const QString& html, const QUrl& baseUrl)
         impl_->state->emitLoad(LoadState::Failed, id, baseUrl, "The document base URL is unavailable.");
         return;
     }
-    impl_->inlineDocuments->insert(baseUrl.toString(QUrl::FullyEncoded), html.toUtf8());
+    impl_->inlineDocuments->insert_or_assign(baseUrl.toString(QUrl::FullyEncoded).toStdString(), html.toStdString());
     navigate(baseUrl);
 }
 

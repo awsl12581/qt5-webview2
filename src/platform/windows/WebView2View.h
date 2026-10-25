@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 struct ICoreWebView2Environment;
 struct ICoreWebView2;
@@ -46,8 +47,8 @@ private:
         WebViewPolicyPtr policy,
         std::shared_ptr<std::vector<ResourceMapping>> resourceMappings,
         SessionMode sessionMode,
-        std::function<QString(ICoreWebView2*)> registerProfile,
-        std::function<void(std::function<void()>)> registerSessionClose = { });
+        std::function<std::string(ICoreWebView2*)> registerProfile,
+        std::function<void(std::function<void()>)> registerSessionClose = {});
 
     class Impl;
     std::shared_ptr<Impl> impl_;

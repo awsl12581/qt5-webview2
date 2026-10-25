@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-25 22:04 CST
-> 文档版本：v12
-> 修改说明：Documented standard-library storage in portable webview implementation.
+> 最后修改时间：2026-10-25 22:11 CST
+> 文档版本：v13
+> 修改说明：Documented standard-library storage and conversion boundaries in platform backends.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -21,6 +21,12 @@ pending-request keys, and resource metadata in UTF-8 standard strings. Bridge an
 `std::unordered_map` and `std::unordered_set`; snapshot copying uses `std::vector<char>`, and resource expiry
 uses `std::chrono::system_clock`. Private lifecycle and diagnostic counters use fixed-width standard integers.
 Native file-link checks accept `std::filesystem::path`, preserving Windows UTF-16 paths.
+Both platform backends retain their application lists in `std::vector` and use fixed-width standard integers
+for navigation and resource byte counts. Resource paths and MIME text use UTF-8 standard strings. The macOS
+resource reader uses `std::vector<char>`; bridge script text uses standard strings before conversion to
+`NSString`. Windows stores inline HTML in `std::unordered_map<std::string, std::string>`, passes profile errors
+as standard strings, formats internal errors with `std::format`, and opens native file streams through
+`std::filesystem::path`. Qt/native text conversions occur at the corresponding API boundaries.
 Qt URL, JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
 boundaries; URL parsing, path authorization, message schemas, and the public Qt API retain their existing contracts.
 
@@ -143,3 +149,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v10 | 2026-09-24 18:29 CST | Documented diagnostic logging, runtime-failure callbacks, redaction, and crash-dump ownership. |
 | v11 | 2026-10-25 21:51 CST | Documented C++20 and standard-library types at internal boundaries. |
 | v12 | 2026-10-25 22:04 CST | Documented standard-library storage in portable webview implementation. |
+| v13 | 2026-10-25 22:11 CST | Documented standard-library storage and conversion boundaries in platform backends. |

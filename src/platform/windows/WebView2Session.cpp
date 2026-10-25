@@ -17,25 +17,30 @@
 #include <windows.h>
 #include <wrl.h>
 
+#include <cstdint>
 #include <filesystem>
+#include <format>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace webview
 {
 namespace
 {
-QString hresultError(const QString& operation, HRESULT result)
+std::string hresultError(std::string_view operation, HRESULT result)
 {
-    return QStringLiteral("%1 failed (HRESULT 0x%2).").arg(operation, QString::number(static_cast<quint32>(result), 16));
+    return std::format("{} failed (HRESULT 0x{:x}).", operation, static_cast<std::uint32_t>(result));
 }
 
-void finishClear(const std::shared_ptr<WebView2Session::ClearCompletion>& completion, bool success, QString error = { })
+void finishClear(const std::shared_ptr<WebView2Session::ClearCompletion>& completion, bool success, std::string error = {})
 {
     if (!completion || !*completion) {
         return;
     }
     auto callback = std::move(*completion);
-    *completion = { };
-    callback({ success, std::move(error) });
+    *completion = {};
+    callback({ success, QString::fromStdString(error) });
 }
 }
 
@@ -63,9 +68,8 @@ public:
         const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         ownsApartment = SUCCEEDED(apartment);
         if (!ownsApartment) {
-            async->scheduler->failInitialization((QStringLiteral("WebView2 requires a COM STA UI thread (HRESULT 0x%1).")
-                                                      .arg(QString::number(static_cast<quint32>(apartment), 16)))
-                                                     .toStdString());
+            async->scheduler->failInitialization(
+                std::format("WebView2 requires a COM STA UI thread (HRESULT 0x{:x}).", static_cast<std::uint32_t>(apartment)));
             return;
         }
         if (this->options.mode == SessionMode::Persistent && this->options.profilePath.isEmpty()) {
@@ -78,8 +82,7 @@ public:
             std::error_code error;
             std::filesystem::create_directories(profilePath, error);
             if (error) {
-                async->scheduler->failInitialization(
-                    (QStringLiteral("WebView2 profile is not writable: %1").arg(QString::fromStdString(error.message()))).toStdString());
+                async->scheduler->failInitialization("WebView2 profile is not writable: " + error.message());
                 return;
             }
         }
@@ -95,8 +98,7 @@ public:
         ICoreWebView2CustomSchemeRegistration* schemes[] = { appScheme.Get() };
         const HRESULT registration = environmentOptions->SetCustomSchemeRegistrations(1, schemes);
         if (FAILED(registration)) {
-            async->scheduler->failInitialization(
-                (hresultError(QStringLiteral("WebView2 app custom-scheme registration"), registration)).toStdString());
+            async->scheduler->failInitialization(hresultError("WebView2 app custom-scheme registration", registration));
             return;
         }
         const HRESULT result = CreateCoreWebView2EnvironmentWithOptions(
@@ -110,10 +112,9 @@ public:
                         return S_OK;
                     }
                     if (FAILED(hr) || !created) {
-                        const auto error = QStringLiteral("WebView2 Runtime environment creation failed (HRESULT 0x%1).")
-                                               .arg(QString::number(static_cast<quint32>(hr), 16));
-                        owner->scheduler->failInitialization(error.toStdString());
-                        owner->profileScheduler->failInitialization(error.toStdString());
+                        const auto error = hresultError("WebView2 Runtime environment creation", hr);
+                        owner->scheduler->failInitialization(error);
+                        owner->profileScheduler->failInitialization(error);
                         return S_OK;
                     }
                     owner->environment = created;
@@ -135,7 +136,7 @@ public:
                                     const RuntimeFailureEvent event {
                                         RuntimeFailureKind::BrowserProcessTerminated,
                                         QStringLiteral("The WebView2 browser process terminated unexpectedly."),
-                                        static_cast<qint64>(processId),
+                                        static_cast<std::int64_t>(processId),
                                     };
                                     qCCritical(systemWebViewRuntime).noquote()
                                         << "event=runtime.browser_process_terminated"
@@ -153,10 +154,9 @@ public:
                 })
                 .Get());
         if (FAILED(result)) {
-            const auto error =
-                QStringLiteral("WebView2 Runtime is unavailable (HRESULT 0x%1).").arg(QString::number(static_cast<quint32>(result), 16));
-            async->scheduler->failInitialization(error.toStdString());
-            async->profileScheduler->failInitialization(error.toStdString());
+            const auto error = std::format("WebView2 Runtime is unavailable (HRESULT 0x{:x}).", static_cast<std::uint32_t>(result));
+            async->scheduler->failInitialization(error);
+            async->profileScheduler->failInitialization(error);
         }
     }
 
@@ -167,37 +167,34 @@ public:
             [weak = std::weak_ptr<AsyncState>(async), kind, sharedCompletion](const InitializationResult& initialization) {
                 const auto owner = weak.lock();
                 if (!owner || owner->closed) {
-                    finishClear(sharedCompletion, false, QStringLiteral("The WebView2 session is closed."));
+                    finishClear(sharedCompletion, false, "The WebView2 session is closed.");
                     return;
                 }
                 if (initialization.state != InitializationState::Ready) {
-                    finishClear(sharedCompletion, false, initialization.error);
+                    finishClear(sharedCompletion, false, initialization.error.toStdString());
                     return;
                 }
                 if (!owner->profile) {
-                    finishClear(
-                        sharedCompletion,
-                        false,
-                        QStringLiteral("WebView2 profile is unavailable until a web view controller is ready."));
+                    finishClear(sharedCompletion, false, "WebView2 profile is unavailable until a web view controller is ready.");
                     return;
                 }
                 auto completed = Microsoft::WRL::Callback<ICoreWebView2ClearBrowsingDataCompletedHandler>(
                     [weak, sharedCompletion](HRESULT result) -> HRESULT {
                         const auto current = weak.lock();
                         if (!current || current->closed) {
-                            finishClear(sharedCompletion, false, QStringLiteral("The WebView2 session is closed."));
+                            finishClear(sharedCompletion, false, "The WebView2 session is closed.");
                         }
                         else {
                             finishClear(
                                 sharedCompletion,
                                 SUCCEEDED(result),
-                                SUCCEEDED(result) ? QString() : hresultError(QStringLiteral("WebView2 browsing-data clear"), result));
+                                SUCCEEDED(result) ? std::string() : hresultError("WebView2 browsing-data clear", result));
                         }
                         return S_OK;
                     });
                 const HRESULT result = owner->profile->ClearBrowsingData(kind, completed.Get());
                 if (FAILED(result)) {
-                    finishClear(sharedCompletion, false, hresultError(QStringLiteral("WebView2 browsing-data clear request"), result));
+                    finishClear(sharedCompletion, false, hresultError("WebView2 browsing-data clear request", result));
                 }
             });
     }
@@ -205,7 +202,7 @@ public:
     WebViewSessionOptions options;
     std::shared_ptr<std::vector<ResourceMapping>> resourceMappings = std::make_shared<std::vector<ResourceMapping>>();
     std::unordered_set<std::string> applicationIds;
-    QVector<WebApplicationPtr> applications;
+    std::vector<WebApplicationPtr> applications;
     WebViewPolicyPtr policy;
     std::shared_ptr<AsyncState> async;
     bool ownsApartment = false;
@@ -280,10 +277,10 @@ WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions optio
 WebViewPtr WebView2Session::createWebView(QWidget* parent)
 {
     const auto expectedMode = impl_->options.mode;
-    auto registerProfile = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async), expectedMode](ICoreWebView2* webview) -> QString {
+    auto registerProfile = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async), expectedMode](ICoreWebView2* webview) -> std::string {
         const auto owner = weak.lock();
         if (!owner || owner->closed) {
-            return QStringLiteral("The WebView2 session is closed.");
+            return "The WebView2 session is closed.";
         }
         Microsoft::WRL::ComPtr<ICoreWebView2_13> webview13;
         Microsoft::WRL::ComPtr<ICoreWebView2Profile> profile;
@@ -296,16 +293,16 @@ WebViewPtr WebView2Session::createWebView(QWidget* parent)
             result = profile.As(&profile2);
         }
         if (FAILED(result) || !profile2) {
-            return hresultError(QStringLiteral("WebView2 profile browsing-data interface"), result);
+            return hresultError("WebView2 profile browsing-data interface", result);
         }
         BOOL isInPrivate = FALSE;
         result = profile2->get_IsInPrivateModeEnabled(&isInPrivate);
         if (FAILED(result)) {
-            return hresultError(QStringLiteral("WebView2 profile mode query"), result);
+            return hresultError("WebView2 profile mode query", result);
         }
         const bool expectedPrivate = expectedMode == SessionMode::Ephemeral;
         if ((isInPrivate != FALSE) != expectedPrivate) {
-            return QStringLiteral("WebView2 returned a profile mode that does not match the requested session mode.");
+            return "WebView2 returned a profile mode that does not match the requested session mode.";
         }
         owner->profile = std::move(profile2);
         owner->profileScheduler->markReady();

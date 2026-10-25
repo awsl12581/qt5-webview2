@@ -21,7 +21,10 @@
 #include <QUuid>
 #include <QWidget>
 
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #import <Cocoa/Cocoa.h>
@@ -30,7 +33,12 @@
 namespace {
 constexpr auto kBridgeName = "systemWebView";
 
-NSString* toNSString(const QString& value) { return [NSString stringWithUTF8String:value.toUtf8().constData()]; }
+NSString* toNSString(std::string_view value)
+{
+    return [[[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding] autorelease];
+}
+
+NSString* toNSString(const QString& value) { return toNSString(value.toStdString()); }
 
 id foundationObject(const QJsonObject& object)
 {
@@ -85,9 +93,9 @@ private:
 
 namespace webview {
 struct WkNavigationState {
-    std::unordered_map<void*, quint64> navigationIds;
+    std::unordered_map<void*, std::uint64_t> navigationIds;
 
-    quint64 idForNavigation(void* navigation, quint64 fallback) const
+    std::uint64_t idForNavigation(void* navigation, std::uint64_t fallback) const
     {
         const auto found = navigationIds.find(navigation);
         return found == navigationIds.end() ? fallback : found->second;
@@ -99,9 +107,9 @@ void installDocumentTransport(WebViewState& state, WKUserContentController* cont
     state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
     state.setResourceDocumentToken(state.documentToken);
     const auto escapedToken
-        = QString::fromUtf8(QJsonDocument(QJsonArray { QString::fromStdString(state.documentToken) }).toJson(QJsonDocument::Compact));
-    const auto tokenLiteral = escapedToken.mid(1, escapedToken.size() - 2);
-    const auto source = bridgePageScript(tokenLiteral.toStdString(), "window.webkit.messageHandlers.systemWebView.postMessage", {});
+        = QJsonDocument(QJsonArray { QString::fromStdString(state.documentToken) }).toJson(QJsonDocument::Compact).toStdString();
+    const auto tokenLiteral = escapedToken.substr(1, escapedToken.size() - 2);
+    const auto source = bridgePageScript(tokenLiteral, "window.webkit.messageHandlers.systemWebView.postMessage", {});
     [content removeAllUserScripts];
     auto* script = [[WKUserScript alloc] initWithSource:[NSString stringWithUTF8String:source.c_str()]
                                           injectionTime:WKUserScriptInjectionTimeAtDocumentStart
@@ -133,9 +141,8 @@ public:
                      completionHandler:^(id, NSError*) { }];
             return true;
         }
-        const auto json = QString::fromUtf8(bytes);
-        const auto script = QStringLiteral("window.__systemWebViewReceive(%1);").arg(json);
-        [view_ evaluateJavaScript:toNSString(script) completionHandler:^(id, NSError*) { }];
+        const auto script = "window.__systemWebViewReceive(" + bytes.toStdString() + ");";
+        [view_ evaluateJavaScript:toNSString(script) completionHandler:^(id, NSError*) {}];
         return true;
     }
     void invalidate() override { view_ = nil; }
@@ -546,7 +553,7 @@ WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr poli
 
 void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
 {
-    const quint64 sessionDiagnosticId = sessionState ? sessionState->diagnosticId : 0;
+    const std::uint64_t sessionDiagnosticId = sessionState ? sessionState->diagnosticId : 0;
     impl_->state = std::make_shared<WebViewState>(DiagnosticScope::View, sessionDiagnosticId);
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
     impl_->state->bindBridgePolicy();
