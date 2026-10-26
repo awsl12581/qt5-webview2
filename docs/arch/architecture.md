@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 15:05 CST
-> 文档版本：v22
-> 修改说明：同步 Qt5、GLFW3 和 SDL3 三个示例目标名称。
+> 最后修改时间：2026-10-26 18:47 CST
+> 文档版本：v23
+> 修改说明：同步核心脱 Qt、GoogleTest 测试迁移和原生平台测试边界。
 
 `system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
@@ -30,11 +30,11 @@ as standard strings, formats internal errors with `std::format`, and opens nativ
 The helpers validate input, return optional results without throwing, and copy code units for Win32 wchar_t
 adapters. Length-based conversion preserves embedded NUL; NUL-terminated native API adapters reject it.
 Invalid encoding fails the corresponding send, initialization, navigation, resource request, or download.
-Qt filesystem adapters remain; macOS text conversion continues to use Foundation.
+Qt is confined to the optional Qt host adapter and Qt Widgets sample; core filesystem and text paths use standard or native platform APIs.
 Ada parses and serializes URLs through the public `webview::Url` value type. The project adopts WHATWG
 normalization, including default-port removal and dot-segment handling; `app:` identity uses the parsed host.
-Qt logging and filesystem helpers remain in use internally. Host adapters own framework-specific window
-boundaries; path authorization and message schemas retain their existing behavior.
+Diagnostics, filesystem access, HTTP Range parsing, and text conversion use standard or native platform APIs.
+Host adapters own framework-specific window boundaries; path authorization and message schemas retain their existing behavior.
 The public API uses UTF-8 `std::string` for text, filesystem paths, bridge metadata, errors, and serialized bridge
 messages; `std::vector<std::string>` for path lists; standard unordered sets/maps for policy configuration;
 and fixed-width standard integers for counters. `webview::Url`, `webview::Json`, and `webview::JsonType` remain at the URL and JSON boundaries.

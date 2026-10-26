@@ -6,7 +6,7 @@
 > 文档版本：v6
 > 修改说明：Documented nlohmann/json API, submodules, and installed dependencies.
 
-A small Qt 5 library for embedding the operating system's web view in a C++ application.
+A small C++20 library for embedding the operating system's web view in a C++ application.
 
 <p>
   <a href="https://en.cppreference.com/w/cpp/20"><img src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&amp;logoColor=white" alt="C++20"></a>
@@ -23,7 +23,7 @@ A small Qt 5 library for embedding the operating system's web view in a C++ appl
   <img src="docs/image.png" alt="System WebView demo">
 </p>
 
-System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code uses standard strings, containers, project URL values, and nlohmann/json alongside Qt I/O and widget types. All API strings, including paths, use UTF-8. This value-type migration changes the source and binary interface; consumers must update their calls and rebuild with the library.
+System WebView presents one framework-neutral API over Microsoft WebView2 on Windows and WKWebView on macOS. Qt, GLFW3, SDL3, and native hosts are optional adapters; the core library uses standard strings, containers, project URL values, and nlohmann/json. All API strings, including paths, use UTF-8. This value-type migration changes the source and binary interface; consumers must update their calls and rebuild with the library.
 
 ## What it provides
 

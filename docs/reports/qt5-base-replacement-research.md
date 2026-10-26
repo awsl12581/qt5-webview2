@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 17:38 CST
-> 文档版本：v19
-> 修改说明：记录生产调度、HTTP Range 和 macOS QString 边界的标准库替代实施结果及验证。
+> 最后修改时间：2026-10-26 19:14 CST
+> 文档版本：v21
+> 修改说明：修正文档中已完成的调度、Range、macOS 字符串和包配置迁移状态。
 
 ## 结论与范围
 
@@ -131,16 +131,16 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 
 | 范围 | 当前代码位置 | 当前状态与替代方向 |
 | --- | --- | --- |
-| 核心生产库的 Qt 链接 | [CMakeLists.txt](../../CMakeLists.txt) 第 22、78 行 | `find_package(Qt5 ...)` 和 `system_webview` 对 `Qt5::Widgets` 的 PUBLIC 链接仍存在。必须先让核心 target 不再导出 Qt，再由宿主适配器单独链接 Qt。 |
+| 核心生产库的 Qt 链接 | [CMakeLists.txt](../../CMakeLists.txt) | 已移除核心 target 的 Qt 链接；Qt 查找和 `system_webview_qt_host` 仅由可选 Qt host/sample 开关触发。 |
 | Qt 宿主适配器 | [qt_host.h](../../include/system_webview/qt_host.h) | `QWidget`、`QThread`、`QMetaObject`、`QResizeEvent` 仍是 Qt 实现。它可以作为可选适配器保留，但不应进入核心 API 或核心链接。 |
 | 诊断日志 | [Diagnostics.h](../../src/internal/Diagnostics.h)、[Diagnostics.cpp](../../src/webview/Diagnostics.cpp) 及各平台后端 | `QLoggingCategory`、`QDebug` 和 `qC*` 已替换为标准 C++ `DiagnosticEvent`/调用方回调；不再是 Qt5 Base 剩余项。 |
 | UUID 和令牌 | [RandomToken.cpp](../../src/internal/RandomToken.cpp) 及四个调用点 | `QUuid` 已替换为 Windows `BCryptGenRandom`、macOS `SecRandomCopyBytes` 和项目内部十六进制编码；不再是 Qt5 Base 剩余项。 |
-| 定时器和应用调度 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | `QCoreApplication`/`QTimer` 仍用于快照删除重试。需要平台 dispatcher 或宿主调度接口，并处理取消、销毁和重试截止时间。 |
-| Range 正则和 Qt 字符串边界 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) | `QRegularExpression` 仍解析 HTTP Range；macOS `WkWebView.mm` 仍用少量 `QString` 做 Foundation 错误文本转换。可用 `std::string_view`/`from_chars` 和原生 UTF-8/NSString 边界替代。 |
-| 文件和流 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、测试及平台资源响应 | 生产路径已有标准文件/平台流替代方向，但测试仍大量使用 `QFile`、`QDir`、`QFileInfo`、`QTemporaryDir` 和 `QIODevice`。迁移必须保留快照、Range、租约、目录边界、链接/reparse point 和删除重试语义，详见 [文件与流替代范围调研](file-stream-replacement-scope.md)。 |
+| 定时器和应用调度 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | 已改为标准线程延迟重试，并保留 `weak_ptr` 生命周期保护；生产路径无 Qt 调度依赖。 |
+| Range 正则和 Qt 字符串边界 | [HttpRange.cpp](../../src/internal/HttpRange.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) | 已用共享 `std::from_chars` 解析器和 Foundation UTF-8 边界替代；生产路径无 `QRegularExpression`/`QString`。 |
+| 文件和流 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[tests](../../tests) | 生产和测试已使用标准文件 API；平台集成测试使用 POSIX/Win32 原生边界，快照、Range、租约和目录安全语义保留。 |
 | Qt 示例和控件 | [samples/demo](../../samples/demo)、[windows_widget_demo](../../samples/windows_widget_demo) | Qt Widgets 示例仍使用 `QApplication`、`QMainWindow`、标签页、布局和按钮。GLFW3/SDL3 示例已提供其他宿主，但 Qt 示例可继续作为独立适配器示例。 |
-| Qt 测试工具 | [tests](../../tests) | 测试仍依赖 `QApplication`、`QEventLoop`、`QTimer`、`QFile`、`QTemporaryDir`、`QTcpServer` 和 QWidget。需要平台事件循环、标准文件 API 和测试 HTTP 服务逐项替换，不能通过关闭测试目标宣称完成。 |
-| 包配置和开发文档 | [system_webviewConfig.cmake.in](../../cmake/system_webviewConfig.cmake.in)、README、API 参考和架构文档 | 包配置仍导出 Qt5 查找依赖，README 和 API 示例仍包含 Qt5 构建/示例说明；核心脱 Qt 后需同步更新。 |
+| Qt 测试工具 | [tests](../../tests) | 已替换为 GoogleTest；文件使用 `std::filesystem`，macOS 使用 Cocoa/POSIX 测试支持层，Windows 使用 Win32/标准库。Qt 不再是测试依赖。 |
+| 包配置和开发文档 | [system_webviewConfig.cmake.in](../../cmake/system_webviewConfig.cmake.in)、README、API 参考和架构文档 | 包配置已不再导出 Qt5 查找依赖；README、API 参考和架构文档已说明 Qt 仅是可选适配器/示例。 |
 
 `CMakeLists.txt` 第 106 行起的 `SYSTEM_WEBVIEW_BUILD_GLFW_HOST`、`add_subdirectory(3rdparty/glfw3)` 和 `system_webview_glfw_host` 只是 GLFW 宿主适配器的可选构建入口，不是剩余 Qt 内容。第 116 行起的 SDL3 逻辑同理；两者与 [system_webview_qt_host](../../CMakeLists.txt) 并列，均不应把宿主实现重新耦合进核心库。
 
@@ -153,21 +153,21 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 | 日志 | 自有日志 facade，宿主提供回调；必要时再评估 spdlog | 先迁移行为和分类，不为替换 Qt 强行引入新的全局日志后端。 |
 | Widgets 和布局 | Win32/AppKit，或独立保留 Qt/GLFW3/SDL3 适配器 | 没有一个库能自动覆盖现有 UI 语义；按宿主实现分别维护。 |
 
-当前结论：Qt 尚未完全替代。已替代的是数据格式、URL、Unicode、编码、公共基础类型、MIME helper、生产日志和 UUID/安全令牌；未替代的是核心 Qt 链接、生产调度/定时器、Range 正则、少量 macOS QString 边界、Qt 宿主适配器、Qt 示例、Qt 测试工具以及包配置和部分文档声明。
+当前结论：核心库和测试已脱离 Qt。Qt 仅保留在可选 `system_webview_qt_host` 适配器、Qt Widgets 示例，以及对应的可选构建/README/API 文档说明中；生产源码、核心 target、安装包配置和测试 target 不再依赖 Qt。
 
-## 三类剩余用途专项方案
+## 三类专项替代方案（已实施）
 
 ### 生产调度和定时器
 
-当前生产代码只有一个定时场景：[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 的 `SnapshotStore::scheduleRetry()`。快照文件因仍被读取者占用而删除失败时，它通过 `QCoreApplication::instance()` 查找应用对象，并用 `QTimer::singleShot(1000, ...)` 一秒后重试。它不是通用异步 I/O，也不要求资源管理器拥有独立线程；回调只需重新尝试删除文件，并通过 `weak_ptr` 避免访问已销毁的 `SnapshotStore`。
+当前生产代码只有一个定时场景：[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 的 `SnapshotStore::scheduleRetry()`。快照文件因仍被读取者占用而删除失败时，标准线程延迟一秒重试，并通过 `weak_ptr` 避免访问已销毁的 `SnapshotStore`。
 
-推荐替代为宿主提供的延迟调度回调，例如 `postDelayed(std::chrono::milliseconds, std::function<void()>)`，与现有 `WebViewHost::postToUi` 同属宿主调度边界。调度器必须满足：在宿主 UI/资源允许的线程执行、对象销毁后可以取消或安全丢弃、不会持有强引用阻止销毁、回调异常不穿出库。Windows 可用宿主消息队列配合 `SetTimer` 或线程池定时器，macOS 可用主队列 `dispatch_after`/`NSTimer`；这些实现由平台适配器负责，不进入核心公共库。
+实现采用标准线程延迟回调，满足对象销毁后的 `weak_ptr` 生命周期保护；WebView2 和 WKWebView 的 UI 调度仍由各平台宿主适配器负责。
 
 不建议为一次一秒重试引入 libuv、Boost.Asio 或独立后台线程。libuv/Asio 的事件循环不能自动满足 WebView2 STA 和 WKWebView 主线程契约；`std::thread`/`std::jthread` 会增加停止、对象生命周期和线程切换复杂度。若调用方没有延迟调度器，库可以保留“下次发布资源时同步重试”的兜底，但不能因没有 Qt 应用对象而永久丢失清理机会。验收应覆盖调度器缺失、对象提前关闭、重复调度和删除最终成功/失败。
 
 ### HTTP Range 解析
 
-当前 [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 和 [WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) 使用相同的 Qt 正则 `^bytes=(\\d*)-(\\d*)$`，并先去除首尾空白。项目只支持单段 Range：`bytes=10-20`、`bytes=10-` 和 `bytes=-500`；不支持多段、其他单位或空范围。解析结果还要根据文件大小裁剪、检查溢出，并返回 416 或完整响应。
+项目只支持单段 Range：`bytes=10-20`、`bytes=10-` 和 `bytes=-500`；不支持多段、其他单位或空范围。解析结果根据文件大小裁剪、检查溢出，并返回 416 或完整响应。
 
 推荐新增内部 `parseByteRange(std::string_view, std::int64_t size)`，按以下步骤实现：去除 ASCII 首尾空白；精确检查 `bytes=` 前缀；查找唯一的 `-`；允许两侧分别为空但不能同时为空；用 `std::from_chars` 解析非空十进制字段并检查 `int64_t` 溢出；按 suffix、开放结束端点和文件大小计算 offset/length；拒绝多余字符、多段逗号、负号、空格和溢出值。该函数返回项目内部的 `{offset, length, partial, valid}` 结果，WebResourceManager 和 macOS scheme handler 共用，避免两套正则语义漂移。
 
@@ -175,13 +175,13 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 
 ### macOS QString 边界
 
-当前 [WkWebView.mm](../../src/platform/macos/WkWebView.mm) 的 `QString` 用途只有两类：`toNSString(const QString&)` 转换路径、脚本、URL、HTML 和文件选择结果，以及在导航失败时将 `NSError.localizedDescription.UTF8String` 转成 `std::string`。这些值在进入 Objective-C API 前本来就是项目 UTF-8 `std::string`，不需要 Qt 的 Unicode 分类、格式化或生命周期管理。
+macOS 平台边界现在直接使用项目 UTF-8 `std::string` 与 Foundation `NSString` 互转，不需要 Qt 的 Unicode 分类、格式化或生命周期管理。
 
 推荐删除 `QString` 头文件和 `toNSString(const QString&)` 重载，只保留 `toNSString(std::string_view)`。NSError 文本直接使用 `std::string(error.localizedDescription.UTF8String ?: "")`，对 nil 按空字符串处理；其他调用继续从 `std::string` 转 Foundation `NSString`。这样保留 UTF-8 语义，转换点清晰，且不改变 WKWebView API 的 Objective-C 对象所有权。
 
 Range 头部在 scheme handler 中来自 `NSString*`，先取 `range.UTF8String ?: ""` 转成 `std::string_view`，再调用共享的 `parseByteRange`，因此可同时移除 [WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) 的 `QRegularExpression`。替代后 macOS 平台只保留 Foundation/WebKit 原生字符串边界，不再依赖 Qt Core。
 
-三类替代的实施顺序应为：先抽象宿主延迟调度，再实现共享 Range 解析器并覆盖两处调用，最后删除 macOS QString/QRegularExpression 边界并运行 macOS session/view 测试。完成后，生产源码的 Qt 使用将只剩核心 target 链接和可选 Qt host；测试、示例和包配置仍需单独迁移。
+三类替代已完成，并通过 macOS session/view 测试；生产源码的 Qt 使用仅剩可选 Qt host 和 Qt 示例。
 
 ## Qt 日志替代方案
 
@@ -271,3 +271,5 @@ C++20 标准库没有 UUID 类型或密码学随机字节接口。本项目的�
 | v17 | 2026-10-26 16:35 CST | 按当前源码、构建配置、测试和示例重新盘点 Qt5 Base 的剩余使用范围。 |
 | v18 | 2026-10-26 16:50 CST | 补充生产调度、HTTP Range 解析和 macOS QString 边界的专项替代方案。 |
 | v19 | 2026-10-26 17:38 CST | 实施标准线程调度、共享 `std::from_chars` Range 解析和 macOS 字符串边界替代；主库与核心测试构建、测试通过。 |
+| v20 | 2026-10-26 18:47 CST | 移除核心 target 与测试的 Qt 依赖，引入 GoogleTest 和原生平台测试支持，完成 macOS 测试验证并同步剩余 Qt 边界。 |
+| v21 | 2026-10-26 19:14 CST | 修正文档中已完成的调度、Range、macOS 字符串和包配置迁移状态。 |
