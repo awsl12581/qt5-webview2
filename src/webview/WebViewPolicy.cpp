@@ -1,10 +1,9 @@
+#include "internal/FileResource.h"
 #include "internal/ResourceMapping.h"
 #include "webview/JsonMessage.h"
 #include <system_webview/system_webview.h>
 
-#include <QDir>
-#include <QFileInfo>
-
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -80,15 +79,16 @@ bool validateMessage(
     return detail.empty();
 }
 
-bool isWithinRoot(const QString& filePath, const QString& rootPath)
+bool isWithinRoot(const std::string& filePath, const std::string& rootPath)
 {
-    const auto file = QFileInfo(filePath).canonicalFilePath();
-    const auto root = QDir(rootPath).canonicalPath();
-    if (file.isEmpty() || root.isEmpty()) {
+    std::error_code pathError;
+    const auto file = std::filesystem::canonical(webview::pathFromUtf8(filePath), pathError);
+    const auto root = std::filesystem::canonical(webview::pathFromUtf8(rootPath), pathError);
+    if (pathError || file.empty() || root.empty()) {
         return false;
     }
-    const auto relative = QDir(root).relativeFilePath(file);
-    return relative != QStringLiteral("..") && !relative.startsWith(QStringLiteral("../")) && !relative.startsWith(QStringLiteral("..\\"));
+    const auto relative = std::filesystem::relative(file, root, pathError);
+    return !pathError && !relative.empty() && *relative.begin() != "..";
 }
 }
 
@@ -154,7 +154,7 @@ NavigationDecision WebViewPolicy::decideNavigation(const NavigationRequest& requ
     }
     if (scheme == "file") {
         for (const auto& root : impl_->config.allowedFileRoots) {
-            if (isWithinRoot(QString::fromStdString(request.url.toLocalFile()), QString::fromStdString(root))) {
+            if (isWithinRoot(request.url.toLocalFile(), root)) {
                 return NavigationDecision::Allow;
             }
         }

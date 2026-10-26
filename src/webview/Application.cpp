@@ -1,9 +1,10 @@
 #include "internal/Application.h"
+#include "internal/FileResource.h"
 
-#include <QFileInfo>
 #include <utf8proc.h>
 
 #include <algorithm>
+#include <filesystem>
 
 namespace webview
 {
@@ -52,10 +53,11 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
         return {};
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&options.source)) {
-        const QFileInfo root(QString::fromStdString(bundle->directory));
-        const auto entryParts = QString::fromStdString(bundle->entryDocument).split(QLatin1Char('/'), Qt::SkipEmptyParts);
-        if (root.canonicalFilePath().isEmpty() || !root.isDir() || bundle->entryDocument.empty() || bundle->entryDocument.starts_with('/')
-            || entryParts.contains(QStringLiteral(".."))) {
+        std::error_code pathError;
+        const auto root = std::filesystem::canonical(pathFromUtf8(bundle->directory), pathError);
+        const auto entryPath = pathFromUtf8(bundle->entryDocument);
+        if (pathError || !std::filesystem::is_directory(root, pathError) || pathError || bundle->entryDocument.empty()
+            || entryPath.is_absolute() || std::find(entryPath.begin(), entryPath.end(), "..") != entryPath.end()) {
             if (error) {
                 *error = "LocalBundle requires an existing directory and entry document.";
             }

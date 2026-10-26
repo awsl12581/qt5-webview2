@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 12:48 CST
-> 文档版本：v10
-> 修改说明：同步 MIME 固定扩展名 helper 的实施结果，明确暂不引入 libmagic。
+> 最后修改时间：2026-10-26 12:55 CST
+> 文档版本：v11
+> 修改说明：补充文件与流 Qt 用途的专项替代方案及标准库/平台 API 边界。
 
 ## 结论与范围
 
@@ -127,14 +127,14 @@ JSON、URL、Unicode 转码和应用 ID 校验的 macOS 验证已经完成；Win
 
 ## Qt5-base 剩余范围
 
-Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分别承担 Windows 转码、Unicode 分类和 URL 解析职责。当前剩余 Qt 主要是 UI 与平台适配：`QApplication`/`QWidget`/布局、事件循环和定时器、`QFile`/`QDir`/`QFileInfo`、`QIODevice`、`QMimeDatabase`、Qt 日志以及少量 QString 的原生边界转换。
+Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分别承担 Windows 转码、Unicode 分类和 URL 解析职责。当前剩余 Qt 主要是 UI 与平台适配：`QApplication`/`QWidget`/布局、事件循环和定时器、`QFile`/`QDir`/`QFileInfo`、`QIODevice`、Qt 日志以及少量 QString 的原生边界转换。文件和流的具体调用、Range/快照契约及迁移顺序见 [文件与流替代范围调研](file-stream-replacement-scope.md)。
 
 建议的辅助库和边界如下：
 
 | 剩余 Qt 范围 | 可评估的三方库或原生方案 | 结论 |
 | --- | --- | --- |
-| 文件、目录和路径 | C++20 `std::filesystem`，Windows UTF-16 API，macOS Foundation | 优先标准库和平台 API；不需要新增通用库 |
-| 流和资源文件 | `std::ifstream`/`std::fstream`、自有 range stream | 先替换 QIODevice 的项目内部接口，再评估是否需要额外 I/O 库 |
+| 文件、目录和路径 | C++20 `std::filesystem`，Windows UTF-16 API，macOS Foundation | 优先标准库和平台 API；保留 symlink/reparse point、硬链接和并发替换检查 |
+| 流和资源文件 | `std::ifstream`/`std::fstream`、项目自有 range reader、Windows `IStream` | 先移除公共 `QIODevice` ABI，再迁移快照、Range、租约和平台响应；详见 [文件与流报告](file-stream-replacement-scope.md) |
 | MIME 检测 | 项目内部固定扩展名 helper；未来可选 libmagic | 已完成显式 MIME、固定扩展名表和 `application/octet-stream` 回退；当前不需要第三方 MIME 库 |
 | 主线程调度、定时器和异步 I/O | Windows dispatcher、Grand Central Dispatch、libuv 或 Boost.Asio | WebView2 STA 和 WKWebView 主线程仍依赖平台循环；libuv/Asio 不能直接替代 Qt Widgets 事件循环 |
 | 日志 | spdlog 或自有日志 facade | 先保持 QLoggingCategory 行为，单独迁移日志分类和过滤 |
@@ -175,3 +175,4 @@ Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分
 | v8 | 2026-10-26 11:36 CST | 补充 libmagic MIME 调研及其与 QMimeDatabase 的替代边界。 |
 | v9 | 2026-10-26 11:40 CST | 补充 WebView2 资源响应中的 MIME 作用及 libmagic 的边界。 |
 | v10 | 2026-10-26 12:48 CST | 同步固定 MIME 扩展名 helper 已实施，明确暂不引入 libmagic。 |
+| v11 | 2026-10-26 12:55 CST | 补充文件与流 Qt 用途的专项替代方案及标准库/平台 API 边界。 |

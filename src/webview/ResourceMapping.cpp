@@ -1,8 +1,8 @@
 #include "internal/ResourceMapping.h"
+#include "internal/FileResource.h"
 #include "webview/PathSecurity.h"
 
-#include <QDir>
-#include <QFileInfo>
+#include <filesystem>
 #include <optional>
 #include <unordered_set>
 
@@ -86,9 +86,10 @@ bool validateResourceMappings(std::vector<ResourceMapping>* mappings, std::strin
             }
             return false;
         }
-        const QFileInfo rootInfo(QString::fromStdString(mapping.localDirectory));
-        const auto canonicalRoot = rootInfo.canonicalFilePath();
-        if (canonicalRoot.isEmpty() || !rootInfo.isDir()) {
+        std::error_code pathError;
+        const auto rootPath = pathFromUtf8(mapping.localDirectory);
+        const auto canonicalRoot = std::filesystem::canonical(rootPath, pathError);
+        if (pathError || !std::filesystem::is_directory(canonicalRoot, pathError) || pathError) {
             if (error) {
                 *error = "Invalid resource mapping directory for " + originText + ": " + mapping.localDirectory;
             }
@@ -96,7 +97,7 @@ bool validateResourceMappings(std::vector<ResourceMapping>* mappings, std::strin
         }
         origins.insert(originText);
         mapping.origin = normalized;
-        mapping.localDirectory = canonicalRoot.toStdString();
+        mapping.localDirectory = pathToUtf8(canonicalRoot);
     }
     return true;
 }
@@ -122,23 +123,24 @@ std::string resolveMappedResource(const ResourceMapping& mapping, const Url& url
         return {};
     }
     const auto resolve = [&mapping](const std::string& relativePath) {
-        const QFileInfo candidate(QDir(QString::fromStdString(mapping.localDirectory)).filePath(QString::fromStdString(relativePath)));
-        const auto canonicalPath = candidate.canonicalFilePath();
-        const auto pathWithinRoot = QDir(QString::fromStdString(mapping.localDirectory)).relativeFilePath(canonicalPath);
-        const bool outsideRoot = pathWithinRoot == QStringLiteral("..") || pathWithinRoot.startsWith(QStringLiteral("../"))
-                                 || pathWithinRoot.startsWith(QStringLiteral("..\\"));
-        return canonicalPath.isEmpty() || candidate.isDir() || outsideRoot
-                       || hasExternalFileLink(std::filesystem::path(canonicalPath.toStdU16String()))
-                   ? std::string()
-                   : canonicalPath.toStdString();
+        std::error_code pathError;
+        const auto rootPath = pathFromUtf8(mapping.localDirectory);
+        const auto candidate = rootPath / pathFromUtf8(relativePath);
+        const auto canonicalPath = std::filesystem::canonical(candidate, pathError);
+        if (pathError || std::filesystem::is_directory(canonicalPath, pathError) || pathError) {
+            return std::string();
+        }
+        const auto pathWithinRoot = std::filesystem::relative(canonicalPath, rootPath, pathError);
+        const bool outsideRoot = pathError || pathWithinRoot.empty() || *pathWithinRoot.begin() == "..";
+        return outsideRoot || hasExternalFileLink(canonicalPath) ? std::string() : pathToUtf8(canonicalPath);
     };
     const auto requestedPath = !decodedPath->empty() && decodedPath->front() == '/' ? decodedPath->substr(1) : *decodedPath;
     const auto resolved = resolve(requestedPath);
     if (!resolved.empty()) {
         return resolved;
     }
-    const QFileInfo requestInfo(QString::fromStdString(requestedPath));
-    if (allowSpaFallback && mapping.spaFallback && !mapping.entryDocument.empty() && requestInfo.suffix().isEmpty()) {
+    const auto requestExtension = pathFromUtf8(requestedPath).extension();
+    if (allowSpaFallback && mapping.spaFallback && !mapping.entryDocument.empty() && requestExtension.empty()) {
         const auto entry = resolve(mapping.entryDocument);
         if (!entry.empty()) {
             return entry;

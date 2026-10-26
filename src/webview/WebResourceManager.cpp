@@ -1,20 +1,19 @@
 #include "internal/Diagnostics.h"
+#include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
 #include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
-#include <QFile>
-#include <QFileInfo>
 #include <QRegularExpression>
-#include <QSaveFile>
-#include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -33,31 +32,6 @@ constexpr int kMaximumResourceCount = 128;
 constexpr std::int64_t kCopyBufferSize = 1024 * 1024;
 constexpr std::int64_t kResourceLifetimeMs = 30LL * 60 * 1000;
 
-class RangeFile final : public QFile
-{
-public:
-    RangeFile(const std::string& path, std::int64_t length)
-        : QFile(QString::fromStdString(path))
-        , remaining_(length)
-    {
-    }
-
-protected:
-    qint64 readData(char* data, qint64 maximum) override
-    {
-        if (remaining_ <= 0) {
-            return 0;
-        }
-        const auto count = QFile::readData(data, std::min<qint64>(maximum, remaining_));
-        if (count > 0) {
-            remaining_ -= count;
-        }
-        return count;
-    }
-
-private:
-    std::int64_t remaining_;
-};
 }
 
 class WebResourceManager::Impl
@@ -65,11 +39,32 @@ class WebResourceManager::Impl
 public:
     struct SnapshotStore : std::enable_shared_from_this<SnapshotStore>
     {
-        QTemporaryDir directory;
+        std::filesystem::path directory;
         std::mutex mutex;
         std::unordered_map<std::string, std::int64_t> retryPaths;
         std::int64_t occupiedBytes = 0;
         bool retryScheduled = false;
+
+        SnapshotStore()
+        {
+            std::error_code error;
+            const auto root = std::filesystem::temp_directory_path(error);
+            if (!error) {
+                for (int attempt = 0; attempt != 8 && directory.empty(); ++attempt) {
+                    const auto candidate = root / ("system-webview-" + QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString());
+                    if (std::filesystem::create_directory(candidate, error)) {
+                        directory = candidate;
+                    }
+                    error.clear();
+                }
+            }
+        }
+
+        ~SnapshotStore()
+        {
+            std::error_code error;
+            std::filesystem::remove_all(directory, error);
+        }
 
         std::int64_t occupied()
         {
@@ -88,7 +83,8 @@ public:
             bool schedule = false;
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (QFile::remove(QString::fromStdString(path)) || !QFileInfo::exists(QString::fromStdString(path))) {
+                std::error_code error;
+                if (std::filesystem::remove(pathFromUtf8(path), error) || !std::filesystem::exists(pathFromUtf8(path))) {
                     occupiedBytes -= size;
                 }
                 else {
@@ -113,7 +109,8 @@ public:
                     retryScheduled = false;
                 }
                 for (auto it = retryPaths.begin(); it != retryPaths.end();) {
-                    if (QFile::remove(QString::fromStdString(it->first)) || !QFileInfo::exists(QString::fromStdString(it->first))) {
+                    std::error_code error;
+                    if (std::filesystem::remove(pathFromUtf8(it->first), error) || !std::filesystem::exists(pathFromUtf8(it->first))) {
                         occupiedBytes -= it->second;
                         it = retryPaths.erase(it);
                     }
@@ -226,50 +223,67 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
             ++it;
         }
     }
-    const QFileInfo info(QString::fromStdString(path));
+    std::error_code fileError;
+    const auto sourcePath = pathFromUtf8(path);
+    const bool sourceIsFile = std::filesystem::is_regular_file(sourcePath, fileError);
+    const auto sourceSize = sourceIsFile ? std::filesystem::file_size(sourcePath, fileError) : 0;
     if (!impl_->origin.isValid() || impl_->documentToken.empty() || (!documentToken.empty() && documentToken != impl_->documentToken)
-        || !info.isFile() || !info.isReadable() || info.size() > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
-        || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes || !impl_->snapshots->directory.isValid()) {
+        || !sourceIsFile || fileError || sourceSize > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
+        || impl_->snapshots->occupied() + static_cast<std::int64_t>(sourceSize) > kMaximumPublishedBytes
+        || impl_->snapshots->directory.empty()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.publish_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
 
     const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
-    const auto snapshotPath = impl_->snapshots->directory.filePath(QString::fromStdString(token));
-    QFile input(info.absoluteFilePath());
-    QSaveFile output(snapshotPath);
-    if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) {
+    const auto snapshotPath = impl_->snapshots->directory / token;
+    const auto temporaryPath = pathFromUtf8(pathToUtf8(snapshotPath) + ".tmp");
+    std::ifstream input(sourcePath, std::ios::binary);
+    std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+    if (!input || !output) {
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
     std::vector<char> buffer(static_cast<std::size_t>(kCopyBufferSize));
     std::int64_t copied = 0;
-    while (!input.atEnd()) {
-        const auto count = input.read(buffer.data(), buffer.size());
-        if (count <= 0 || output.write(buffer.data(), count) != count) {
-            output.cancelWriting();
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const auto count = input.gcount();
+        if (count > 0 && !output.write(buffer.data(), count)) {
+            output.close();
+            std::error_code error;
+            std::filesystem::remove(temporaryPath, error);
             qCWarning(systemWebViewResource).noquote()
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return {};
         }
         copied += count;
         if (copied > kMaximumFileSize) {
-            output.cancelWriting();
+            output.close();
+            std::error_code error;
+            std::filesystem::remove(temporaryPath, error);
             qCWarning(systemWebViewResource).noquote()
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return {};
         }
     }
-    if (copied != info.size() || !output.commit()) {
+    output.flush();
+    const bool outputGood = output.good();
+    output.close();
+    std::error_code commitError;
+    std::filesystem::rename(temporaryPath, snapshotPath, commitError);
+    if (!outputGood || copied != static_cast<std::int64_t>(sourceSize) || commitError) {
+        std::error_code error;
+        std::filesystem::remove(temporaryPath, error);
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
 
     auto entry = std::make_shared<Impl::Entry>();
-    entry->path = snapshotPath.toStdString();
+    entry->path = pathToUtf8(snapshotPath);
     entry->mime = mimeType.empty() ? std::string(mime::fromPath(path)) : mimeType;
     entry->document = impl_->documentToken;
     entry->size = copied;
@@ -366,8 +380,8 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
         return response;
     }
     const std::int64_t length = entry->size == 0 ? 0 : end - start + 1;
-    auto file = std::make_unique<RangeFile>(entry->path, length);
-    if (!file->open(QIODevice::ReadOnly) || !file->seek(start)) {
+    auto file = std::make_unique<FileResource>(entry->path, start + length);
+    if (!file->seek(start)) {
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.read_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         ResourceResponse response;

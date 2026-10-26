@@ -56,23 +56,23 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     assert(!published.token.empty());
     auto response = state->resources->open({ published.url, origin, "doc-1" });
     assert(response.status == 200);
-    const auto snapshotPath = qobject_cast<QFile*>(response.body.get())->fileName();
+    const auto snapshotPath = response.body->path();
     response.body.reset();
     response.lease.reset();
 
-    const auto path = webview::utf8ToWide(snapshotPath.toStdString());
+    const auto path = webview::utf8ToWide(snapshotPath);
     assert(path);
     HANDLE lockedFile = CreateFileW(path->c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     assert(lockedFile != INVALID_HANDLE_VALUE);
     state->resources->release(published.token);
-    assert(QFileInfo::exists(snapshotPath));
+    assert(QFileInfo::exists(QString::fromStdString(snapshotPath)));
     assert(state->resources->open({ published.url, origin, "doc-1" }).status == 410);
     CloseHandle(lockedFile);
 
     QEventLoop loop;
     QTimer::singleShot(1500, &loop, &QEventLoop::quit);
     loop.exec();
-    assert(!QFileInfo::exists(snapshotPath));
+    assert(!QFileInfo::exists(QString::fromStdString(snapshotPath)));
 }
 }
 

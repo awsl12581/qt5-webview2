@@ -1,8 +1,9 @@
 #include "webview/HostCompletion.h"
 
+#include "internal/FileResource.h"
 #include "webview/WebViewState.h"
 
-#include <QFileInfo>
+#include <filesystem>
 
 namespace webview
 {
@@ -36,11 +37,12 @@ FileSelectionResult normalizeFileSelectionResult(const FileSelectionRequest& req
         return { FileSelectionStatus::InvalidResult, {}, "The file request allows only one selection." };
     }
     for (const auto& path : result.paths) {
-        const QFileInfo entry(QString::fromStdString(path));
-        if (path.empty() || !entry.exists()) {
+        std::error_code pathError;
+        const auto entry = webview::pathFromUtf8(path);
+        if (path.empty() || !std::filesystem::exists(entry, pathError) || pathError) {
             return { FileSelectionStatus::InvalidResult, {}, "A selected path does not exist." };
         }
-        if (entry.isDir() && !request.allowsDirectories) {
+        if (std::filesystem::is_directory(entry, pathError) && !request.allowsDirectories) {
             return { FileSelectionStatus::InvalidResult, {}, "The file request does not allow directories." };
         }
     }

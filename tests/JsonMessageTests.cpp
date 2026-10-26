@@ -15,6 +15,7 @@
 #include <QLoggingCategory>
 #include <QTemporaryDir>
 
+#include <array>
 #include <cassert>
 #include <limits>
 #include <string>
@@ -344,21 +345,27 @@ int main()
     const auto published = resources.publishFile(sourceFile.fileName().toStdString());
     assert(!published.token.empty());
     assert(published.mimeType == "application/octet-stream");
+    const auto htmlPublished = resources.publishFile(allowedFile.fileName().toStdString());
+    assert(!htmlPublished.token.empty());
+    assert(htmlPublished.mimeType == "text/html");
+    resources.release(htmlPublished.token);
     assert(published.url.toString().find(sourceFile.fileName().toStdString()) == std::string::npos);
     assert(sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
     assert(sourceFile.write("abcdefghij") == 10);
     sourceFile.close();
     auto rangeResponse = resources.open({ published.url, documentOrigin, "文档-1", "bytes=2-5" });
     assert(rangeResponse.status == 206 && rangeResponse.offset == 2 && rangeResponse.length == 4);
-    assert(rangeResponse.body->readAll() == QByteArray("2345"));
-    const auto snapshotPath = qobject_cast<QFile*>(rangeResponse.body.get())->fileName();
+    std::array<char, 4> rangeBytes {};
+    assert(rangeResponse.body->read(rangeBytes.data(), rangeBytes.size()) == 4);
+    assert(std::string(rangeBytes.data(), rangeBytes.size()) == "2345");
+    const auto snapshotPath = rangeResponse.body->path();
     assert(resources.open({ published.url, documentOrigin, "other-doc" }).status == 403);
     resources.release(published.token);
     assert(resources.open({ published.url, documentOrigin, "文档-1" }).status == 410);
-    assert(QFileInfo::exists(snapshotPath));
+    assert(QFileInfo::exists(QString::fromStdString(snapshotPath)));
     rangeResponse.body.reset();
     rangeResponse.lease.reset();
-    assert(!QFileInfo::exists(snapshotPath));
+    assert(!QFileInfo::exists(QString::fromStdString(snapshotPath)));
     assert(QFileInfo::exists(sourceFile.fileName()));
 
     QFile emptyFile(files.filePath(QStringLiteral("empty.bin")));

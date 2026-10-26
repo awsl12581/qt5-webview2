@@ -40,9 +40,9 @@
 #define SYSTEM_WEBVIEW_API
 #endif
 
-#include <QIODevice>
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -59,6 +59,15 @@ namespace webview
 {
 /// UTF-8 JSON values. Payloads must be objects; use Json::object() for an empty payload.
 using Json = nlohmann::json;
+
+class ResourceBody
+{
+public:
+    virtual ~ResourceBody() = default;
+    virtual std::int64_t read(char* data, std::int64_t maximum) = 0;
+    virtual bool seek(std::int64_t offset) = 0;
+    virtual std::string path() const = 0;
+};
 
 enum class JsonType : int
 {
@@ -469,7 +478,7 @@ struct ResourceResponse
     std::int64_t offset = 0;
     std::int64_t length = 0;
     std::shared_ptr<void> lease;
-    std::unique_ptr<QIODevice> body;
+    std::unique_ptr<ResourceBody> body;
     bool acceptRanges = false;
 };
 

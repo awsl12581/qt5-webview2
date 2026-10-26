@@ -5,15 +5,15 @@
 
 #include "internal/Application.h"
 #include "internal/Diagnostics.h"
+#include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
 #include "internal/ResourceMapping.h"
 
-#include <QFile>
-#include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <unordered_set>
 
@@ -69,12 +69,12 @@
     std::int64_t length = resource.length;
     bool acceptRanges = resource.acceptRanges;
     std::shared_ptr<void> lease = std::move(resource.lease);
-    std::unique_ptr<QIODevice> body = std::move(resource.body);
+    std::unique_ptr<webview::ResourceBody> body = std::move(resource.body);
     const webview::ResourceMapping* mapping = nullptr;
     if (published) {
         mimeType = resource.mimeType;
-        if (auto* file = qobject_cast<QFile*>(body.get()))
-            path = file->fileName().toStdString();
+        if (body)
+            path = body->path();
         body.reset();
     }
     else {
@@ -91,7 +91,12 @@
             return;
         }
         mimeType = std::string(webview::mime::fromPath(path));
-        totalSize = QFileInfo(QString::fromStdString(path)).size();
+        std::error_code fileError;
+        totalSize = static_cast<std::int64_t>(std::filesystem::file_size(webview::pathFromUtf8(path), fileError));
+        if (fileError) {
+            [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
+            return;
+        }
         offset = 0;
         length = totalSize;
         acceptRanges = true;
@@ -127,8 +132,8 @@
     }
 
     if (!published && status != webview::httpStatus::kRangeNotSatisfiable) {
-        auto file = std::make_unique<QFile>(QString::fromStdString(path));
-        if (!file->open(QIODevice::ReadOnly) || !file->seek(offset)) {
+        auto file = std::make_unique<webview::FileResource>(path, totalSize);
+        if (!file->seek(offset)) {
             [task didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNoPermissionsToReadFile userInfo:nil]];
             return;
         }
@@ -162,7 +167,7 @@
                                                headerFields:headers];
     [task didReceiveResponse:response];
     if (status == webview::httpStatus::kOk || status == webview::httpStatus::kPartialContent) {
-        auto* device = qobject_cast<QFile*>(body.get());
+        auto* device = body.get();
         std::vector<char> buffer(256 * 1024);
         std::int64_t remaining = length;
         while (device && remaining > 0) {

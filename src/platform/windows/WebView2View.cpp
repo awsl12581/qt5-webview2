@@ -3,6 +3,7 @@
 
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
 #include "internal/ResourceMapping.h"
@@ -11,9 +12,6 @@
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QMetaObject>
 #include <QPointer>
 #include <QResizeEvent>
@@ -487,9 +485,8 @@ public:
                                     offset = resourceResponse.offset;
                                     length = resourceResponse.length;
                                     lease = std::move(resourceResponse.lease);
-                                    auto* file = qobject_cast<QFile*>(resourceResponse.body.get());
-                                    if (file) {
-                                        filePath = file->fileName().toStdString();
+                                    if (resourceResponse.body) {
+                                        filePath = resourceResponse.body->path();
                                     }
                                     resourceResponse.body.reset();
                                 }
@@ -507,9 +504,13 @@ public:
                                     if (filePath.empty()) {
                                         return S_OK;
                                     }
-                                    const QFileInfo info(QString::fromStdString(filePath));
+                                    std::error_code fileError;
+                                    const auto fileSize = std::filesystem::file_size(webview::pathFromUtf8(filePath), fileError);
                                     mime = std::string(webview::mime::fromPath(filePath));
-                                    totalSize = info.size();
+                                    if (fileError) {
+                                        return S_OK;
+                                    }
+                                    totalSize = static_cast<std::int64_t>(fileSize);
                                     length = totalSize;
                                 }
                                 if (filePath.empty()) {
@@ -818,8 +819,11 @@ public:
                                                     }
                                                     else if (resolution.target.handling == DownloadHandling::TargetPath) {
                                                         const auto nativeTarget = utf8ToWide(resolution.target.filePath);
-                                                        const QFileInfo target(QString::fromStdString(resolution.target.filePath));
-                                                        if (!nativeTarget || !target.isAbsolute() || !target.dir().exists()) {
+                                                        std::error_code targetError;
+                                                        const auto target = webview::pathFromUtf8(resolution.target.filePath);
+                                                        if (!nativeTarget || !target.is_absolute()
+                                                            || !std::filesystem::is_directory(target.parent_path(), targetError)
+                                                            || targetError) {
                                                             argsRef->put_Cancel(TRUE);
                                                         }
                                                         else if (FAILED(argsRef->put_ResultFilePath(nativeTarget->c_str()))) {
