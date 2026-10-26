@@ -11,8 +11,6 @@
 #include "webview/WebViewState.h"
 
 #include <QEvent>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QMetaObject>
 #include <QPointer>
 #include <QResizeEvent>
@@ -45,10 +43,9 @@ webview::Url urlFromNSURL(NSURL* value)
     return value ? webview::Url(value.absoluteString.UTF8String ?: "") : webview::Url();
 }
 
-id foundationObject(const QJsonObject& object)
+id foundationObject(std::string_view json)
 {
-    const auto json = QJsonDocument(object).toJson(QJsonDocument::Compact);
-    NSData* data = [NSData dataWithBytes:json.constData() length:json.size()];
+    NSData* data = [NSData dataWithBytes:json.data() length:json.size()];
     return [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 }
 
@@ -111,10 +108,12 @@ void installDocumentTransport(WebViewState& state, WKUserContentController* cont
 {
     state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
     state.setResourceDocumentToken(state.documentToken);
-    const auto escapedToken
-        = QJsonDocument(QJsonArray { QString::fromStdString(state.documentToken) }).toJson(QJsonDocument::Compact).toStdString();
-    const auto tokenLiteral = escapedToken.substr(1, escapedToken.size() - 2);
-    const auto source = bridgePageScript(tokenLiteral, "window.webkit.messageHandlers.systemWebView.postMessage", {});
+    const auto tokenLiteral = serializeJson(state.documentToken);
+    if (!tokenLiteral) {
+        state.failInitialization("Bridge document token JSON encoding failed.");
+        return;
+    }
+    const auto source = bridgePageScript(*tokenLiteral, "window.webkit.messageHandlers.systemWebView.postMessage", {});
     [content removeAllUserScripts];
     auto* script = [[WKUserScript alloc] initWithSource:[NSString stringWithUTF8String:source.c_str()]
                                           injectionTime:WKUserScriptInjectionTimeAtDocumentStart
@@ -134,16 +133,20 @@ public:
     {
         if (!view_)
             return false;
-        QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(QByteArray(bytes.data(), static_cast<int>(bytes.size())), &error);
-        if (error.error != QJsonParseError::NoError || !document.isObject())
+        Json document;
+        if (!parseMessage(bytes, &document)) {
             return false;
+        }
         if (@available(macOS 11.0, *)) {
+            id object = foundationObject(bytes);
+            if (!object) {
+                return false;
+            }
             [view_ callAsyncJavaScript:@"window.__systemWebViewReceive(message);"
-                             arguments:@ { @"message" : foundationObject(document.object()) }
+                             arguments:@ { @"message" : object }
                                inFrame:nil
                         inContentWorld:[WKContentWorld pageWorld]
-                     completionHandler:^(id, NSError*) { }];
+                     completionHandler:^(id, NSError*) {}];
             return true;
         }
         const auto script = "window.__systemWebViewReceive(" + bytes + ");";
@@ -210,20 +213,22 @@ public:
         }
         return;
     }
+    if (![message.body isKindOfClass:[NSDictionary class]] || ![NSJSONSerialization isValidJSONObject:message.body]) {
+        return;
+    }
     NSError* error = nil;
     NSData* data = [NSJSONSerialization dataWithJSONObject:message.body options:0 error:&error];
     if (!data || error) {
         return;
     }
-    QJsonObject wrapper;
+    webview::Json wrapper;
     if (webview::parseMessage(std::string_view(static_cast<const char*>(data.bytes), data.length), &wrapper)
-        && wrapper.value(QStringLiteral("documentToken")).toString().toStdString() == self.state->documentToken
-        && wrapper.value(QStringLiteral("message")).isObject()) {
-        const auto object = wrapper.value(QStringLiteral("message")).toObject();
-        if (!object.value(QStringLiteral("type")).isString() || !object.value(QStringLiteral("payload")).isObject()) {
-            return;
+        && webview::jsonString(wrapper, "documentToken") == self.state->documentToken && wrapper.contains("message")
+        && wrapper.at("message").is_object()) {
+        const auto bytes = webview::serializeJson(wrapper.at("message"));
+        if (bytes) {
+            self.state->bridge->receive(*bytes, frameUrl);
         }
-        self.state->bridge->receive(QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString(), frameUrl);
     }
 }
 @end

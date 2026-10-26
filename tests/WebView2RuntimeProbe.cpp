@@ -89,9 +89,10 @@ private:
             return false;
         }
         bool completionCalled = false;
-        retainedView->bridge().call("closed-probe", {}, [&completionCalled](const QJsonObject&, const std::string& error) {
-            completionCalled = !error.empty();
-        });
+        retainedView->bridge().call(
+            "closed-probe",
+            webview::Json::object(),
+            [&completionCalled](const webview::Json&, const std::string& error) { completionCalled = !error.empty(); });
         if (!completionCalled) {
             fail("A retained WebView2 view accepted work after its session was destroyed.");
             return false;
@@ -248,9 +249,10 @@ private:
             return;
         }
         bool completionCalled = false;
-        retainedView->bridge().call("closed-probe", {}, [&completionCalled](const QJsonObject&, const std::string& error) {
-            completionCalled = !error.empty();
-        });
+        retainedView->bridge().call(
+            "closed-probe",
+            webview::Json::object(),
+            [&completionCalled](const webview::Json&, const std::string& error) { completionCalled = !error.empty(); });
         if (!completionCalled) {
             fail("A retained WebView2 view accepted work after its session was destroyed.");
             return;

@@ -12,11 +12,11 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonDocument>
 #include <QLoggingCategory>
 #include <QTemporaryDir>
 
 #include <cassert>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -43,10 +43,111 @@ public:
     std::vector<std::string> sent;
     bool invalidated = false;
 };
+
+void testJsonMigrationBoundaries()
+{
+    using webview::Json;
+    Json parsed;
+    std::string error;
+    assert(webview::BridgeMessage().payload.is_object());
+    assert(webview::parseMessage("{}", &parsed, &error) && parsed.is_object() && parsed.empty());
+    for (const std::string text :
+         { "null", "[]", "true", "{", "{} trailing", "{\"x\":\"\xFF\"}", "{\"x\":\"\\uD800\"}", "{\"x\":1e999}" }) {
+        assert(!webview::parseMessage(text, &parsed, &error));
+        assert(!error.empty());
+    }
+    assert(!webview::parseMessage(std::string("{}\0trailing", 11), &parsed));
+    assert(webview::parseMessage("{\"x\":1,\"x\":2}", &parsed));
+    assert(parsed.at("x") == 2);
+    const Json nulObject { { "text", std::string("a\0b", 3) } };
+    const auto nulBytes = webview::serializeJson(nulObject);
+    assert(nulBytes && nulBytes->find("\\u0000") != std::string::npos);
+    assert(webview::parseMessage(*nulBytes, &parsed) && parsed == nulObject);
+    assert(!webview::serializeJson(Json { { "x", std::string("\xFF") } }));
+    assert(!webview::serializeJson(Json { { "x", std::numeric_limits<double>::quiet_NaN() } }));
+    assert(!webview::serializeJson(Json { { "x", std::numeric_limits<double>::infinity() } }));
+    assert(webview::serializeJson(Json("\"\\\n中文🌍")).value() == Json("\"\\\n中文🌍").dump());
+
+    Json nested = Json::object();
+    for (int depth = 0; depth < 120; ++depth) {
+        nested = Json { { "child", std::move(nested) } };
+    }
+    const auto nestedBytes = webview::serializeJson(nested);
+    assert(nestedBytes && webview::parseMessage(*nestedBytes, &parsed));
+    for (int depth = 0; depth < 12; ++depth) {
+        nested = Json { { "child", std::move(nested) } };
+    }
+    assert(!webview::serializeJson(nested));
+    assert(!webview::parseMessage(nested.dump(), &parsed));
+
+    webview::WebViewPolicyConfig config;
+    config.pageToHostSchemas["number"] = { { { "value", webview::JsonType::Number } } };
+    webview::WebViewPolicy policy(std::move(config));
+    for (const Json value : { Json(-1), Json(std::uint64_t(18446744073709551615ULL)), Json(1.25) }) {
+        assert(policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, "number", {}, Json { { "value", value } }, {} }));
+    }
+    assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, "number", {}, Json { { "value", nullptr } }, {} }));
+    assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, "number", {}, nullptr, {} }));
+    assert(webview::matchesJsonType(nullptr, webview::JsonType::Null));
+    assert(webview::matchesJsonType(true, webview::JsonType::Boolean));
+    assert(webview::matchesJsonType(Json::array(), webview::JsonType::Array));
+    assert(webview::jsonString(Json::object(), "missing").empty());
+    assert(webview::jsonString(Json { { "text", 1 } }, "text").empty());
+
+    auto transport = std::make_unique<MemoryBridgeTransport>();
+    auto* probe = transport.get();
+    webview::WebViewBridge bridge(std::move(transport));
+    int received = 0;
+    bridge.setEventHandler("test", [&](const Json&) { ++received; });
+    Json envelope { { "version", 1 },    { "kind", "event" },           { "type", "test" },
+                    { "requestId", "" }, { "payload", Json::object() }, { "error", "" } };
+    for (const Json version : { Json(1), Json(1.0) }) {
+        envelope["version"] = version;
+        bridge.receive(envelope.dump());
+    }
+    assert(received == 2);
+    for (const Json version : { Json(1.5), Json("1"), Json(nullptr), Json(true) }) {
+        envelope["version"] = version;
+        bridge.receive(envelope.dump());
+    }
+    envelope["version"] = 1;
+    for (const Json payload : { Json(nullptr), Json::array(), Json("text") }) {
+        envelope["payload"] = payload;
+        bridge.receive(envelope.dump());
+    }
+    assert(received == 2);
+    bridge.emitEvent("test");
+    assert(Json::parse(probe->sent.back()).at("payload").is_object());
+    const auto sentCount = probe->sent.size();
+    int failures = 0;
+    for (const Json payload :
+         { Json(nullptr), Json { { "x", std::string("\xFF") } }, Json { { "x", std::numeric_limits<double>::infinity() } } }) {
+        bridge.call("test", payload, [&](const Json& result, const std::string& detail) {
+            assert(result.is_object() && !detail.empty());
+            ++failures;
+        });
+    }
+    assert(failures == 3 && probe->sent.size() == sentCount);
+    bridge.cancelPending();
+    assert(failures == 3);
+    bridge.setRequestHandler("test", [](const Json&, webview::WebViewBridge::Reply reply) {
+        reply(Json { { "bad", std::numeric_limits<double>::quiet_NaN() } }, "");
+        reply(Json::object(), "second reply");
+    });
+    envelope["kind"] = "request";
+    envelope["requestId"] = "request-encoding-failure";
+    envelope["payload"] = Json::object();
+    bridge.receive(envelope.dump());
+    assert(probe->sent.size() == sentCount + 1);
+    const auto response = Json::parse(probe->sent.back());
+    assert(response.at("kind") == "response" && response.at("payload").is_object());
+    assert(!response.at("error").get<std::string>().empty());
+}
 }
 
 int main()
 {
+    testJsonMigrationBoundaries();
     for (const std::string text : { "", "ASCII", "中文", "🌍", "\U00020000", "a中文🌍z" }) {
         const auto utf16 = webview::utf8ToUtf16(text);
         assert(utf16);
@@ -79,10 +180,10 @@ int main()
     assert(!webview::utf8ToWide("\xFF"));
     assert(!webview::wideToUtf8(std::wstring { static_cast<wchar_t>(0xD800) }));
 #endif
-    const QJsonObject unicodeMessage { { QStringLiteral("文本"), QStringLiteral("你好🌍") } };
-    const auto jsonText = webview::jsonForJavaScriptArgument(unicodeMessage);
+    const webview::Json unicodeMessage { { "文本", "你好🌍" } };
+    const auto jsonText = webview::serializeJson(unicodeMessage).value();
     const auto framedJson = "prefix" + jsonText + "suffix";
-    QJsonObject parsedMessage;
+    webview::Json parsedMessage;
     std::string parseError;
     assert(webview::parseMessage(std::string_view(framedJson).substr(6, jsonText.size()), &parsedMessage, &parseError));
     assert(parsedMessage == unicodeMessage);
@@ -138,96 +239,84 @@ int main()
     auto* transportProbe = transport.get();
     webview::WebViewBridge bridge(std::move(transport));
     bool eventReceived = false;
-    bridge.setEventHandler("notify", [&](const QJsonObject& payload) {
-        eventReceived = payload.value(QStringLiteral("value")).toInt() == 7;
-    });
-    bridge.receive(QJsonDocument(
-                       QJsonObject { { "version", 1 },
-                                     { "kind", "event" },
-                                     { "type", "notify" },
-                                     { "requestId", "" },
-                                     { "payload", QJsonObject { { "value", 7 } } },
-                                     { "error", "" } })
-                       .toJson(QJsonDocument::Compact)
-                       .toStdString());
+    bridge.setEventHandler("notify", [&](const webview::Json& payload) { eventReceived = payload.at("value").get<int>() == 7; });
+    bridge.receive((webview::Json { { "version", 1 },
+                                    { "kind", "event" },
+                                    { "type", "notify" },
+                                    { "requestId", "" },
+                                    { "payload", webview::Json { { "value", 7 } } },
+                                    { "error", "" } })
+                       .dump());
     assert(eventReceived);
     eventReceived = false;
-    bridge.receive(QJsonDocument(
-                       QJsonObject { { "kind", "event" },
-                                     { "type", "notify" },
-                                     { "requestId", "" },
-                                     { "payload", QJsonObject { { "value", 7 } } },
-                                     { "error", "" } })
-                       .toJson(QJsonDocument::Compact)
-                       .toStdString());
+    bridge.receive((webview::Json { { "kind", "event" },
+                                    { "type", "notify" },
+                                    { "requestId", "" },
+                                    { "payload", webview::Json { { "value", 7 } } },
+                                    { "error", "" } })
+                       .dump());
     assert(!eventReceived);
     int unicodeEvents = 0;
     const std::string unicodeType = "通知🌍";
-    bridge.setEventHandler(unicodeType, [&](const QJsonObject&) { unicodeEvents = -1; });
-    bridge.setEventHandler(unicodeType, [&](const QJsonObject&) {
+    bridge.setEventHandler(unicodeType, [&](const webview::Json&) { unicodeEvents = -1; });
+    bridge.setEventHandler(unicodeType, [&](const webview::Json&) {
         ++unicodeEvents;
         bridge.setEventHandler(unicodeType, {});
     });
-    const auto unicodeEvent = QJsonDocument(
-                                  QJsonObject { { "version", 1 },
-                                                { "kind", "event" },
-                                                { "type", QString::fromStdString(unicodeType) },
-                                                { "requestId", "" },
-                                                { "payload", QJsonObject {} },
-                                                { "error", "" } })
-                                  .toJson(QJsonDocument::Compact)
-                                  .toStdString();
+    const auto unicodeEvent = (webview::Json { { "version", 1 },
+                                               { "kind", "event" },
+                                               { "type", unicodeType },
+                                               { "requestId", "" },
+                                               { "payload", webview::Json::object() },
+                                               { "error", "" } })
+                                  .dump();
     bridge.receive(unicodeEvent);
     bridge.receive(unicodeEvent);
     assert(unicodeEvents == 1);
     bool callCompleted = false;
-    bridge.call("查询🌍", { { "id", 9 } }, [&](const QJsonObject& payload, const std::string& error) {
-        callCompleted = error.empty() && payload.value("name").toString() == QStringLiteral("item");
+    bridge.call("查询🌍", { { "id", 9 } }, [&](const webview::Json& payload, const std::string& error) {
+        callCompleted = error.empty() && payload.at("name").get<std::string>() == "item";
     });
-    QJsonObject request;
-    request = QJsonDocument::fromJson(QByteArray::fromStdString(transportProbe->sent.back())).object();
-    assert(!request.isEmpty());
-    const auto requestId = request.value(QStringLiteral("requestId")).toString();
+    webview::Json request;
+    request = webview::Json::parse(transportProbe->sent.back());
+    assert(!request.empty());
+    const auto requestId = request.at("requestId").get<std::string>();
     auto mismatchedResponse = request;
-    mismatchedResponse.insert(QStringLiteral("kind"), QStringLiteral("response"));
-    mismatchedResponse.insert(QStringLiteral("type"), QStringLiteral("other"));
-    bridge.receive(QJsonDocument(mismatchedResponse).toJson(QJsonDocument::Compact).toStdString());
+    mismatchedResponse["kind"] = "response";
+    mismatchedResponse["type"] = "other";
+    bridge.receive((mismatchedResponse).dump());
     assert(!callCompleted);
-    bridge.receive(QJsonDocument(
-                       QJsonObject { { "version", 1 },
-                                     { "kind", "response" },
-                                     { "type", QStringLiteral("查询🌍") },
-                                     { "requestId", requestId },
-                                     { "payload", QJsonObject { { "name", "item" } } },
-                                     { "error", "" } })
-                       .toJson(QJsonDocument::Compact)
-                       .toStdString());
+    bridge.receive((webview::Json { { "version", 1 },
+                                    { "kind", "response" },
+                                    { "type", "查询🌍" },
+                                    { "requestId", requestId },
+                                    { "payload", webview::Json { { "name", "item" } } },
+                                    { "error", "" } })
+                       .dump());
     assert(callCompleted);
-    bridge.setRequestHandler("sum", [](const QJsonObject& payload, webview::WebViewBridge::Reply reply) {
-        reply({ { "result", payload.value("left").toInt() + payload.value("right").toInt() } }, {});
+    bridge.setRequestHandler("sum", [](const webview::Json& payload, webview::WebViewBridge::Reply reply) {
+        reply({ { "result", payload.at("left").get<int>() + payload.at("right").get<int>() } }, {});
     });
-    bridge.receive(QJsonDocument(
-                       QJsonObject { { "version", 1 },
-                                     { "kind", "request" },
-                                     { "type", "sum" },
-                                     { "requestId", "request-1" },
-                                     { "payload", QJsonObject { { "left", 2 }, { "right", 3 } } },
-                                     { "error", "" } })
-                       .toJson(QJsonDocument::Compact)
-                       .toStdString());
-    QJsonObject response;
-    response = QJsonDocument::fromJson(QByteArray::fromStdString(transportProbe->sent.back())).object();
-    assert(!response.isEmpty());
-    assert(response.value("kind").toString() == QStringLiteral("response"));
-    assert(response.value("payload").toObject().value("result").toInt() == 5);
+    bridge.receive((webview::Json { { "version", 1 },
+                                    { "kind", "request" },
+                                    { "type", "sum" },
+                                    { "requestId", "request-1" },
+                                    { "payload", webview::Json { { "left", 2 }, { "right", 3 } } },
+                                    { "error", "" } })
+                       .dump());
+    webview::Json response;
+    response = webview::Json::parse(transportProbe->sent.back());
+    assert(!response.empty());
+    assert(response.at("kind").get<std::string>() == "response");
+    assert(response.at("payload").at("result").get<int>() == 5);
     bool cancelled = false;
-    bridge.call("wait", {}, [&](const QJsonObject&, const std::string& error) { cancelled = !error.empty(); });
+    bridge.call("wait", webview::Json::object(), [&](const webview::Json&, const std::string& error) { cancelled = !error.empty(); });
     bridge.cancelPending();
     assert(cancelled);
     int invalidationCompletions = 0;
-    bridge.call("close", {}, [&](const QJsonObject&, const std::string&) {
+    bridge.call("close", webview::Json::object(), [&](const webview::Json&, const std::string&) {
         ++invalidationCompletions;
-        bridge.call("reentrant", {}, [&](const QJsonObject&, const std::string&) { ++invalidationCompletions; });
+        bridge.call("reentrant", webview::Json::object(), [&](const webview::Json&, const std::string&) { ++invalidationCompletions; });
     });
     bridge.invalidate();
     assert(transportProbe->invalidated);
@@ -288,35 +377,31 @@ int main()
     resourceState->bindBridgePolicy();
     const auto controlResource = resources.publishFile(sourceFile.fileName().toStdString());
     assert(!controlResource.token.empty());
-    const auto releaseMessage = [&controlResource](const QJsonObject& payload) {
-        return QJsonDocument(
-                   QJsonObject { { "version", 1 },
-                                 { "kind", "event" },
-                                 { "type", "release-resource" },
-                                 { "requestId", "" },
-                                 { "payload", payload },
-                                 { "error", "" } })
-            .toJson(QJsonDocument::Compact)
-            .toStdString();
+    const auto releaseMessage = [&controlResource](const webview::Json& payload) {
+        return (webview::Json { { "version", 1 },
+                                { "kind", "event" },
+                                { "type", "release-resource" },
+                                { "requestId", "" },
+                                { "payload", payload },
+                                { "error", "" } })
+            .dump();
     };
-    resourceState->bridge->receive(releaseMessage({ { "token", QString::fromStdString(controlResource.token) }, { "extra", true } }));
+    resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token }, { "extra", true } }));
     assert(resources.open({ controlResource.url, documentOrigin, "文档-1" }).status == 200);
-    resourceState->bridge->receive(releaseMessage({ { "token", QString::fromStdString(controlResource.token) } }));
+    resourceState->bridge->receive(releaseMessage({ { "token", controlResource.token } }));
     assert(resources.open({ controlResource.url, documentOrigin, "文档-1" }).status == 410);
     assert(!resourceTransportProbe->sent.empty());
-    const auto revokedEvent = QJsonDocument::fromJson(QByteArray::fromStdString(resourceTransportProbe->sent.back())).object();
-    assert(revokedEvent.value(QStringLiteral("type")).toString() == QStringLiteral("resource-revoked"));
-    assert(
-        revokedEvent.value(QStringLiteral("payload")).toObject().value(QStringLiteral("token")).toString().toStdString()
-        == controlResource.token);
+    const auto revokedEvent = webview::Json::parse(resourceTransportProbe->sent.back());
+    assert(revokedEvent.at("type").get<std::string>() == "resource-revoked");
+    assert(revokedEvent.at("payload").at("token").get<std::string>() == controlResource.token);
 
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert("ui");
     config.allowedFileRoots.push_back(files.path().toStdString());
     config.trustedDevelopmentOrigins.insert("http://127.0.0.1:5173");
     config.trustedHttpsOrigins.insert("https://trusted.example");
-    config.pageToHostSchemas["ping"] = { { { "sequence", QJsonValue::Double } } };
-    config.hostToPageSchemas["pong"] = { { { "accepted", QJsonValue::Bool } } };
+    config.pageToHostSchemas["ping"] = { { { "sequence", webview::JsonType::Number } } };
+    config.hostToPageSchemas["pong"] = { { { "accepted", webview::JsonType::Boolean } } };
     config.maximumBridgeMessageBytes = 128;
     const webview::WebViewPolicy policy(std::move(config));
     webview::WebViewPolicy copiedPolicy(policy);
@@ -349,15 +434,13 @@ int main()
     assert(!policy.allowsBridge(webview::Url("https://trusted.example.evil/path")));
 
     std::string validationError;
-    const webview::BridgeMessage validMessage {
-        1, webview::BridgeMessageKind::Event, "ping", {}, QJsonObject { { QStringLiteral("sequence"), 1 } }, {}
-    };
+    const webview::BridgeMessage validMessage { 1, webview::BridgeMessageKind::Event, "ping", {}, webview::Json { { "sequence", 1 } }, {} };
     assert(policy.validatePageToHostMessage(validMessage, &validationError));
     assert(validationError.empty());
     assert(!policy.validateHostToPageMessage(validMessage, &validationError));
     assert(validationError.find("type") != std::string::npos);
     assert(policy.validateHostToPageMessage(
-        { 1, webview::BridgeMessageKind::Event, "pong", {}, { { QStringLiteral("accepted"), true } }, {} },
+        { 1, webview::BridgeMessageKind::Event, "pong", {}, { { "accepted", true } }, {} },
         &validationError));
     assert(!policy.validatePageToHostMessage(
         { 2, webview::BridgeMessageKind::Event, validMessage.type, { }, validMessage.payload, { } },
@@ -367,42 +450,30 @@ int main()
         { 1, webview::BridgeMessageKind::Event, "unknown", {}, validMessage.payload, {} },
         &validationError));
     assert(validationError.find("type") != std::string::npos);
-    assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, validMessage.type, {}, {}, {} }, &validationError));
+    assert(!policy.validatePageToHostMessage(
+        { 1, webview::BridgeMessageKind::Event, validMessage.type, {}, webview::Json::object(), {} },
+        &validationError));
     assert(validationError.find("sequence") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
-        { 1,
-          webview::BridgeMessageKind::Event,
-          validMessage.type,
-          { },
-          QJsonObject { { QStringLiteral("sequence"), QStringLiteral("wrong type") } },
-          { } },
+        { 1, webview::BridgeMessageKind::Event, validMessage.type, {}, webview::Json { { "sequence", "wrong type" } }, {} },
         &validationError));
     assert(validationError.find("number") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
-        { 1,
-          webview::BridgeMessageKind::Event,
-          validMessage.type,
-          { },
-          QJsonObject { { QStringLiteral("sequence"), 1 }, { QStringLiteral("extra"), true } } },
+        { 1, webview::BridgeMessageKind::Event, validMessage.type, {}, webview::Json { { "sequence", 1 }, { "extra", true } } },
         &validationError));
     assert(validationError.find("unexpected") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
-        { 1,
-          webview::BridgeMessageKind::Event,
-          validMessage.type,
-          { },
-          QJsonObject { { QStringLiteral("sequence"), QString(200, QLatin1Char('x')) } },
-          { } },
+        { 1, webview::BridgeMessageKind::Event, validMessage.type, {}, webview::Json { { "sequence", std::string(200, 'x') } }, {} },
         &validationError));
     assert(validationError.find("size") != std::string::npos);
 
     webview::WebViewPolicyConfig unicodeConfig;
-    unicodeConfig.pageToHostSchemas["查询🌍"] = { { { "名称", QJsonValue::String } } };
+    unicodeConfig.pageToHostSchemas["查询🌍"] = { { { "名称", webview::JsonType::String } } };
     webview::WebViewPolicy unicodePolicy(std::move(unicodeConfig));
     webview::BridgeMessage unicodeEnvelope { 1, webview::BridgeMessageKind::Event, "查询🌍", {}, unicodeMessage, {} };
     assert(!unicodePolicy.validatePageToHostMessage(unicodeEnvelope, &validationError));
     assert(validationError == "Bridge message payload is missing required field: 名称");
-    unicodeEnvelope.payload = { { QStringLiteral("名称"), QStringLiteral("你好🌍") } };
+    unicodeEnvelope.payload = { { "名称", "你好🌍" } };
     assert(unicodePolicy.validatePageToHostMessage(unicodeEnvelope, &validationError));
     assert(validationError.empty());
 
@@ -415,16 +486,14 @@ int main()
     wireLimitState->committedUrl = webview::Url("app://ui/index.html");
     wireLimitState->bindBridgePolicy();
     bool oversizedMessageReceived = false;
-    wireLimitState->bridge->setEventHandler("notify", [&](const QJsonObject&) { oversizedMessageReceived = true; });
-    const std::string compactMessage = QJsonDocument(
-                                           QJsonObject { { "version", 1 },
-                                                         { "kind", "event" },
-                                                         { "type", "notify" },
-                                                         { "requestId", "" },
-                                                         { "payload", QJsonObject() },
-                                                         { "error", "" } })
-                                           .toJson(QJsonDocument::Compact)
-                                           .toStdString();
+    wireLimitState->bridge->setEventHandler("notify", [&](const webview::Json&) { oversizedMessageReceived = true; });
+    const std::string compactMessage = (webview::Json { { "version", 1 },
+                                                        { "kind", "event" },
+                                                        { "type", "notify" },
+                                                        { "requestId", "" },
+                                                        { "payload", webview::Json::object() },
+                                                        { "error", "" } })
+                                           .dump();
     wireLimitState->bridge->receive(compactMessage + std::string(128, ' '));
     assert(!oversizedMessageReceived);
 

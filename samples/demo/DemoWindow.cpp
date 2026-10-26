@@ -21,10 +21,10 @@ public:
         : WebViewPolicy([] {
             webview::WebViewPolicyConfig config;
             config.allowedAppHosts.insert("demo");
-            config.pageToHostSchemas["hello"] = { { { "message", QJsonValue::String } } };
-            config.pageToHostSchemas["window"] = { { { "action", QJsonValue::String } } };
-            config.hostToPageSchemas["ack"] = { { { "message", QJsonValue::String } } };
-            config.hostToPageSchemas["window-state"] = { { { "maximized", QJsonValue::Bool } } };
+            config.pageToHostSchemas["hello"] = { { { "message", webview::JsonType::String } } };
+            config.pageToHostSchemas["window"] = { { { "action", webview::JsonType::String } } };
+            config.hostToPageSchemas["ack"] = { { { "message", webview::JsonType::String } } };
+            config.hostToPageSchemas["window-state"] = { { { "maximized", webview::JsonType::Boolean } } };
             return config;
         }())
     {
@@ -116,8 +116,8 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
             status_->setText(QStringLiteral("Load failed: %1").arg(QString::fromStdString(event.error)));
         }
     };
-    page->bridge().setEventHandler("window", [this, page](const QJsonObject& payload) {
-        const auto action = payload.value(QStringLiteral("action")).toString().toStdString();
+    page->bridge().setEventHandler("window", [this, page](const webview::Json& payload) {
+        const auto action = payload.at("action").get<std::string>();
         if (action == "drag" && windowHandle()) {
             windowHandle()->startSystemMove();
         }
@@ -133,8 +133,8 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
             close();
         }
     });
-    page->bridge().setEventHandler("hello", [this, page](const QJsonObject& payload) {
-        status_->setText(QStringLiteral("Page: %1").arg(payload.value("message").toString()));
+    page->bridge().setEventHandler("hello", [this, page](const webview::Json& payload) {
+        status_->setText(QStringLiteral("Page: %1").arg(QString::fromStdString(payload.at("message").get<std::string>())));
         page->bridge().emitEvent("ack", { { "message", "Native received your message." } });
     });
     callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {

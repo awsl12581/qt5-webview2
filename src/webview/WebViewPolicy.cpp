@@ -1,32 +1,30 @@
 #include "internal/ResourceMapping.h"
+#include "webview/JsonMessage.h"
 #include <system_webview/system_webview.h>
 
 #include <QDir>
 #include <QFileInfo>
-#include <QJsonDocument>
 
 #include <string>
 #include <string_view>
 
 namespace
 {
-std::string_view jsonTypeName(QJsonValue::Type type)
+std::string_view jsonTypeName(webview::JsonType type)
 {
     switch (type) {
-    case QJsonValue::Null:
+    case webview::JsonType::Null:
         return "null";
-    case QJsonValue::Bool:
+    case webview::JsonType::Boolean:
         return "boolean";
-    case QJsonValue::Double:
+    case webview::JsonType::Number:
         return "number";
-    case QJsonValue::String:
+    case webview::JsonType::String:
         return "string";
-    case QJsonValue::Array:
+    case webview::JsonType::Array:
         return "array";
-    case QJsonValue::Object:
+    case webview::JsonType::Object:
         return "object";
-    case QJsonValue::Undefined:
-        return "undefined";
     }
     return "unknown";
 }
@@ -37,21 +35,16 @@ bool validateMessage(
     int maximumBytes,
     std::string* error)
 {
-    const QJsonObject envelope {
-        { QStringLiteral("version"), message.version },
-        { QStringLiteral("kind"),
-          message.kind == webview::BridgeMessageKind::Request    ? QStringLiteral("request")
-          : message.kind == webview::BridgeMessageKind::Response ? QStringLiteral("response")
-                                                                 : QStringLiteral("event") },
-        { QStringLiteral("type"), QString::fromStdString(message.type) },
-        { QStringLiteral("requestId"), QString::fromStdString(message.requestId) },
-        { QStringLiteral("payload"), message.payload },
-        { QStringLiteral("error"), QString::fromStdString(message.error) },
-    };
-    const auto serialized = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
+    const auto serialized = webview::encodeBridgeMessage(message);
     std::string detail;
     const auto schema = schemas.find(message.type);
-    if (serialized.size() > maximumBytes) {
+    if (!message.payload.is_object()) {
+        detail = "Bridge message payload must be an object.";
+    }
+    else if (!serialized) {
+        detail = "Bridge JSON encoding failed.";
+    }
+    else if (maximumBytes < 0 || serialized->size() > static_cast<std::size_t>(maximumBytes)) {
         detail = "Bridge message exceeds the configured size limit.";
     }
     else if (message.version != 1) {
@@ -62,20 +55,20 @@ bool validateMessage(
     }
     else if (!(message.kind == webview::BridgeMessageKind::Response && !message.error.empty())) {
         for (auto field = schema->second.requiredPayloadFields.cbegin(); field != schema->second.requiredPayloadFields.cend(); ++field) {
-            const auto value = message.payload.value(QString::fromStdString(field->first));
-            if (value.isUndefined()) {
+            const auto value = message.payload.find(field->first);
+            if (value == message.payload.end()) {
                 detail = "Bridge message payload is missing required field: " + field->first;
                 break;
             }
-            if (value.type() != field->second) {
+            if (!webview::matchesJsonType(*value, field->second)) {
                 detail = "Bridge message payload field " + field->first + " must be " + std::string(jsonTypeName(field->second)) + ".";
                 break;
             }
         }
         if (detail.empty() && !schema->second.allowAdditionalPayloadFields) {
-            for (auto field = message.payload.constBegin(); field != message.payload.constEnd(); ++field) {
-                if (!schema->second.requiredPayloadFields.contains(field.key().toStdString())) {
-                    detail = "Bridge message payload contains unexpected field: " + field.key().toStdString();
+            for (auto field = message.payload.cbegin(); field != message.payload.cend(); ++field) {
+                if (!schema->second.requiredPayloadFields.contains(field.key())) {
+                    detail = "Bridge message payload contains unexpected field: " + field.key();
                     break;
                 }
             }

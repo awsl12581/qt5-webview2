@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-25 22:20 CST
-> 文档版本：v5
-> 修改说明：同步公开接口的 UTF-8 标准字符串和标准容器用法。
+> 最后修改时间：2026-10-26 11:30 CST
+> 文档版本：v6
+> 修改说明：同步 nlohmann/json 接口、子模块及安装包依赖。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
@@ -23,7 +23,7 @@
   <img src="docs/image.png" alt="System WebView 示例界面">
 </p>
 
-System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebView2 和 macOS 上的 WKWebView。平台 SDK 类型不会暴露到业务代码中，应用层使用标准字符串和容器，以及 Qt 的 URL、JSON、I/O 和控件类型。接口中的所有字符串（包括路径）均使用 UTF-8。本次值类型迁移改变了源码和二进制接口，使用方需要更新调用并与库一起重新构建。
+System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebView2 和 macOS 上的 WKWebView。平台 SDK 类型不会暴露到业务代码中，应用层使用标准字符串、容器、项目 URL 和 nlohmann/json，以及 Qt 的 I/O 和控件类型。接口中的所有字符串（包括路径）均使用 UTF-8。本次值类型迁移改变了源码和二进制接口，使用方需要更新调用并与库一起重新构建。
 
 ## 功能
 
@@ -45,6 +45,16 @@ System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebVi
 | macOS | WKWebView | Apple Clang、Qt 5.15 | 使用系统 WebKit 框架 |
 
 目前不支持 Linux。WebKit2GTK 仅保留了接口映射设计，还没有实现。
+
+## JSON 与源码依赖
+
+克隆后先执行 `git submodule update --init --recursive`，初始化项目锁定的依赖。
+公开 JSON 类型为 `webview::Json`（nlohmann/json 3.12.0），schema 使用 `webview::JsonType`。
+payload 必须是对象；空 payload 使用 `webview::Json::object()`。替换 Qt JSON 后，调用方需要更新类型并重新编译。
+
+JSON 为 PUBLIC 头文件依赖：项目安装同时提供 JSON 头文件、CMake package 和许可证，消费方只需链接
+`system_webview::system_webview`。JSON 版本、影响类型的宏、编译器、标准库和 Windows CRT 必须与库匹配。
+无需把 JSON 另行安装到系统目录。临时安装验证使用独立的 `build/` 子目录，不覆盖正式 `install/` 前缀。
 
 ## 在 Windows 上构建
 
@@ -167,5 +177,6 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | v3 | 2026-09-24 17:29 CST | 说明单一公开头文件和动态库构建方式。 |
 | v4 | 2026-10-25 21:51 CST | 更新 C++20 要求，并补充独立验证 preset。 |
 | v5 | 2026-10-25 22:20 CST | 同步公开接口的 UTF-8 标准字符串和标准容器用法。 |
+| v6 | 2026-10-26 11:30 CST | 同步 nlohmann/json 接口、子模块及安装包依赖。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

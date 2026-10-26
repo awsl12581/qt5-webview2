@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-25 22:20 CST
-> 文档版本：v5
-> 修改说明：Updated examples for UTF-8 standard strings and standard containers in the public API.
+> 最后修改时间：2026-10-26 11:29 CST
+> 文档版本：v6
+> 修改说明：Documented nlohmann/json API, submodules, and installed dependencies.
 
 A small Qt 5 library for embedding the operating system's web view in a C++ application.
 
@@ -23,7 +23,7 @@ A small Qt 5 library for embedding the operating system's web view in a C++ appl
   <img src="docs/image.png" alt="System WebView demo">
 </p>
 
-System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code uses standard strings and containers alongside Qt URL, JSON, I/O, and widget types. All API strings, including paths, use UTF-8. This value-type migration changes the source and binary interface; consumers must update their calls and rebuild with the library.
+System WebView presents one Qt-friendly API over Microsoft WebView2 on Windows and WKWebView on macOS. Native SDK types stay inside the platform backends, so application code uses standard strings, containers, project URL values, and nlohmann/json alongside Qt I/O and widget types. All API strings, including paths, use UTF-8. This value-type migration changes the source and binary interface; consumers must update their calls and rebuild with the library.
 
 ## What it provides
 
@@ -45,6 +45,18 @@ The demo also shows a frameless window whose title bar and controls live in the 
 | macOS | WKWebView | Apple Clang, Qt 5.15 | Uses the system WebKit framework |
 
 Linux is not implemented. WebKit2GTK is documented as a future mapping only.
+
+## JSON and source dependencies
+
+After cloning, run `git submodule update --init --recursive` to initialize the locked dependencies.
+The public JSON type is `webview::Json` (nlohmann/json 3.12.0); schemas use `webview::JsonType`.
+Payloads must be objects; use `webview::Json::object()` for an empty payload. Consumers must update their
+Qt JSON calls and rebuild after this API change.
+
+JSON is a PUBLIC header dependency. Installation includes its headers, CMake package, and license;
+consumers only link `system_webview::system_webview`. Match the JSON version, ABI-affecting macros,
+compiler, standard library, and Windows CRT. A separate system-wide JSON installation is unnecessary.
+Use a separate subdirectory under `build/` for temporary installation checks, keeping the formal `install/` prefix intact.
 
 ## Build on Windows
 
@@ -167,5 +179,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | v3 | 2026-09-24 17:29 CST | Documented the single public header and shared-library build. |
 | v4 | 2026-10-25 21:51 CST | Documented C++20 requirements and the isolated verification preset. |
 | v5 | 2026-10-25 22:20 CST | Updated examples for UTF-8 standard strings and standard containers in the public API. |
+| v6 | 2026-10-26 11:29 CST | Documented nlohmann/json API, submodules, and installed dependencies. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

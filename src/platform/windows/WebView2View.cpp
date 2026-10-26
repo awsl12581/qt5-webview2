@@ -13,8 +13,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
 #include <QMetaObject>
 #include <QMimeDatabase>
 #include <QPointer>
@@ -913,14 +911,13 @@ public:
                                     state->setResourceContext(state->resourceOrigin, state->committedUrl, state->documentToken);
                                 }
                                 CoTaskMemFree(rawSource);
-                                const auto tokenLiteral = utf8ToWide(
-                                    QJsonDocument(QJsonArray { QString::fromStdString(state->documentToken) })
-                                        .toJson(QJsonDocument::Compact).toStdString());
+                                const auto tokenJson = serializeJson(state->documentToken);
+                                const auto tokenLiteral = tokenJson ? utf8ToWide(*tokenJson) : std::nullopt;
                                 if (!tokenLiteral) {
                                     state->emitLoad(LoadState::Failed, id, state->committedUrl, "Invalid document token encoding.");
                                     return S_OK;
                                 }
-                                const auto tokenScript = L"window.__systemWebViewToken=" + *tokenLiteral + L"[0];";
+                                const auto tokenScript = L"window.__systemWebViewToken=" + *tokenLiteral + L";";
                                 sender->ExecuteScript(
                                     tokenScript.c_str(),
                                     Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>([](HRESULT, LPCWSTR) -> HRESULT {
@@ -978,23 +975,25 @@ public:
                                         << "view=" << state->diagnosticId << "reason=no_committed_document";
                                     return S_OK;
                                 }
-                                QJsonObject object;
+                                Json object;
                                 std::string error;
                                 if (!json || state->bridgeOrigin != normalizedOrigin(source) || !state->policy
-                                    || !state->policy->allowsBridge(source)
-                                    || source.origin() != state->committedUrl.origin()
+                                    || !state->policy->allowsBridge(source) || source.origin() != state->committedUrl.origin()
                                     || !parseMessage(*json, &object, &error)
-                                    || object.value(QStringLiteral("documentToken")).toString().toStdString() != state->documentToken) {
+                                    || jsonString(object, "documentToken") != state->documentToken) {
                                     qCDebug(systemWebViewBridge).noquote()
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                         << "view=" << state->diagnosticId << "reason=native_boundary";
                                     return S_OK;
                                 }
-                                const auto inner = object.value(QStringLiteral("message")).toObject();
-                                if (!inner.value(QStringLiteral("type")).isString() || !inner.value(QStringLiteral("payload")).isObject()) {
+                                const auto inner = object.find("message");
+                                if (inner == object.end() || !inner->is_object()) {
                                     return S_OK;
                                 }
-                                state->bridge->receive(QJsonDocument(inner).toJson(QJsonDocument::Compact).toStdString(), source);
+                                const auto bytes = serializeJson(*inner);
+                                if (bytes) {
+                                    state->bridge->receive(*bytes, source);
+                                }
                                 return S_OK;
                             })
                             .Get(),

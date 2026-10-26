@@ -41,8 +41,7 @@
 #endif
 
 #include <QIODevice>
-#include <QJsonObject>
-#include <QJsonValue>
+#include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -58,6 +57,19 @@ class QWidget;
 
 namespace webview
 {
+/// UTF-8 JSON values. Payloads must be objects; use Json::object() for an empty payload.
+using Json = nlohmann::json;
+
+enum class JsonType : int
+{
+    Null,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object
+};
+
 // All standard strings in this API contain UTF-8 text (including filesystem paths).
 // BridgeTransport strings contain length-delimited UTF-8 JSON bytes.
 class IWebView;
@@ -379,7 +391,7 @@ struct BridgeMessage
     BridgeMessageKind kind = BridgeMessageKind::Event;
     std::string type;
     std::string requestId;
-    QJsonObject payload;
+    Json payload = Json::object();
     std::string error;
 };
 
@@ -397,10 +409,10 @@ public:
 class SYSTEM_WEBVIEW_API WebViewBridge final
 {
 public:
-    using RequestCompletion = std::function<void(const QJsonObject&, const std::string&)>;
-    using EventHandler = std::function<void(const QJsonObject&)>;
-    using Reply = std::function<void(const QJsonObject&, const std::string&)>;
-    using RequestHandler = std::function<void(const QJsonObject&, Reply)>;
+    using RequestCompletion = std::function<void(const Json&, const std::string&)>;
+    using EventHandler = std::function<void(const Json&)>;
+    using Reply = std::function<void(const Json&, const std::string&)>;
+    using RequestHandler = std::function<void(const Json&, Reply)>;
     using Validator = std::function<bool(const BridgeMessage&, bool, int, std::string*)>;
 
     explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport = { });
@@ -410,9 +422,9 @@ public:
     WebViewBridge& operator=(const WebViewBridge&) = delete;
 
     /// Sends a fire-and-forget event to the page.
-    void emitEvent(const std::string& type, const QJsonObject& payload = {});
+    void emitEvent(const std::string& type, const Json& payload = Json::object());
     /// Sends a request; pending completions are cancelled on navigation or close.
-    void call(const std::string& type, const QJsonObject& payload, RequestCompletion completion = {});
+    void call(const std::string& type, const Json& payload, RequestCompletion completion = {});
     /// Sets the sole page-event handler for type; pass an empty handler to remove it.
     void setEventHandler(const std::string& type, EventHandler handler);
     /// Sets the sole request handler for type; pass empty to remove it. Replies once.
@@ -547,7 +559,7 @@ using WebViewSessionPtr = std::unique_ptr<IWebViewSession>;
 
 struct BridgeMessageSchema
 {
-    std::unordered_map<std::string, QJsonValue::Type> requiredPayloadFields;
+    std::unordered_map<std::string, JsonType> requiredPayloadFields;
     bool allowAdditionalPayloadFields = false;
 };
 

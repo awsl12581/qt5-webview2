@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 11:10 CST
-> 文档版本：v15
-> 修改说明：补充 Windows 原生文本边界的严格编码和 NUL 规则。
+> 最后修改时间：2026-10-26 11:29 CST
+> 文档版本：v16
+> 修改说明：同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -17,7 +17,7 @@
 
 `src/` 下的头文件属于库内部实现，不安装给使用方。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON、流和控件继续使用 `QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget`。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名），流和控件继续使用 `QIODevice` 和 `QWidget`。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
 
 Windows 原生边界使用 simdutf 严格转换 UTF-8/UTF-16，非法编码不替换为占位字符。传给 WebView2 和 Win32 的 NUL 结尾文本拒绝嵌入 NUL；编码失败按对应接口报告发送失败、初始化/导航失败、资源错误或取消下载。macOS 保留 Foundation 转换。
 
@@ -60,7 +60,7 @@ struct WebViewSessionOptions {
 
 `Persistent` 保留站点数据，`Ephemeral` 使用临时会话。Windows 将 `profilePath` 作为 WebView2 用户数据目录；macOS 的公开 WKWebView API 不保证数据存放在该物理路径。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON、流和控件继续使用 `QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget`。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名），流和控件继续使用 `QIODevice` 和 `QWidget`。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
 
 这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
@@ -308,7 +308,7 @@ struct BridgeMessage {
     BridgeMessageKind kind = BridgeMessageKind::Event;
     std::string type;
     std::string requestId;
-    QJsonObject payload;
+    webview::Json payload = webview::Json::object();
     std::string error;
 };
 ```
@@ -327,16 +327,16 @@ window.systemWebView.postMessage({
 C++ 注册事件、发事件或发起请求：
 
 ```cpp
-view->bridge().setEventHandler("save-result", [](const QJsonObject& payload) {
-    qDebug() << payload;
+view->bridge().setEventHandler("save-result", [](const webview::Json& payload) {
+    qDebug() << QString::fromStdString(payload.dump());
 });
 
 view->bridge().emitEvent("saved", { { "id", "42" } });
 
 view->bridge().call("get-user", { { "id", "42" } },
-    [](const QJsonObject& payload, const std::string& error) {
+    [](const webview::Json& payload, const std::string& error) {
         if (!error.empty()) qWarning() << QString::fromStdString(error);
-        else qDebug() << payload;
+        else qDebug() << QString::fromStdString(payload.dump());
     });
 ```
 
@@ -351,12 +351,18 @@ const stopListening = window.systemWebView.on("saved", payload => {
 
 `on()` 对事件和请求都生效。C++ 发起请求时，处理器可通过第二个参数的 `reply(payload, error)` 应答。兼容的 `system-webview-message` DOM 事件仍会派发。
 
+JSON 类型与规则：`JsonType` 包含 `Null`、`Boolean`、`Number`、`String`、`Array`、`Object`；`Number` 接受有符号整数、无符号整数及浮点数。缺失字段与 null 分开判断。payload 必须是对象，空对象使用 `webview::Json::object()`，不能用默认构造的 null 代替。
+
+Bridge 使用严格 UTF-8，拒绝非法 JSON、非有限数字和超过 128 层的嵌套。协议版本必须数值恰为 1（`1`、`1.0` 均可），重复键采用后值覆盖。默认 64 KiB 限制继续检查进入 Bridge 的字节数和统一编码后的 envelope；序列化格式以新库为准。请求编码失败会完成错误回调；回复无法编码时尝试发送空对象 payload 的错误响应。
+
+nlohmann/json 3.12.0 是公开头文件依赖，由项目 CMake 目标传播并随安装包提供。使用方需匹配 JSON 版本、类型配置宏、编译器、标准库和 Windows CRT，并重编译；本接口不承诺稳定 DLL ABI。
+
 每种消息类型都必须在对应方向的 schema 中注册：
 
 ```cpp
 webview::WebViewPolicyConfig config;
-config.pageToHostSchemas["save"] = { { { "id", QJsonValue::String } } };
-config.hostToPageSchemas["saved"] = { { { "id", QJsonValue::String } } };
+config.pageToHostSchemas["save"] = { { { "id", webview::JsonType::String } } };
+config.hostToPageSchemas["saved"] = { { { "id", webview::JsonType::String } } };
 ```
 
 `setEventHandler(type, handler)` 和 `setRequestHandler(type, handler)` 分别为每个类型设置唯一处理器；传入空处理器会移除已有处理器。请求处理器通过 `Reply` 返回 payload 或错误。导航或关闭会取消未完成的 C++ 请求。
@@ -393,7 +399,7 @@ window.systemWebView.postMessage({ type: "release-resource", payload: { token } 
 
 ```cpp
 struct BridgeMessageSchema {
-    std::unordered_map<std::string, QJsonValue::Type> requiredPayloadFields;
+    std::unordered_map<std::string, webview::JsonType> requiredPayloadFields;
     bool allowAdditionalPayloadFields = false;
 };
 
@@ -557,3 +563,4 @@ int main(int argc, char* argv[])
 | v13 | 2026-10-25 23:24 CST | 将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。 |
 | v14 | 2026-10-26 10:58 CST | 说明 utf8proc 应用 ID 校验及 Unicode 码点规则。 |
 | v15 | 2026-10-26 11:10 CST | 补充 Windows 原生文本边界的严格编码和 NUL 规则。 |
+| v16 | 2026-10-26 11:29 CST | 同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。 |

@@ -1,9 +1,8 @@
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "webview/JsonMessage.h"
 #include <system_webview/system_webview.h>
 
-#include <QJsonDocument>
-#include <QJsonParseError>
 #include <QUuid>
 
 #include <cstdint>
@@ -87,54 +86,31 @@ std::string bridgePageScript(
 
 namespace
 {
-std::string encode(const BridgeMessage& message)
-{
-    const QString kind = message.kind == BridgeMessageKind::Request    ? QStringLiteral("request")
-                         : message.kind == BridgeMessageKind::Response ? QStringLiteral("response")
-                                                                       : QStringLiteral("event");
-    return QJsonDocument(
-               QJsonObject { { QStringLiteral("version"), message.version },
-                             { QStringLiteral("kind"), kind },
-                             { QStringLiteral("type"), QString::fromStdString(message.type) },
-                             { QStringLiteral("requestId"), QString::fromStdString(message.requestId) },
-                             { QStringLiteral("payload"), message.payload },
-                             { QStringLiteral("error"), QString::fromStdString(message.error) } })
-        .toJson(QJsonDocument::Compact)
-        .toStdString();
-}
-
 bool decode(const std::string& bytes, BridgeMessage* result)
 {
     if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         return false;
     }
-    QJsonParseError parseError;
-    const auto document = QJsonDocument::fromJson(QByteArray(bytes.data(), static_cast<int>(bytes.size())), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+    Json object;
+    if (!parseMessage(bytes, &object) || object.size() != 6) {
         return false;
     }
-    const auto object = document.object();
-    if (object.size() != 6) {
+    const auto version = object.find("version");
+    const auto kind = jsonString(object, "kind");
+    if (version == object.end() || !version->is_number() || *version != 1 || (kind != "event" && kind != "request" && kind != "response")
+        || !object.contains("type") || !object.at("type").is_string() || !object.contains("requestId")
+        || !object.at("requestId").is_string() || !object.contains("payload") || !object.at("payload").is_object()
+        || !object.contains("error") || !object.at("error").is_string()) {
         return false;
     }
-    const auto version = object.value(QStringLiteral("version"));
-    const auto kind = object.value(QStringLiteral("kind")).toString();
-    if (kind != QStringLiteral("event") && kind != QStringLiteral("request") && kind != QStringLiteral("response")) {
-        return false;
-    }
-    if (!version.isDouble() || version.toInt(-1) != 1 || !object.value(QStringLiteral("kind")).isString()
-        || !object.value(QStringLiteral("type")).isString() || !object.value(QStringLiteral("requestId")).isString()
-        || !object.value(QStringLiteral("payload")).isObject() || !object.value(QStringLiteral("error")).isString()) {
-        return false;
-    }
-    result->version = version.toInt();
-    result->kind = kind == QStringLiteral("request")    ? BridgeMessageKind::Request
-                   : kind == QStringLiteral("response") ? BridgeMessageKind::Response
-                                                        : BridgeMessageKind::Event;
-    result->type = object.value(QStringLiteral("type")).toString().toStdString();
-    result->requestId = object.value(QStringLiteral("requestId")).toString().toStdString();
-    result->payload = object.value(QStringLiteral("payload")).toObject();
-    result->error = object.value(QStringLiteral("error")).toString().toStdString();
+    result->version = 1;
+    result->kind = kind == "request"    ? BridgeMessageKind::Request
+                   : kind == "response" ? BridgeMessageKind::Response
+                                        : BridgeMessageKind::Event;
+    result->type = jsonString(object, "type");
+    result->requestId = jsonString(object, "requestId");
+    result->payload = std::move(object.at("payload"));
+    result->error = jsonString(object, "error");
     if (result->type.empty()) {
         return false;
     }
@@ -182,27 +158,27 @@ WebViewBridge::~WebViewBridge()
     invalidate();
 }
 
-void WebViewBridge::emitEvent(const std::string& type, const QJsonObject& payload)
+void WebViewBridge::emitEvent(const std::string& type, const Json& payload)
 {
     if (!impl_->valid || !impl_->transport) {
         return;
     }
     BridgeMessage message { 1, BridgeMessageKind::Event, type, {}, payload, {} };
     std::string error;
-    const auto bytes = encode(message);
-    if (!impl_->validator || impl_->validator(message, true, bytes.size(), &error)) {
-        if (!impl_->transport->send(bytes)) {
+    const auto bytes = encodeBridgeMessage(message);
+    if (bytes && (!impl_->validator || impl_->validator(message, true, bytes->size(), &error))) {
+        if (!impl_->transport->send(*bytes)) {
             qCWarning(systemWebViewBridge).noquote()
                 << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         }
     }
 }
 
-void WebViewBridge::call(const std::string& type, const QJsonObject& payload, RequestCompletion completion)
+void WebViewBridge::call(const std::string& type, const Json& payload, RequestCompletion completion)
 {
     if (!impl_->valid) {
         if (completion) {
-            completion({}, "Bridge is invalid.");
+            completion(Json::object(), "Bridge is invalid.");
         }
         return;
     }
@@ -216,26 +192,26 @@ void WebViewBridge::call(const std::string& type, const QJsonObject& payload, Re
                                                << "view=" << impl_->viewDiagnosticId;
         if (hasCompletion) {
             auto callback = impl_->takePending(requestId);
-            callback.completion({}, "Bridge transport is unavailable.");
+            callback.completion(Json::object(), "Bridge transport is unavailable.");
         }
         return;
     }
     BridgeMessage message { 1, BridgeMessageKind::Request, type, requestId, payload, {} };
     std::string error;
-    const auto bytes = encode(message);
-    if (impl_->validator && !impl_->validator(message, true, bytes.size(), &error)) {
+    const auto bytes = encodeBridgeMessage(message);
+    if (!bytes || (impl_->validator && !impl_->validator(message, true, bytes->size(), &error))) {
         auto callback = impl_->takePending(requestId);
         if (callback.completion) {
-            callback.completion({ }, error);
+            callback.completion(Json::object(), bytes ? error : "Bridge JSON encoding failed.");
         }
         return;
     }
-    if (!impl_->transport->send(bytes)) {
+    if (!impl_->transport->send(*bytes)) {
         qCWarning(systemWebViewBridge).noquote()
             << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         auto callback = impl_->takePending(requestId);
         if (callback.completion) {
-            callback.completion({}, "Bridge transport rejected the message.");
+            callback.completion(Json::object(), "Bridge transport rejected the message.");
         }
     }
 }
@@ -318,7 +294,7 @@ void WebViewBridge::receive(const std::string& message, const Url&)
         const auto type = envelope.type;
         const std::weak_ptr<bool> alive = impl_->alive;
         auto replied = std::make_shared<bool>(false);
-        const auto reply = [this, requestId, type, replied, alive](const QJsonObject& payload, const std::string& error) {
+        const auto reply = [this, requestId, type, replied, alive](const Json& payload, const std::string& error) {
             const auto valid = alive.lock();
             if (*replied || !valid || !*valid || !impl_->transport) {
                 return;
@@ -326,16 +302,21 @@ void WebViewBridge::receive(const std::string& message, const Url&)
             *replied = true;
             BridgeMessage response { 1, BridgeMessageKind::Response, type, requestId, payload, error };
             std::string validationError;
-            const auto bytes = encode(response);
-            if (!impl_->validator || impl_->validator(response, true, bytes.size(), &validationError)) {
-                impl_->transport->send(bytes);
+            auto bytes = encodeBridgeMessage(response);
+            if (!bytes) {
+                response.payload = Json::object();
+                response.error = "Bridge JSON encoding failed.";
+                bytes = encodeBridgeMessage(response);
+            }
+            if (bytes && (!impl_->validator || impl_->validator(response, true, bytes->size(), &validationError))) {
+                impl_->transport->send(*bytes);
             }
         };
         if (handler) {
             handler(envelope.payload, reply);
         }
         else {
-            reply({}, "Unsupported bridge request.");
+            reply(Json::object(), "Unsupported bridge request.");
         }
         return;
     }
@@ -351,7 +332,7 @@ void WebViewBridge::cancelPending(const std::string& error)
     const auto pending = std::exchange(impl_->pending, {});
     for (const auto& [requestId, callback] : pending) {
         if (callback.completion) {
-            callback.completion({ }, error);
+            callback.completion(Json::object(), error);
         }
     }
 }

@@ -112,8 +112,8 @@ int main(int argc, char** argv)
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert("bridge-test");
     config.trustedHttpsOrigins.insert("https://trusted.example");
-    config.pageToHostSchemas["hello"] = { { { "message", QJsonValue::String } }, true };
-    config.hostToPageSchemas["hello"] = { { { "message", QJsonValue::String } } };
+    config.pageToHostSchemas["hello"] = { { { "message", webview::JsonType::String } }, true };
+    config.hostToPageSchemas["hello"] = { { { "message", webview::JsonType::String } } };
     auto policy = std::make_shared<TestPolicy>(std::move(config));
     auto session = webview::createWebViewSession({ }, policy);
     auto view = session->createWebView();
@@ -138,17 +138,17 @@ int main(int argc, char** argv)
     };
     callbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr) { ++popupCount; };
     view->setHostCallbacks(std::move(callbacks));
-    view->bridge().setEventHandler("hello", [&](const QJsonObject& payload) {
+    view->bridge().setEventHandler("hello", [&](const webview::Json& payload) {
         ++messageCount;
-        if (payload.contains(QStringLiteral("executed"))) {
+        if (payload.contains("executed")) {
             hostileReturned = true;
-            hostileExecuted = payload.value(QStringLiteral("executed")).toBool();
-            hostileReturnedPayload = payload.value(QStringLiteral("message")).toString().toStdString();
+            hostileExecuted = payload.at("executed").get<bool>();
+            hostileReturnedPayload = payload.at("message").get<std::string>();
             loop.quit();
         }
         else {
-            assert(payload.value(QStringLiteral("message")).toString() == QStringLiteral("main"));
-            assert(payload.value(QStringLiteral("resourceVerified")).toBool());
+            assert(payload.at("message").get<std::string>() == "main");
+            assert(payload.at("resourceVerified").get<bool>());
         }
     });
     const std::string html = R"HTML(
@@ -220,7 +220,7 @@ window.addEventListener('DOMContentLoaded', () => {
     assert(events.size() == eventCount);
 
     const std::string hostilePayload = "</script><script>window.__payloadExecuted=true</script>";
-    view->bridge().emitEvent("hello", { { QStringLiteral("message"), QString::fromStdString(hostilePayload) } });
+    view->bridge().emitEvent("hello", { { "message", hostilePayload } });
     timeout.start(10000);
     loop.exec();
     assert(hostileReturned);
@@ -404,8 +404,10 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     assert(policy->navigationRequests.size() == navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;
-    view->bridge().call("hello", {}, [&](const QJsonObject&, const std::string& error) { rootClosed = !error.empty(); });
-    popup->bridge().call("hello", {}, [&](const QJsonObject&, const std::string& error) { popupClosed = !error.empty(); });
+    view->bridge().call(
+        "hello", webview::Json::object(), [&](const webview::Json&, const std::string& error) { rootClosed = !error.empty(); });
+    popup->bridge().call(
+        "hello", webview::Json::object(), [&](const webview::Json&, const std::string& error) { popupClosed = !error.empty(); });
     assert(rootClosed);
     assert(popupClosed);
 
@@ -413,7 +415,7 @@ window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.e
     view->close();
     assert(view->isClosed());
     bool closed = false;
-    view->bridge().call("hello", { { QStringLiteral("message"), QStringLiteral("late") } },
-        [&](const QJsonObject&, const std::string& error) { closed = !error.empty(); });
+    view->bridge().call(
+        "hello", { { "message", "late" } }, [&](const webview::Json&, const std::string& error) { closed = !error.empty(); });
     assert(closed);
 }

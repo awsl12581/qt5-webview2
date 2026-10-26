@@ -21,6 +21,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
 
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install ON CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/json)
+install(FILES 3rdparty/json/LICENSE.MIT
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/nlohmann_json")
+
 set(ADA_TESTING OFF CACHE BOOL "" FORCE)
 set(ADA_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(ADA_TOOLS OFF CACHE BOOL "" FORCE)
@@ -68,7 +74,7 @@ target_include_directories(system_webview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(system_webview PUBLIC Qt5::Widgets PRIVATE ada::ada utf8proc::utf8proc simdutf::simdutf)
+target_link_libraries(system_webview PUBLIC Qt5::Widgets nlohmann_json::nlohmann_json PRIVATE ada::ada utf8proc::utf8proc simdutf::simdutf)
 target_compile_features(system_webview PUBLIC cxx_std_20)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
 set_target_properties(system_webview PROPERTIES
@@ -143,7 +149,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
-    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets ada::ada utf8proc::utf8proc simdutf::simdutf)
+    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets nlohmann_json::nlohmann_json ada::ada utf8proc::utf8proc simdutf::simdutf)
     add_test(NAME webview_core_tests COMMAND webview_core_tests)
 
     if(APPLE)

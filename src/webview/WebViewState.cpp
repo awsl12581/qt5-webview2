@@ -1,4 +1,5 @@
 #include "webview/WebViewState.h"
+#include "webview/JsonMessage.h"
 
 #include <QDebug>
 
@@ -177,14 +178,14 @@ void WebViewState::close()
 void WebViewState::bindBridgePolicy()
 {
     const std::weak_ptr<WebViewState> weak = shared_from_this();
-    bridge->setEventHandler("release-resource", [weak](const QJsonObject& payload) {
+    bridge->setEventHandler("release-resource", [weak](const Json& payload) {
         if (const auto state = weak.lock()) {
-            state->resources->release(payload.value(QStringLiteral("token")).toString().toStdString());
+            state->resources->release(jsonString(payload, "token"));
         }
     });
     resources->setRevocationHandler([weak](const std::string& token) {
         if (const auto state = weak.lock()) {
-            state->bridge->emitEvent("resource-revoked", { { QStringLiteral("token"), QString::fromStdString(token) } });
+            state->bridge->emitEvent("resource-revoked", { { "token", token } });
         }
     });
     bridge->setValidator([weak](const BridgeMessage& message, bool outbound, int wireSize, std::string* error) {
@@ -208,8 +209,8 @@ void WebViewState::bindBridgePolicy()
         if (message.type == "release-resource" || message.type == "resource-revoked") {
             const bool allowed = message.kind == BridgeMessageKind::Event
                                  && message.type == (outbound ? "resource-revoked" : "release-resource") && message.payload.size() == 1
-                                 && message.payload.value(QStringLiteral("token")).isString()
-                                 && !message.payload.value(QStringLiteral("token")).toString().isEmpty();
+                                 && message.payload.contains("token") && message.payload.at("token").is_string()
+                                 && !jsonString(message.payload, "token").empty();
             if (!allowed) {
                 return reject("resource_control", "Invalid resource control message.");
             }

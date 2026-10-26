@@ -1,12 +1,12 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 11:10 CST
-> 文档版本：v5
-> 修改说明：同步 simdutf 已接入、Windows 转码调用已替换及 macOS 验证结果。
+> 最后修改时间：2026-10-26 11:32 CST
+> 文档版本：v7
+> 修改说明：补充 Qt JSON 完成替代后的剩余 Qt 范围和三方库建议。
 
 ## 结论与范围
 
-建议采用 **C++20 标准库 + 原生平台窗口和调度 + nlohmann/json + Ada URL**。Unicode 字符分类和通用 MIME 推断还需要分别落实；优先评估 utf8proc 和 libmagic。libuv、libevent、spdlog 都不是移除 Qt 的必要依赖。
+当前已采用 **C++20 标准库 + nlohmann/json + Ada URL + utf8proc + simdutf**；窗口、调度、文件、MIME 和日志仍按平台边界分别评估。libuv、libevent、spdlog 都不是当前移除 Qt 的必要依赖。
 
 前两个库是核心选型；后两个库用于保留容易遗漏的现有行为。四者组成的是待验证候选方案，不是已经证明完全等价的替代实现。特别是 libmagic 的 Windows/MSVC 构建与 MIME 数据库部署仍是选型关口，不能仅凭它能识别文件就宣布完整替代 QMimeDatabase。
 
@@ -35,14 +35,14 @@
 
 ## 三方库建议
 
-### 1. nlohmann/json：核心推荐
+### 1. nlohmann/json：已采用
 
-- 替代 QJsonObject、QJsonValue、QJsonArray、QJsonDocument。
+- 已完整替代自有源码、测试和 demo 的 Qt JSON。公开使用 `webview::Json` 别名及项目 `JsonType`；Bridge、schema、资源控制和两平台 JSON 边界均已切换。macOS 验证 preset 构建及 3 项测试通过，独立安装消费程序编译运行通过；Windows 编译运行待验证。详见 [JSON 替代范围与结果](json-replacement-scope.md)。
 - 已查阅 v3.12.0：MIT，C++11 起，单头文件集成，无必需的其他库依赖，适用于 C++20。
 - 本项目已有对象构造、字段检查和序列化需求；DOM 风格接口比只提供高速解析能力的方案更贴合当前代码。
-- 默认数字模型与 Qt 不同。必须把整数和浮点数统一映射到现有 schema 的 number 语义，核验大整数、非法 UTF-8、重复键、解析深度及异常边界。不得让解析异常穿过 COM 或 Objective-C 回调。
-- 当前消息上限按序列化字节计算。更换序列化器可能改变数字格式和字节数，应定义新实现的限制口径，并保留原始输入大小检查。
-- 推荐内部封装，不在稳定 DLL 接口里直接暴露整个三方模板类型。若为调用便利公开它，需明确使用方的版本、编译器和运行时约束。
+- 默认数字模型与 Qt 不同。实现已将整数和浮点数统一映射到 schema 的 `Number`，并覆盖大整数、非法 UTF-8、重复键、解析深度及异常边界；异常不会穿过 COM 或 Objective-C 回调。
+- 消息上限继续按统一序列化后的字节数计算，同时保留进入 Bridge 的原始字节上限检查。
+- 当前选择直接公开 nlohmann/json 别名，并接受源码/ABI 变更；使用方必须匹配 3.12.0、影响类型的宏、编译器、标准库和 Windows CRT，重新构建。安装包提供该公开依赖，不承诺稳定 DLL ABI。
 
 ### 2. Ada URL：C++20 下核心推荐
 
@@ -125,7 +125,24 @@ macOS 对应使用 NSApplication/NSRunLoop、NSView、主队列和安全随机�
 
 验收应同时包括：源码与导出接口无 Qt 类型；所有既有构建目标有可用替代；两平台真实桌面测试通过；发布依赖检查通过；不存在以 ASCII 限制、缩小 MIME 类型集或关闭测试来掩盖未覆盖场景的情况。
 
-本次完成代码与资料交叉核对，尚未证明完整替代方案可构建。首个验证重点是 **Ada 对 app URL 的项目适配，以及 MIME 方案在 MSVC ARM64 上的可部署性**。它们比是否采用 libuv 更直接影响选型。
+JSON、URL、Unicode 转码和应用 ID 校验的 macOS 验证已经完成；Windows 后端仍需在 Windows MSVC preset 上验证。首个剩余验证重点是 **MIME 方案在 MSVC ARM64 上的可部署性**，以及 Qt 文件、事件循环和 UI 边界的逐项迁移。
+
+## Qt5-base 剩余范围
+
+Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分别承担 Windows 转码、Unicode 分类和 URL 解析职责。当前剩余 Qt 主要是 UI 与平台适配：`QApplication`/`QWidget`/布局、事件循环和定时器、`QFile`/`QDir`/`QFileInfo`、`QIODevice`、`QMimeDatabase`、Qt 日志以及少量 QString 的原生边界转换。
+
+建议的辅助库和边界如下：
+
+| 剩余 Qt 范围 | 可评估的三方库或原生方案 | 结论 |
+| --- | --- | --- |
+| 文件、目录和路径 | C++20 `std::filesystem`，Windows UTF-16 API，macOS Foundation | 优先标准库和平台 API；不需要新增通用库 |
+| 流和资源文件 | `std::ifstream`/`std::fstream`、自有 range stream | 先替换 QIODevice 的项目内部接口，再评估是否需要额外 I/O 库 |
+| MIME 检测 | libmagic 或平台 MIME API | libmagic 需要数据库和 Windows ARM64 部署验证，不能直接宣称等价于 QMimeDatabase |
+| 主线程调度、定时器和异步 I/O | Windows dispatcher、Grand Central Dispatch、libuv 或 Boost.Asio | WebView2 STA 和 WKWebView 主线程仍依赖平台循环；libuv/Asio 不能直接替代 Qt Widgets 事件循环 |
+| 日志 | spdlog 或自有日志 facade | 先保持 QLoggingCategory 行为，单独迁移日志分类和过滤 |
+| Widgets、布局、跨平台窗口 | Win32/Windows App SDK、AppKit，或保留 Qt Widgets | 没有一个轻量三方库能无损替代当前 UI；这是最大剩余范围 |
+
+这些库只解决各自边界，不能为了“完全替代 Qt5-base”把 libuv、Boost.Asio、libmagic 或 spdlog 混合成新的通用层。下一阶段应按文件系统、MIME、日志、调度、Widgets 的顺序分别调研和验证。
 
 ## 外部资料
 
@@ -155,3 +172,5 @@ macOS 对应使用 NSApplication/NSRunLoop、NSView、主队列和安全随机�
 | v3 | 2026-10-26 10:58 CST | 同步 utf8proc 校验替代完成及 macOS 验证结果。 |
 | v4 | 2026-10-26 11:04 CST | 将 Windows 编码转换候选更新为已选定的 simdutf，并链接专项范围审计。 |
 | v5 | 2026-10-26 11:10 CST | 同步 simdutf 已接入、Windows 转码调用已替换及 macOS 验证结果。 |
+| v6 | 2026-10-26 11:29 CST | 记录 nlohmann/json 已替代 Qt JSON，公开依赖及验证结果。 |
+| v7 | 2026-10-26 11:32 CST | 补充 Qt JSON 完成替代后的剩余 Qt 范围和三方库建议。 |

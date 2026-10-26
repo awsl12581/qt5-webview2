@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 11:10 CST
-> 文档版本：v17
-> 修改说明：Documented simdutf conversion boundaries, strict failures, and private static linkage.
+> 最后修改时间：2026-10-26 11:29 CST
+> 文档版本：v18
+> 修改说明：Documented nlohmann/json public types, strict encoding, and exported package dependency.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -30,17 +30,24 @@ as standard strings, formats internal errors with `std::format`, and opens nativ
 The helpers validate input, return optional results without throwing, and copy code units for Win32 wchar_t
 adapters. Length-based conversion preserves embedded NUL; NUL-terminated native API adapters reject it.
 Invalid encoding fails the corresponding send, initialization, navigation, resource request, or download.
-Qt JSON and filesystem adapters remain; macOS text conversion continues to use Foundation.
+Qt filesystem adapters remain; macOS text conversion continues to use Foundation.
 Ada parses and serializes URLs through the public `webview::Url` value type. The project adopts WHATWG
 normalization, including default-port removal and dot-segment handling; `app:` identity uses the parsed host.
-Qt JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
+Qt logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
 boundaries; path authorization and message schemas retain their existing behavior.
 The public API uses UTF-8 `std::string` for text, filesystem paths, bridge metadata, errors, and serialized bridge
 messages; `std::vector<std::string>` for path lists; standard unordered sets/maps for policy configuration;
-and fixed-width standard integers for counters. `webview::Url`, `QJsonObject`, `QJsonValue`, `QIODevice`, and `QWidget`
+and fixed-width standard integers for counters. `webview::Url`, `webview::Json`, `webview::JsonType`, `QIODevice`, and `QWidget`
 remain at the URL, JSON, stream, and widget boundaries. This migration changes public signatures and value
 layouts, so consumers must update their calls, callbacks, and policy overrides and rebuild against the library.
 There are no compatibility overloads for the replaced Qt value types.
+
+`webview::Json` aliases nlohmann/json 3.12.0; payloads are JSON objects with an explicit empty-object default.
+`JsonType` describes protocol types and treats all JSON numeric representations as `Number`. The internal
+JsonMessage helpers provide shared strict parsing and serialization, a 128-level depth limit, finite-number
+checks, and optional serialization failures. Bridge encoding and policy size checks share one envelope encoder.
+The JSON target is a public header-only dependency; installation provides its headers, exact-version CMake
+package, and license. Consumers must match the JSON version and ABI-affecting configuration and rebuild.
 
 Application IDs are decoded as UTF-8 codepoints and classified with utf8proc 2.12.0 (Unicode 18.0.0).
 Validation accepts Unicode letters, numbers, and ASCII hyphens, including supplementary-plane letters and numbers;
@@ -111,7 +118,7 @@ Bridge messages use an event, request, or response envelope:
 
 `WebViewBridge` owns JSON encoding, schema validation, event dispatch, request ID matching, and pending request cancellation. The common `bridgePageScript()` builds the page-side event/request/response API; each backend supplies only its native send and receive expressions and document token. `IWebView::bridge()` is the application entry point. The page uses `window.systemWebView.postMessage()` for events, `on()` to receive typed messages, and `call()` for requests. Request listeners answer with the supplied `reply()` function. A navigation or close cancels pending native requests.
 
-Platform backends provide the native transport. Incoming messages pass main-frame, origin, and document-token checks before reaching `WebViewBridge`; the bridge then applies the directional policy schema and size limit. `sendMessage()` and `WebViewHostCallbacks::message` have been removed.
+Platform backends provide the native transport. Token scripts use JSON string serialization directly. Windows retains simdutf at the UTF-16 boundary; macOS retains NSJSONSerialization only for Foundation object/byte adaptation and validates native input before conversion. Incoming messages pass main-frame, origin, and document-token checks before reaching `WebViewBridge`; the bridge then applies the directional policy schema and size limit. `sendMessage()` and `WebViewHostCallbacks::message` have been removed.
 
 Large local files use `IWebView::resources().publishFile()`. The manager creates a stable snapshot, binds its opaque `app://<application-id>/resource/<token>` URL to the current document, and serves validated byte ranges from a file stream. The JSON bridge carries the URL and metadata only. `WebView2View` adapts requests through WebView2 resource events; `WkWebView` uses `WKURLSchemeHandler` and sends bounded chunks. Each token expires after 30 minutes. The page clears its DOM reference before sending the built-in `release-resource` event; the host can also call `release(token)`. Release, navigation, close, and session teardown revoke tokens. Active readers hold snapshot leases, so their bytes remain counted against the capacity limit until deletion succeeds. Failed deletion is retried on a timer and at the next publication; expired entries are swept on publication.
 
@@ -171,3 +178,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v15 | 2026-10-25 23:24 CST | Documented the Ada-backed URL value type and WHATWG URL normalization. |
 | v16 | 2026-10-26 10:58 CST | Documented utf8proc application ID validation and private static linkage. |
 | v17 | 2026-10-26 11:10 CST | Documented simdutf conversion boundaries, strict failures, and private static linkage. |
+| v18 | 2026-10-26 11:29 CST | Documented nlohmann/json public types, strict encoding, and exported package dependency. |
