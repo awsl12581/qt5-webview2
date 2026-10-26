@@ -31,8 +31,16 @@ public:
     {
     }
 
-    void* nativeHandle() const override { return host_.nativeHandle; }
-    bool hasVisibleGeometry() const override { return host_.visible && host_.width > 0 && host_.height > 0; }
+    void* nativeHandle() const override
+    {
+        refreshHostState();
+        return host_.nativeHandle;
+    }
+    bool hasVisibleGeometry() const override
+    {
+        refreshHostState();
+        return host_.visible && host_.width > 0 && host_.height > 0;
+    }
     bool postToUi(Callback action) override
     {
         if (!host_.postToUi) {
@@ -46,14 +54,33 @@ public:
     }
     void setHostChangedCallback(Callback callback) override
     {
+        hostChanged_ = std::move(callback);
         if (host_.observeChanges) {
-            host_.observeChanges(std::move(callback));
+            host_.observeChanges([this] {
+                if (hostChanged_) {
+                    hostChanged_();
+                }
+            });
         }
     }
-    void refreshHost() override {}
+    void refreshHost() override
+    {
+        refreshHostState();
+        if (hostChanged_) {
+            hostChanged_();
+        }
+    }
 
 private:
-    WebViewHost host_;
+    void refreshHostState() const
+    {
+        if (host_.refresh) {
+            host_.refresh(host_);
+        }
+    }
+
+    mutable WebViewHost host_;
+    Callback hostChanged_;
 };
 
 } // namespace webview

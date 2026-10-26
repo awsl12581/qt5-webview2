@@ -29,6 +29,12 @@ public:
         host.width = width();
         host.height = height();
         host.visible = isVisible();
+        host.refresh = [this](WebViewHost& current) {
+            current.nativeHandle = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
+            current.width = width();
+            current.height = height();
+            current.visible = isVisible();
+        };
         host.postToUi = [this](std::function<void()> action) {
             if (QThread::currentThread() == uiThread_) {
                 if (action) {

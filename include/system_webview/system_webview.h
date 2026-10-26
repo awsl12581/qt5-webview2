@@ -61,6 +61,8 @@ struct WebViewHost
     int width = 0;
     int height = 0;
     bool visible = true;
+    /// Refreshes nativeHandle, width, height, and visible before backend use.
+    std::function<void(WebViewHost&)> refresh;
     std::function<void(std::function<void()>)> postToUi;
     std::function<void(std::function<void()>)> observeChanges;
 };

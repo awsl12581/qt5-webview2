@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 14:20 CST
-> 文档版本：v20
-> 修改说明：同步框架无关 HostView 和 popup 宿主交接设计。
+> 最后修改时间：2026-10-26 14:49 CST
+> 文档版本：v21
+> 修改说明：记录宿主状态动态刷新，确保创建后的布局和显示变化可被后端读取。
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -183,3 +183,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v18 | 2026-10-26 11:29 CST | Documented nlohmann/json public types, strict encoding, and exported package dependency. |
 | v19 | 2026-10-26 14:10 CST | 同步 v2 宿主 API，删除 QWidget 公共入口并改用 WebViewHost。 |
 | v20 | 2026-10-26 14:20 CST | 同步框架无关 HostView 和 popup 宿主交接设计。 |
+| v21 | 2026-10-26 14:49 CST | 记录 WebViewHost 动态刷新宿主状态，避免初始零尺寸或隐藏状态阻止页面挂载。 |

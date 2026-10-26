@@ -25,6 +25,15 @@ inline WebViewHost makeGlfwHost(GLFWwindow* window)
 #endif
     glfwGetWindowSize(window, &host.width, &host.height);
     host.visible = glfwGetWindowAttrib(window, GLFW_VISIBLE) != 0;
+    host.refresh = [window](WebViewHost& current) {
+#if defined(_WIN32)
+        current.nativeHandle = glfwGetWin32Window(window);
+#elif defined(__APPLE__)
+        current.nativeHandle = glfwGetCocoaWindow(window);
+#endif
+        glfwGetWindowSize(window, &current.width, &current.height);
+        current.visible = glfwGetWindowAttrib(window, GLFW_VISIBLE) != 0;
+    };
     host.postToUi = [](std::function<void()> action) {
         if (action) {
             action();

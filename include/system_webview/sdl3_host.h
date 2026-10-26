@@ -14,6 +14,15 @@ inline WebViewHost makeSdl3Host(SDL_Window* window)
     }
     SDL_GetWindowSize(window, &host.width, &host.height);
     host.visible = (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) == 0;
+    host.refresh = [window](WebViewHost& current) {
+        SDL_GetWindowSize(window, &current.width, &current.height);
+        current.visible = (SDL_GetWindowFlags(window) & SDL_WINDOW_HIDDEN) == 0;
+#if defined(_WIN32)
+        current.nativeHandle = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#elif defined(__APPLE__)
+        current.nativeHandle = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+#endif
+    };
 #if defined(_WIN32)
     host.nativeHandle = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
 #elif defined(__APPLE__)

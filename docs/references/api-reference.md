@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 14:20 CST
-> 文档版本：v17
-> 修改说明：同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。
+> 最后修改时间：2026-10-26 14:49 CST
+> 文档版本：v18
+> 修改说明：说明 WebViewHost 动态刷新宿主句柄、尺寸和可见性。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -567,3 +567,4 @@ int main(int argc, char* argv[])
 | v15 | 2026-10-26 11:10 CST | 补充 Windows 原生文本边界的严格编码和 NUL 规则。 |
 | v16 | 2026-10-26 11:29 CST | 同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。 |
 | v17 | 2026-10-26 14:20 CST | 同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。 |
+| v18 | 2026-10-26 14:49 CST | 说明 WebViewHost 动态刷新宿主句柄、尺寸和可见性。 |
