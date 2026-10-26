@@ -1,4 +1,0 @@
-[1/4] Building CXX object CMakeFiles/ada_qurl_probe.dir/probe.cpp.o
-[2/4] Building CXX object ada/src/CMakeFiles/ada.dir/ada.cpp.o
-[3/4] Linking CXX static library ada/src/libada.a
-[4/4] Linking CXX executable ada_qurl_probe

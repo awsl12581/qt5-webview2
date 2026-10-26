@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 16:35 CST
-> 文档版本：v16
-> 修改说明：完成 QUuid 替换，接入平台安全随机源、统一令牌编码和核心测试。
+> 最后修改时间：2026-10-26 17:38 CST
+> 文档版本：v19
+> 修改说明：记录生产调度、HTTP Range 和 macOS QString 边界的标准库替代实施结果及验证。
 
 ## 结论与范围
 
@@ -133,14 +133,14 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 | --- | --- | --- |
 | 核心生产库的 Qt 链接 | [CMakeLists.txt](../../CMakeLists.txt) 第 22、78 行 | `find_package(Qt5 ...)` 和 `system_webview` 对 `Qt5::Widgets` 的 PUBLIC 链接仍存在。必须先让核心 target 不再导出 Qt，再由宿主适配器单独链接 Qt。 |
 | Qt 宿主适配器 | [qt_host.h](../../include/system_webview/qt_host.h) | `QWidget`、`QThread`、`QMetaObject`、`QResizeEvent` 仍是 Qt 实现。它可以作为可选适配器保留，但不应进入核心 API 或核心链接。 |
-| 诊断日志 | [Diagnostics.h](../../src/internal/Diagnostics.h)、[Diagnostics.cpp](../../src/webview/Diagnostics.cpp)、[WebViewState.cpp](../../src/webview/WebViewState.cpp) 及 Windows/macOS 后端 | `QLoggingCategory`、`QDebug` 和 Qt 字符串格式化仍在生产代码中。建议用标准类型定义结构化诊断事件并通过调用方注入的回调交付；库不做过滤、输出或持久化。 |
-| UUID 和令牌 | [WebViewBridge.cpp](../../src/webview/WebViewBridge.cpp)、[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebView.mm](../../src/platform/macos/WkWebView.mm)、[WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | `QUuid` 仍生成请求 ID、文档令牌和快照临时目录名。统一替换为项目内部 128-bit 安全随机令牌；请求匹配只要求唯一性，document/resource token 还要求不可预测性。 |
+| 诊断日志 | [Diagnostics.h](../../src/internal/Diagnostics.h)、[Diagnostics.cpp](../../src/webview/Diagnostics.cpp) 及各平台后端 | `QLoggingCategory`、`QDebug` 和 `qC*` 已替换为标准 C++ `DiagnosticEvent`/调用方回调；不再是 Qt5 Base 剩余项。 |
+| UUID 和令牌 | [RandomToken.cpp](../../src/internal/RandomToken.cpp) 及四个调用点 | `QUuid` 已替换为 Windows `BCryptGenRandom`、macOS `SecRandomCopyBytes` 和项目内部十六进制编码；不再是 Qt5 Base 剩余项。 |
 | 定时器和应用调度 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | `QCoreApplication`/`QTimer` 仍用于快照删除重试。需要平台 dispatcher 或宿主调度接口，并处理取消、销毁和重试截止时间。 |
-| Range 正则和 Qt 字符串边界 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm)、平台后端 | `QRegularExpression` 解析 HTTP Range，平台文件中仍有 `QString`/Qt 日志。可用 `std::string_view`、`from_chars`、原生 NSString/UTF-16 边界和统一日志 facade 替代。 |
+| Range 正则和 Qt 字符串边界 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) | `QRegularExpression` 仍解析 HTTP Range；macOS `WkWebView.mm` 仍用少量 `QString` 做 Foundation 错误文本转换。可用 `std::string_view`/`from_chars` 和原生 UTF-8/NSString 边界替代。 |
 | 文件和流 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、测试及平台资源响应 | 生产路径已有标准文件/平台流替代方向，但测试仍大量使用 `QFile`、`QDir`、`QFileInfo`、`QTemporaryDir` 和 `QIODevice`。迁移必须保留快照、Range、租约、目录边界、链接/reparse point 和删除重试语义，详见 [文件与流替代范围调研](file-stream-replacement-scope.md)。 |
 | Qt 示例和控件 | [samples/demo](../../samples/demo)、[windows_widget_demo](../../samples/windows_widget_demo) | Qt Widgets 示例仍使用 `QApplication`、`QMainWindow`、标签页、布局和按钮。GLFW3/SDL3 示例已提供其他宿主，但 Qt 示例可继续作为独立适配器示例。 |
 | Qt 测试工具 | [tests](../../tests) | 测试仍依赖 `QApplication`、`QEventLoop`、`QTimer`、`QFile`、`QTemporaryDir`、`QTcpServer` 和 QWidget。需要平台事件循环、标准文件 API 和测试 HTTP 服务逐项替换，不能通过关闭测试目标宣称完成。 |
-| 包配置和开发文档 | [system_webviewConfig.cmake.in](../../cmake/system_webviewConfig.cmake.in)、README 和诊断/架构文档 | 包配置仍导出 Qt5 查找依赖，README 仍以 Qt5 为主要构建前提，部分架构/诊断文档仍描述 Qt 日志和宿主。核心脱 Qt 后需同步更新。 |
+| 包配置和开发文档 | [system_webviewConfig.cmake.in](../../cmake/system_webviewConfig.cmake.in)、README、API 参考和架构文档 | 包配置仍导出 Qt5 查找依赖，README 和 API 示例仍包含 Qt5 构建/示例说明；核心脱 Qt 后需同步更新。 |
 
 `CMakeLists.txt` 第 106 行起的 `SYSTEM_WEBVIEW_BUILD_GLFW_HOST`、`add_subdirectory(3rdparty/glfw3)` 和 `system_webview_glfw_host` 只是 GLFW 宿主适配器的可选构建入口，不是剩余 Qt 内容。第 116 行起的 SDL3 逻辑同理；两者与 [system_webview_qt_host](../../CMakeLists.txt) 并列，均不应把宿主实现重新耦合进核心库。
 
@@ -153,7 +153,35 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 | 日志 | 自有日志 facade，宿主提供回调；必要时再评估 spdlog | 先迁移行为和分类，不为替换 Qt 强行引入新的全局日志后端。 |
 | Widgets 和布局 | Win32/AppKit，或独立保留 Qt/GLFW3/SDL3 适配器 | 没有一个库能自动覆盖现有 UI 语义；按宿主实现分别维护。 |
 
-当前结论：Qt 尚未完全替代。已替代的是数据格式、URL、Unicode、编码、公共基础类型和 MIME helper；未替代的是核心 Qt 链接、生产诊断/调度/UUID/正则边界、Qt 宿主适配器、Qt 示例、Qt 测试工具以及包配置和文档中的 Qt 声明。只有这些范围完成并通过 Windows/macOS 实机验证，才能移除 Qt5 的核心构建要求。
+当前结论：Qt 尚未完全替代。已替代的是数据格式、URL、Unicode、编码、公共基础类型、MIME helper、生产日志和 UUID/安全令牌；未替代的是核心 Qt 链接、生产调度/定时器、Range 正则、少量 macOS QString 边界、Qt 宿主适配器、Qt 示例、Qt 测试工具以及包配置和部分文档声明。
+
+## 三类剩余用途专项方案
+
+### 生产调度和定时器
+
+当前生产代码只有一个定时场景：[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 的 `SnapshotStore::scheduleRetry()`。快照文件因仍被读取者占用而删除失败时，它通过 `QCoreApplication::instance()` 查找应用对象，并用 `QTimer::singleShot(1000, ...)` 一秒后重试。它不是通用异步 I/O，也不要求资源管理器拥有独立线程；回调只需重新尝试删除文件，并通过 `weak_ptr` 避免访问已销毁的 `SnapshotStore`。
+
+推荐替代为宿主提供的延迟调度回调，例如 `postDelayed(std::chrono::milliseconds, std::function<void()>)`，与现有 `WebViewHost::postToUi` 同属宿主调度边界。调度器必须满足：在宿主 UI/资源允许的线程执行、对象销毁后可以取消或安全丢弃、不会持有强引用阻止销毁、回调异常不穿出库。Windows 可用宿主消息队列配合 `SetTimer` 或线程池定时器，macOS 可用主队列 `dispatch_after`/`NSTimer`；这些实现由平台适配器负责，不进入核心公共库。
+
+不建议为一次一秒重试引入 libuv、Boost.Asio 或独立后台线程。libuv/Asio 的事件循环不能自动满足 WebView2 STA 和 WKWebView 主线程契约；`std::thread`/`std::jthread` 会增加停止、对象生命周期和线程切换复杂度。若调用方没有延迟调度器，库可以保留“下次发布资源时同步重试”的兜底，但不能因没有 Qt 应用对象而永久丢失清理机会。验收应覆盖调度器缺失、对象提前关闭、重复调度和删除最终成功/失败。
+
+### HTTP Range 解析
+
+当前 [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 和 [WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) 使用相同的 Qt 正则 `^bytes=(\\d*)-(\\d*)$`，并先去除首尾空白。项目只支持单段 Range：`bytes=10-20`、`bytes=10-` 和 `bytes=-500`；不支持多段、其他单位或空范围。解析结果还要根据文件大小裁剪、检查溢出，并返回 416 或完整响应。
+
+推荐新增内部 `parseByteRange(std::string_view, std::int64_t size)`，按以下步骤实现：去除 ASCII 首尾空白；精确检查 `bytes=` 前缀；查找唯一的 `-`；允许两侧分别为空但不能同时为空；用 `std::from_chars` 解析非空十进制字段并检查 `int64_t` 溢出；按 suffix、开放结束端点和文件大小计算 offset/length；拒绝多余字符、多段逗号、负号、空格和溢出值。该函数返回项目内部的 `{offset, length, partial, valid}` 结果，WebResourceManager 和 macOS scheme handler 共用，避免两套正则语义漂移。
+
+这里不需要正则库、Boost.Regex 或 HTTP 第三方库。`std::from_chars` 不分配、不依赖 locale，适合资源请求热路径；解析失败仍保持现有 416 行为。测试应覆盖空白、三种合法形式、空文件、suffix 大于文件、结束位置越界、反向范围、多段 Range、非十进制字符和整数溢出。
+
+### macOS QString 边界
+
+当前 [WkWebView.mm](../../src/platform/macos/WkWebView.mm) 的 `QString` 用途只有两类：`toNSString(const QString&)` 转换路径、脚本、URL、HTML 和文件选择结果，以及在导航失败时将 `NSError.localizedDescription.UTF8String` 转成 `std::string`。这些值在进入 Objective-C API 前本来就是项目 UTF-8 `std::string`，不需要 Qt 的 Unicode 分类、格式化或生命周期管理。
+
+推荐删除 `QString` 头文件和 `toNSString(const QString&)` 重载，只保留 `toNSString(std::string_view)`。NSError 文本直接使用 `std::string(error.localizedDescription.UTF8String ?: "")`，对 nil 按空字符串处理；其他调用继续从 `std::string` 转 Foundation `NSString`。这样保留 UTF-8 语义，转换点清晰，且不改变 WKWebView API 的 Objective-C 对象所有权。
+
+Range 头部在 scheme handler 中来自 `NSString*`，先取 `range.UTF8String ?: ""` 转成 `std::string_view`，再调用共享的 `parseByteRange`，因此可同时移除 [WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) 的 `QRegularExpression`。替代后 macOS 平台只保留 Foundation/WebKit 原生字符串边界，不再依赖 Qt Core。
+
+三类替代的实施顺序应为：先抽象宿主延迟调度，再实现共享 Range 解析器并覆盖两处调用，最后删除 macOS QString/QRegularExpression 边界并运行 macOS session/view 测试。完成后，生产源码的 Qt 使用将只剩核心 target 链接和可选 Qt host；测试、示例和包配置仍需单独迁移。
 
 ## Qt 日志替代方案
 
@@ -169,7 +197,7 @@ C++ 库通常不会假定所有调用方使用同一个日志后端。常见边�
 
 ### 当前生产代码涉及范围
 
-当前生产实现有 44 个 Qt 分类日志调用点，分布在以下 7 个文件；分类声明和定义在 [Diagnostics.h](../../src/internal/Diagnostics.h) 与 [Diagnostics.cpp](../../src/webview/Diagnostics.cpp)：
+迁移前生产实现有 44 个 Qt 分类日志调用点，分布在以下 7 个文件；当前分类和实现位于 [Diagnostics.h](../../src/internal/Diagnostics.h) 与 [Diagnostics.cpp](../../src/webview/Diagnostics.cpp)：
 
 | 文件 | 当前日志用途 |
 | --- | --- |
@@ -181,9 +209,9 @@ C++ 库通常不会假定所有调用方使用同一个日志后端。常见边�
 | [WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | 权限/popup/下载/导航策略拒绝、Bridge 边界拒绝、进程故障 |
 | [WebView2Session.cpp](../../src/platform/windows/WebView2Session.cpp) | WebView2 browser process 终止 |
 
-目前有六个分类：`lifecycle`、`navigation`、`policy`、`bridge`、`resource`、`runtime`。Debug 调用默认关闭，Info、Warning、Critical 默认开启；依赖 Qt 的 `QT_LOGGING_RULES` 做宿主外部过滤。日志采用 `event=... key=value` 文本，诊断字段包含关联 ID、来源、状态、固定原因码和原生错误码。现有脱敏规则禁止记录 URL path/query、Bridge payload、request/document token 和本地绝对路径，应继续作为事件接口契约。
+目前有六个分类：`lifecycle`、`navigation`、`policy`、`bridge`、`resource`、`runtime`。日志事件通过 `DiagnosticHandler` 同步交给调用方，调用方负责级别过滤；库不再依赖 `QT_LOGGING_RULES`。日志采用 `event=... key=value` 文本，诊断字段包含关联 ID、来源、状态、固定原因码和原生错误码。现有脱敏规则禁止记录 URL path/query、Bridge payload、request/document token 和本地绝对路径，应继续作为事件接口契约。
 
-生产日志以外，[JsonMessageTests.cpp](../../tests/JsonMessageTests.cpp) 使用 `qInstallMessageHandler` 捕获文本，并用 `QLoggingCategory::setFilterRules` 改变过滤状态；替代时应改为注入测试接收器，检查 severity/category/event/字段、默认无接收器时不输出、敏感数据不进入事件，以及接收器异常不会逃出日志调用。`docs/guides/diagnostics.md` 和 [API 参考](../references/api-reference.md) 目前也将 Qt logging category、`QT_LOGGING_RULES` 和 `qInstallMessageHandler` 写为公开接入方式，实施替代时要同步更新。
+生产日志以外，[JsonMessageTests.cpp](../../tests/JsonMessageTests.cpp) 已使用注入测试接收器，检查 severity/category/event/字段、敏感数据不进入事件，以及接收器异常不会逃出日志调用。`docs/guides/diagnostics.md` 和 [API 参考](../references/api-reference.md) 已同步为标准 C++ 回调接入方式。
 
 推荐结论：由本库拥有稳定的分类名、severity、event code 和字段语义；由调用方拥有过滤规则、最终文本格式、日志后端和持久化。公开 API 使用标准 C++ 类型，不暴露 Qt 或 spdlog 类型。该方案更符合“库产生诊断、宿主决定怎么处理”，也允许调用方接入现有日志体系而不增加必需三方库。
 
@@ -240,3 +268,6 @@ C++20 标准库没有 UUID 类型或密码学随机字节接口。本项目的�
 | v14 | 2026-10-26 16:05 CST | 实施标准 C++ 诊断事件回调，移除生产日志路径的 Qt 日志依赖，并同步测试与接入文档。 |
 | v15 | 2026-10-26 16:20 CST | 确定 QUuid 的替代方案，采用平台安全随机源和项目内部令牌编码，不引入 UUID 三方库。 |
 | v16 | 2026-10-26 16:35 CST | 完成 QUuid 替换，接入平台安全随机源、统一令牌编码和核心测试。 |
+| v17 | 2026-10-26 16:35 CST | 按当前源码、构建配置、测试和示例重新盘点 Qt5 Base 的剩余使用范围。 |
+| v18 | 2026-10-26 16:50 CST | 补充生产调度、HTTP Range 解析和 macOS QString 边界的专项替代方案。 |
+| v19 | 2026-10-26 17:38 CST | 实施标准线程调度、共享 `std::from_chars` Range 解析和 macOS 字符串边界替代；主库与核心测试构建、测试通过。 |
