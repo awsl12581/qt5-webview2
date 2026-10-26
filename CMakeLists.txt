@@ -19,7 +19,8 @@ set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
+option(SYSTEM_WEBVIEW_BUILD_QT_HOST "Build the Qt 5 host adapter target." ON)
+option(SYSTEM_WEBVIEW_BUILD_SAMPLES "Build the System WebView samples." ON)
 
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install ON CACHE BOOL "" FORCE)
@@ -54,6 +55,15 @@ function(system_webview_add_simdutf)
 endfunction()
 system_webview_add_simdutf()
 
+if(SYSTEM_WEBVIEW_BUILD_QT_HOST OR SYSTEM_WEBVIEW_BUILD_SAMPLES)
+    find_package(Qt5 5.15 REQUIRED COMPONENTS Network Widgets)
+endif()
+
+set(gtest_build_tests OFF CACHE BOOL "" FORCE)
+set(gtest_build_samples OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/googletest EXCLUDE_FROM_ALL)
+
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
     src/internal/HostView.h
@@ -78,7 +88,7 @@ target_include_directories(system_webview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(system_webview PUBLIC Qt5::Widgets nlohmann_json::nlohmann_json PRIVATE ada::ada utf8proc::utf8proc simdutf::simdutf)
+target_link_libraries(system_webview PUBLIC nlohmann_json::nlohmann_json PRIVATE ada::ada utf8proc::utf8proc simdutf::simdutf)
 target_compile_features(system_webview PUBLIC cxx_std_20)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
 set_target_properties(system_webview PROPERTIES
@@ -102,9 +112,11 @@ endif()
 
 option(SYSTEM_WEBVIEW_BUILD_GLFW_HOST "Build the GLFW 3 host adapter target." OFF)
 option(SYSTEM_WEBVIEW_BUILD_SDL3_HOST "Build the SDL 3 host adapter target." OFF)
-add_library(system_webview_qt_host INTERFACE)
-target_link_libraries(system_webview_qt_host INTERFACE system_webview Qt5::Widgets)
-target_include_directories(system_webview_qt_host INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(SYSTEM_WEBVIEW_BUILD_QT_HOST)
+    add_library(system_webview_qt_host INTERFACE)
+    target_link_libraries(system_webview_qt_host INTERFACE system_webview Qt5::Widgets)
+    target_include_directories(system_webview_qt_host INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
 
 if(SYSTEM_WEBVIEW_BUILD_GLFW_HOST)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -154,7 +166,6 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/system_webviewConfigVersion.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/system_webview")
 
-option(SYSTEM_WEBVIEW_BUILD_SAMPLES "Build the System WebView samples." ON)
 if(SYSTEM_WEBVIEW_BUILD_SAMPLES)
     add_subdirectory(samples)
 endif()
@@ -180,7 +191,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
-    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets nlohmann_json::nlohmann_json ada::ada utf8proc::utf8proc simdutf::simdutf)
+    target_link_libraries(webview_core_tests PRIVATE gtest_main nlohmann_json::nlohmann_json ada::ada utf8proc::utf8proc simdutf::simdutf)
     if(APPLE)
         target_link_libraries(webview_core_tests PRIVATE "${SECURITY_FRAMEWORK}")
     elseif(WIN32)
@@ -192,23 +203,23 @@ if(BUILD_TESTING)
         target_sources(webview_core_tests PRIVATE src/webview/PathSecurity.cpp)
         add_executable(webview_macos_session_tests tests/WkSessionTests.mm)
         target_include_directories(webview_macos_session_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_macos_session_tests PRIVATE system_webview)
+        target_link_libraries(webview_macos_session_tests PRIVATE system_webview gtest_main "${COCOA_FRAMEWORK}")
         add_test(NAME webview_macos_session_tests COMMAND webview_macos_session_tests)
 
-        add_executable(webview_macos_view_tests tests/WkViewTests.mm)
+        add_executable(webview_macos_view_tests tests/WkViewTests.mm src/internal/RandomToken.cpp)
         target_include_directories(webview_macos_view_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_macos_view_tests PRIVATE system_webview Qt5::Network)
+        target_link_libraries(webview_macos_view_tests PRIVATE system_webview gtest_main "${COCOA_FRAMEWORK}" "${SECURITY_FRAMEWORK}")
         add_test(NAME webview_macos_view_tests COMMAND webview_macos_view_tests)
     elseif(WIN32)
         target_sources(webview_core_tests PRIVATE src/platform/windows/PathSecurity.cpp)
         add_executable(webview_windows_contract_tests tests/WebView2ContractTests.cpp src/webview/TextEncoding.cpp)
         target_include_directories(webview_windows_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_windows_contract_tests PRIVATE system_webview Qt5::Network simdutf::simdutf)
+        target_link_libraries(webview_windows_contract_tests PRIVATE system_webview gtest_main simdutf::simdutf)
         add_test(NAME webview_windows_contract_tests COMMAND webview_windows_contract_tests)
 
         add_executable(webview_windows_runtime_probe tests/WebView2RuntimeProbe.cpp src/webview/TextEncoding.cpp)
         target_include_directories(webview_windows_runtime_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_windows_runtime_probe PRIVATE system_webview Qt5::Network simdutf::simdutf)
+        target_link_libraries(webview_windows_runtime_probe PRIVATE system_webview gtest_main simdutf::simdutf)
         add_test(NAME webview_windows_runtime_probe COMMAND webview_windows_runtime_probe)
     endif()
 endif()

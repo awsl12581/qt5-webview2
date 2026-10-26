@@ -2,7 +2,6 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(nlohmann_json 3.12.0 EXACT CONFIG)
-find_dependency(Qt5 5.15 COMPONENTS Network Widgets)
 
 if(WIN32)
     find_dependency(unofficial-webview2 CONFIG)

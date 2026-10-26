@@ -3,16 +3,11 @@
 #include "webview/WebViewState.h"
 #include <system_webview/system_webview.h>
 
-#include <QApplication>
-#include <QEventLoop>
-#include <QFile>
-#include <QFileInfo>
-#include <QTemporaryDir>
-#include <QTimer>
-
 #include <windows.h>
 
-#include <cassert>
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
 #include <thread>
 
 namespace
@@ -20,8 +15,8 @@ namespace
 void testUnsupportedFileSelectionIsExplicit()
 {
     auto session = webview::createWebViewSession({});
-    assert(session);
-    assert(!session->supports(webview::WebViewCapability::FileSelection));
+    ASSERT_TRUE(session);
+    ASSERT_TRUE(!session->supports(webview::WebViewCapability::FileSelection));
 }
 
 void testHostCompletionGuardIsThreadSafe()
@@ -31,56 +26,51 @@ void testHostCompletionGuardIsThreadSafe()
     webview::HostCompletionAccess workerAccess;
     std::thread worker([&] { workerAccess = guard->claim(); });
     worker.join();
-    assert(workerAccess.claim == webview::HostCompletionClaim::Accepted);
-    assert(guard->claim().claim == webview::HostCompletionClaim::Duplicate);
+    ASSERT_TRUE(workerAccess.claim == webview::HostCompletionClaim::Accepted);
+    ASSERT_TRUE(guard->claim().claim == webview::HostCompletionClaim::Duplicate);
 
     auto closedState = std::make_shared<webview::WebViewState>();
     closedState->close();
     webview::HostCompletionGuard closedGuard(closedState);
-    assert(closedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
+    ASSERT_TRUE(closedGuard.claim().claim == webview::HostCompletionClaim::OwnerUnavailable);
 }
 
 void testSnapshotDeletionRetriesAfterFileUnlock()
 {
-    QTemporaryDir sourceDirectory;
-    assert(sourceDirectory.isValid());
-    QFile source(sourceDirectory.filePath(QStringLiteral("resource.bin")));
-    assert(source.open(QIODevice::WriteOnly));
-    assert(source.write("resource") == 8);
-    source.close();
+    const auto sourceDirectory = std::filesystem::temp_directory_path() / "system-webview-contract-test";
+    std::filesystem::create_directories(sourceDirectory);
+    const auto sourcePath = sourceDirectory / "resource.bin";
+    std::ofstream(sourcePath) << "resource";
 
     auto state = std::make_shared<webview::WebViewState>();
     const webview::Url origin("https://trusted.example");
     state->setResourceContext(webview::Url("app://resource-test"), origin, "doc-1");
-    const auto published = state->resources->publishFile(source.fileName().toStdString());
-    assert(!published.token.empty());
+    const auto published = state->resources->publishFile(sourcePath.string());
+    ASSERT_FALSE(published.token.empty());
     auto response = state->resources->open({ published.url, origin, "doc-1" });
-    assert(response.status == 200);
+    ASSERT_TRUE(response.status == 200);
     const auto snapshotPath = response.body->path();
     response.body.reset();
     response.lease.reset();
 
     const auto path = webview::utf8ToWide(snapshotPath);
-    assert(path);
+    ASSERT_TRUE(path);
     HANDLE lockedFile = CreateFileW(path->c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    assert(lockedFile != INVALID_HANDLE_VALUE);
+    ASSERT_TRUE(lockedFile != INVALID_HANDLE_VALUE);
     state->resources->release(published.token);
-    assert(QFileInfo::exists(QString::fromStdString(snapshotPath)));
-    assert(state->resources->open({ published.url, origin, "doc-1" }).status == 410);
+    ASSERT_TRUE(std::filesystem::exists(snapshotPath));
+    ASSERT_EQ(state->resources->open({ published.url, origin, "doc-1" }).status, 410);
     CloseHandle(lockedFile);
 
-    QEventLoop loop;
-    QTimer::singleShot(1500, &loop, &QEventLoop::quit);
-    loop.exec();
-    assert(!QFileInfo::exists(QString::fromStdString(snapshotPath)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    ASSERT_FALSE(std::filesystem::exists(snapshotPath));
+    std::filesystem::remove_all(sourceDirectory);
 }
 }
 
-int main(int argc, char** argv)
+TEST(WindowsContract, ResourceAndCompletionBehavior)
 {
-    QApplication application(argc, argv);
     testUnsupportedFileSelectionIsExplicit();
     testHostCompletionGuardIsThreadSafe();
     testSnapshotDeletionRetriesAfterFileUnlock();
-    return 0;
 }

@@ -1,18 +1,9 @@
 #include <system_webview/system_webview.h>
-#include <system_webview/qt_host.h>
 
-#include <QApplication>
-#include <QEventLoop>
-#include <QFile>
-#include <QTcpServer>
-#include <QTcpSocket>
-#include <QTemporaryDir>
-#include <QTimer>
-#include <QVBoxLayout>
-#include <QWidget>
+#include "NativeTestSupport.h"
 
-#include <cassert>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -65,10 +56,8 @@ struct ServerStats
     int slowRequests = 0;
 };
 
-void serveConnection(QTcpSocket* socket, std::uint16_t port, ServerStats* stats)
+std::string serveConnection(std::string_view request, std::uint16_t port, ServerStats* stats)
 {
-    QObject::connect(socket, &QTcpSocket::readyRead, socket, [socket, port, stats] {
-        const auto request = socket->readAll().toStdString();
         std::string response;
         if (request.starts_with("GET /redirect ")) {
             response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + std::to_string(port)
@@ -82,16 +71,10 @@ void serveConnection(QTcpSocket* socket, std::uint16_t port, ServerStats* stats)
         }
         else if (request.starts_with("GET /slow ")) {
             ++stats->slowRequests;
-            QTimer::singleShot(500, socket, [socket] {
-                if (socket->state() == QAbstractSocket::ConnectedState) {
-                    const std::string body = "<!doctype html><title>slow</title>done";
-                    const auto response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(body.size())
-                        + "\r\nConnection: close\r\n\r\n" + body;
-                    socket->write(response.data(), static_cast<qint64>(response.size()));
-                    socket->disconnectFromHost();
-                }
-            });
-            return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            const std::string body = "<!doctype html><title>slow</title>done";
+            response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(body.size())
+                + "\r\nConnection: close\r\n\r\n" + body;
         }
         else {
             if (request.starts_with("GET /reload ")) {
@@ -101,17 +84,12 @@ void serveConnection(QTcpSocket* socket, std::uint16_t port, ServerStats* stats)
             response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(body.size())
                 + "\r\nConnection: close\r\n\r\n" + body;
         }
-        socket->write(response.data(), static_cast<qint64>(response.size()));
-        socket->disconnectFromHost();
-    });
-    QObject::connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        return response;
 }
 }
 
-int main(int argc, char** argv)
+TEST(MacOSView, NavigationBridgeAndLifecycle)
 {
-    QApplication application(argc, argv);
-
     webview::WebViewPolicyConfig config;
     config.allowedAppHosts.insert("bridge-test");
     config.trustedHttpsOrigins.insert("https://trusted.example");
@@ -127,10 +105,7 @@ int main(int argc, char** argv)
     bool hostileReturned = false;
     bool hostileExecuted = false;
     std::string hostileReturnedPayload;
-    QEventLoop loop;
-    QTimer timeout;
-    timeout.setSingleShot(true);
-    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    native_test::RunLoop loop;
 
     webview::WebViewHostCallbacks callbacks;
     callbacks.onLoad = [&](const webview::LoadEvent& event) {
@@ -150,8 +125,8 @@ int main(int argc, char** argv)
             loop.quit();
         }
         else {
-            assert(payload.at("message").get<std::string>() == "main");
-            assert(payload.at("resourceVerified").get<bool>());
+            ASSERT_EQ(payload.at("message").get<std::string>(), "main");
+            ASSERT_TRUE(payload.at("resourceVerified").get<bool>());
         }
     });
     const std::string html = R"HTML(
@@ -179,56 +154,48 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body></html>)HTML";
-    QTemporaryDir bridgeRoot;
-    assert(bridgeRoot.isValid());
-    QFile scriptResource(bridgeRoot.filePath(QStringLiteral("脚本.js")));
+    native_test::TempDir bridgeRoot;
+    ASSERT_TRUE(bridgeRoot.isValid());
+    const auto scriptPath = bridgeRoot.filePath("脚本.js");
     const auto scriptBytes = "window.resourceText='" + std::string(300 * 1024, 'x') + "结束';";
-    assert(scriptResource.open(QIODevice::WriteOnly));
-    assert(scriptResource.write(scriptBytes.data(), static_cast<qint64>(scriptBytes.size())) == static_cast<qint64>(scriptBytes.size()));
-    scriptResource.close();
-    QFile bridgeEntry(bridgeRoot.filePath(QStringLiteral("index.html")));
-    assert(bridgeEntry.open(QIODevice::WriteOnly));
-    assert(bridgeEntry.write(html.data(), static_cast<qint64>(html.size())) == static_cast<qint64>(html.size()));
-    bridgeEntry.close();
+    ASSERT_TRUE(native_test::writeFile(scriptPath, scriptBytes));
+    const auto bridgeEntry = bridgeRoot.filePath("index.html");
+    ASSERT_TRUE(native_test::writeFile(bridgeEntry, html));
     webview::WebApplicationOptions bridgeApplicationOptions;
     bridgeApplicationOptions.id = "bridge-test";
-    bridgeApplicationOptions.source = webview::LocalBundle { bridgeRoot.path().toStdString() };
+    bridgeApplicationOptions.source = webview::LocalBundle { bridgeRoot.path() };
     bridgeApplicationOptions.bridgeAccess = webview::BridgeAccess::Allowed;
     auto bridgeApplication = session->createApplication(std::move(bridgeApplicationOptions));
-    assert(bridgeApplication);
+    ASSERT_TRUE(bridgeApplication);
     view->open(bridgeApplication);
-    timeout.start(10000);
-    loop.exec();
+    loop.exec(std::chrono::seconds(10));
 
-    assert(!events.empty());
-    assert(events.front().state == webview::LoadState::Started);
-    assert(events.back().state == webview::LoadState::Finished);
-    assert(events.front().navigationId != 0);
+    ASSERT_TRUE(!events.empty());
+    ASSERT_EQ(events.front().state, webview::LoadState::Started);
+    ASSERT_EQ(events.back().state, webview::LoadState::Finished);
+    ASSERT_NE(events.front().navigationId, 0);
     const auto navigationId = events.front().navigationId;
     bool committed = false;
     for (const auto& event : events) {
-        assert(event.navigationId == navigationId);
+        ASSERT_EQ(event.navigationId, navigationId);
         committed = committed || event.state == webview::LoadState::Committed;
-        assert(event.state != webview::LoadState::Failed);
+        ASSERT_NE(event.state, webview::LoadState::Failed);
     }
-    assert(committed);
-    assert(messageCount == 1);
-    assert(popupCount == 0);
+    ASSERT_TRUE(committed);
+    ASSERT_EQ(messageCount, 1);
+    ASSERT_EQ(popupCount, 0);
 
     const auto eventCount = events.size();
     view->navigate(webview::Url("javascript:window.__policyBypass=true"));
-    QEventLoop rejectionLoop;
-    QTimer::singleShot(100, &rejectionLoop, &QEventLoop::quit);
-    rejectionLoop.exec();
-    assert(events.size() == eventCount);
+    native_test::runFor(std::chrono::milliseconds(100));
+    ASSERT_EQ(events.size(), eventCount);
 
     const std::string hostilePayload = "</script><script>window.__payloadExecuted=true</script>";
     view->bridge().emitEvent("hello", { { "message", hostilePayload } });
-    timeout.start(10000);
-    loop.exec();
-    assert(hostileReturned);
-    assert(hostileReturnedPayload == hostilePayload);
-    assert(!hostileExecuted);
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_TRUE(hostileReturned);
+    ASSERT_EQ(hostileReturnedPayload, hostilePayload);
+    ASSERT_FALSE(hostileExecuted);
 
     const std::string replayHtml = R"HTML(
 <!doctype html><script>
@@ -241,76 +208,64 @@ window.addEventListener('DOMContentLoaded', () => {
 </script>)HTML";
     events.clear();
     view->loadDocument(replayHtml, webview::Url("https://trusted.example/next.html"));
-    timeout.start(10000);
-    loop.exec();
-    assert(events.back().state == webview::LoadState::Finished);
-    assert(messageCount == 2);
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_EQ(events.back().state, webview::LoadState::Finished);
+    ASSERT_EQ(messageCount, 2);
 
-    QTcpServer server;
-    assert(server.listen(QHostAddress::LocalHost, 0));
     ServerStats serverStats;
-    QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
-        while (server.hasPendingConnections()) {
-            serveConnection(server.nextPendingConnection(), server.serverPort(), &serverStats);
-        }
-    });
+    native_test::HttpServer server([&](std::string_view request, std::uint16_t port) { return serveConnection(request, port, &serverStats); });
+    ASSERT_NE(server.port(), 0);
+    const auto urlFor = [&server](const char* path) { return webview::Url("http://127.0.0.1:" + std::to_string(server.port()) + path); };
     events.clear();
     policy->navigationRequests.clear();
-    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/redirect").arg(server.serverPort()).toStdString()));
-    timeout.start(10000);
-    loop.exec();
-    assert(!events.empty());
-    assert(events.front().state == webview::LoadState::Started);
-    assert(events.back().state == webview::LoadState::Finished);
+    view->navigate(urlFor("/redirect"));
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_TRUE(!events.empty());
+    ASSERT_EQ(events.front().state, webview::LoadState::Started);
+    ASSERT_EQ(events.back().state, webview::LoadState::Finished);
     const auto redirectNavigationId = events.front().navigationId;
     bool redirected = false;
     for (const auto& event : events) {
-        assert(event.navigationId == redirectNavigationId);
+        ASSERT_EQ(event.navigationId, redirectNavigationId);
         redirected = redirected || event.state == webview::LoadState::Redirected;
     }
-    assert(redirected);
+    ASSERT_TRUE(redirected);
     bool sawInitialRequest = false;
     bool sawRedirectRequest = false;
     for (const auto& request : policy->navigationRequests) {
         if (request.url.path() == "/redirect") {
             sawInitialRequest = true;
-            assert(!request.isRedirect);
+            ASSERT_FALSE(request.isRedirect);
         }
         else if (request.url.path() == "/final") {
             sawRedirectRequest = true;
-            assert(request.isRedirect);
+            ASSERT_TRUE(request.isRedirect);
         }
     }
-    assert(sawInitialRequest);
-    assert(sawRedirectRequest);
+    ASSERT_TRUE(sawInitialRequest);
+    ASSERT_TRUE(sawRedirectRequest);
 
     events.clear();
-    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/reload").arg(server.serverPort()).toStdString()));
-    timeout.start(10000);
-    loop.exec();
-    assert(events.back().state == webview::LoadState::Finished);
-    assert(serverStats.reloadRequests == 1);
+    view->navigate(urlFor("/reload"));
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_EQ(events.back().state, webview::LoadState::Finished);
+    ASSERT_EQ(serverStats.reloadRequests, 1);
     events.clear();
     view->reload();
-    timeout.start(10000);
-    loop.exec();
-    assert(events.back().state == webview::LoadState::Finished);
-    assert(serverStats.reloadRequests == 2);
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_EQ(events.back().state, webview::LoadState::Finished);
+    ASSERT_EQ(serverStats.reloadRequests, 2);
 
     events.clear();
-    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort()).toStdString()));
-    QEventLoop startedLoop;
-    QTimer::singleShot(100, &startedLoop, &QEventLoop::quit);
-    startedLoop.exec();
-    assert(!events.empty());
-    assert(events.front().state == webview::LoadState::Started);
+    view->navigate(urlFor("/slow"));
+    native_test::runFor(std::chrono::milliseconds(100));
+    ASSERT_TRUE(!events.empty());
+    ASSERT_EQ(events.front().state, webview::LoadState::Started);
     view->stop();
     const auto stoppedEventCount = events.size();
-    QEventLoop stoppedLoop;
-    QTimer::singleShot(700, &stoppedLoop, &QEventLoop::quit);
-    stoppedLoop.exec();
-    assert(events.size() >= stoppedEventCount);
-    assert(events.empty() || events.back().state != webview::LoadState::Finished);
+    native_test::runFor(std::chrono::milliseconds(700));
+    ASSERT_GE(events.size(), stoppedEventCount);
+    ASSERT_TRUE(events.empty() || events.back().state != webview::LoadState::Finished);
 
     policy->permissionRequests.clear();
     events.clear();
@@ -320,40 +275,32 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
 </script>)HTML",
         webview::Url("https://trusted.example/file-input.html"));
-    timeout.start(10000);
-    loop.exec();
-    QEventLoop permissionLoop;
-    QTimer::singleShot(100, &permissionLoop, &QEventLoop::quit);
-    permissionLoop.exec();
-    assert(policy->permissionRequests.empty());
+    loop.exec(std::chrono::seconds(10));
+    native_test::runFor(std::chrono::milliseconds(100));
+    ASSERT_TRUE(policy->permissionRequests.empty());
 
     policy->downloadRequests.clear();
     events.clear();
-    view->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/download").arg(server.serverPort()).toStdString()));
-    QEventLoop downloadLoop;
-    QTimer::singleShot(500, &downloadLoop, &QEventLoop::quit);
-    downloadLoop.exec();
-    assert(!policy->downloadRequests.empty());
-    assert(policy->downloadRequests.back().url.path() == "/download");
+    view->navigate(urlFor("/download"));
+    native_test::runFor(std::chrono::milliseconds(500));
+    ASSERT_TRUE(!policy->downloadRequests.empty());
+    ASSERT_EQ(policy->downloadRequests.back().url.path(), "/download");
 
     auto raceView = session->createWebView({});
     int raceCallbacks = 0;
     webview::WebViewHostCallbacks raceCallbacksConfig;
     raceCallbacksConfig.onLoad = [&](const webview::LoadEvent&) { ++raceCallbacks; };
     raceView->setHostCallbacks(std::move(raceCallbacksConfig));
-    raceView->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/slow").arg(server.serverPort()).toStdString()));
+    raceView->navigate(urlFor("/slow"));
     raceView->close();
     const auto callbacksAtClose = raceCallbacks;
-    QEventLoop raceLoop;
-    QTimer::singleShot(700, &raceLoop, &QEventLoop::quit);
-    raceLoop.exec();
-    assert(raceView->isClosed());
-    assert(raceCallbacks == callbacksAtClose);
+    native_test::runFor(std::chrono::milliseconds(700));
+    ASSERT_TRUE(raceView->isClosed());
+    ASSERT_EQ(raceCallbacks, callbacksAtClose);
 
     server.close();
-    QTcpServer unavailableServer;
-    assert(unavailableServer.listen(QHostAddress::LocalHost, 0));
-    const auto unavailablePort = unavailableServer.serverPort();
+    native_test::HttpServer unavailableServer([](std::string_view, std::uint16_t) { return std::string(); });
+    const auto unavailablePort = unavailableServer.port();
     unavailableServer.close();
     auto failureView = session->createWebView({});
     std::vector<webview::LoadEvent> failureEvents;
@@ -365,21 +312,24 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
         }
     };
     failureView->setHostCallbacks(std::move(failureCallbacks));
-    failureView->navigate(webview::Url(QStringLiteral("http://127.0.0.1:%1/unavailable").arg(unavailablePort).toStdString()));
-    timeout.start(10000);
-    loop.exec();
-    assert(!failureEvents.empty());
-    assert(failureEvents.front().state == webview::LoadState::Started);
-    assert(failureEvents.back().state == webview::LoadState::Failed);
-    assert(!failureEvents.back().error.empty());
+    failureView->navigate(webview::Url("http://127.0.0.1:" + std::to_string(unavailablePort) + "/unavailable"));
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_TRUE(!failureEvents.empty());
+    ASSERT_EQ(failureEvents.front().state, webview::LoadState::Started);
+    ASSERT_EQ(failureEvents.back().state, webview::LoadState::Failed);
+    ASSERT_TRUE(!failureEvents.back().error.empty());
 
     webview::WebViewPtr popup;
-    webview::QtHostWidget popupHost;
+    NSWindow* popupWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 640, 480)
+                                                         styleMask:NSWindowStyleMaskTitled
+                                                           backing:NSBackingStoreBuffered
+                                                             defer:NO];
+    webview::WebViewHost popupHost { popupWindow.contentView, 640, 480, true };
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
-    popupCallbacks.createPopupHost = [&](const webview::NewWindowRequest&) { return popupHost.webViewHost(); };
+    popupCallbacks.createPopupHost = [&](const webview::NewWindowRequest&) { return popupHost; };
     popupCallbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
-        assert(child->initializationState() == webview::InitializationState::Ready);
+        ASSERT_EQ(child->initializationState(), webview::InitializationState::Ready);
         child->attachNativeView();
         popup = std::move(child);
         loop.quit();
@@ -391,31 +341,30 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
 window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
 </script>)HTML",
         webview::Url("https://trusted.example/popup-opener.html"));
-    timeout.start(10000);
-    loop.exec();
-    assert(popup);
-    assert(!popup->isClosed());
+    loop.exec(std::chrono::seconds(10));
+    ASSERT_TRUE(popup);
+    ASSERT_FALSE(popup->isClosed());
     popup->attachNativeView();
     session.reset();
-    assert(view->isClosed());
-    assert(popup->isClosed());
+    ASSERT_TRUE(view->isClosed());
+    ASSERT_TRUE(popup->isClosed());
     const auto navigationRequestCount = policy->navigationRequests.size();
     view->navigate(webview::Url("https://trusted.example/after-session"));
-    assert(policy->navigationRequests.size() == navigationRequestCount);
+    ASSERT_EQ(policy->navigationRequests.size(), navigationRequestCount);
     bool rootClosed = false;
     bool popupClosed = false;
     view->bridge().call(
         "hello", webview::Json::object(), [&](const webview::Json&, const std::string& error) { rootClosed = !error.empty(); });
     popup->bridge().call(
         "hello", webview::Json::object(), [&](const webview::Json&, const std::string& error) { popupClosed = !error.empty(); });
-    assert(rootClosed);
-    assert(popupClosed);
+    ASSERT_TRUE(rootClosed);
+    ASSERT_TRUE(popupClosed);
 
     view->close();
     view->close();
-    assert(view->isClosed());
+    ASSERT_TRUE(view->isClosed());
     bool closed = false;
     view->bridge().call(
         "hello", { { "message", "late" } }, [&](const webview::Json&, const std::string& error) { closed = !error.empty(); });
-    assert(closed);
+    ASSERT_TRUE(closed);
 }

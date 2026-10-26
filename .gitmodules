@@ -16,3 +16,6 @@
 [submodule "3rdparty/sdl3"]
 	path = 3rdparty/sdl3
 	url = https://github.com/libsdl-org/SDL.git
+[submodule "3rdparty/googletest"]
+	path = 3rdparty/googletest
+	url = https://github.com/google/googletest.git
