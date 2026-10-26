@@ -1,4 +1,3 @@
-enable_language(OBJCXX)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_PLATFORM_MACOS=1)
 
 find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
@@ -6,10 +5,9 @@ find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
 find_library(SECURITY_FRAMEWORK Security REQUIRED)
 
 target_sources(system_webview PRIVATE
-    src/webview/WebViewFactory.cpp
-    src/platform/macos/WkPolicyMapping.cpp
-    src/platform/macos/WkWebView.mm
-    src/platform/macos/WkWebViewSession.mm
+    "${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/macos/WkPolicyMapping.cpp"
+    "${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/macos/WkWebView.mm"
+    "${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/macos/WkWebViewSession.mm"
 )
 target_link_libraries(system_webview PRIVATE
     "${WEBKIT_FRAMEWORK}"

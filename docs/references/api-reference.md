@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 14:49 CST
-> 文档版本：v18
-> 修改说明：说明 WebViewHost 动态刷新宿主句柄、尺寸和可见性。
+> 最后修改时间：2026-10-26 21:05 CST
+> 文档版本：v19
+> 修改说明：明确桥接传输和资源响应类型属于库内部合同，不作为调用方接口。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -21,7 +21,7 @@
 
 Windows 原生边界使用 simdutf 严格转换 UTF-8/UTF-16，非法编码不替换为占位字符。传给 WebView2 和 Win32 的 NUL 结尾文本拒绝嵌入 NUL；编码失败按对应接口报告发送失败、初始化/导航失败、资源错误或取消下载。macOS 保留 Foundation 转换。
 
-这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
+这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport`、`WebViewBridge::receive()` 以及资源请求/响应类型只供库内部后端使用，不属于调用方接口；调用方通过 `WebViewBridge` 的事件、请求和回复方法交换 JSON。
 
 ## 所有权
 
@@ -62,7 +62,7 @@ struct WebViewSessionOptions {
 
 接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名）。宿主窗口通过框架无关的 `WebViewHost` 描述传入，Qt、GLFW、SDL 和平台原生适配器各自提供实现。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
 
-这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
+这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport`、`WebViewBridge::receive()` 以及资源请求/响应类型只供库内部后端使用，不属于调用方接口；调用方通过 `WebViewBridge` 的事件、请求和回复方法交换 JSON。
 
 ## IWebViewSession
 
@@ -568,3 +568,4 @@ int main(int argc, char* argv[])
 | v16 | 2026-10-26 11:29 CST | 同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。 |
 | v17 | 2026-10-26 14:20 CST | 同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。 |
 | v18 | 2026-10-26 14:49 CST | 说明 WebViewHost 动态刷新宿主句柄、尺寸和可见性。 |
+| v19 | 2026-10-26 21:05 CST | 明确桥接传输和资源响应类型属于库内部合同，不作为调用方接口。 |

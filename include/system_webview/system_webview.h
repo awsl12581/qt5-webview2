@@ -54,6 +54,7 @@
 
 namespace webview
 {
+// Public host and value types.
 /// Framework-neutral native host supplied by the application.
 struct WebViewHost
 {
@@ -70,27 +71,7 @@ struct WebViewHost
 /// UTF-8 JSON values. Payloads must be objects; use Json::object() for an empty payload.
 using Json = nlohmann::json;
 
-class ResourceBody
-{
-public:
-    virtual ~ResourceBody() = default;
-    virtual std::int64_t read(char* data, std::int64_t maximum) = 0;
-    virtual bool seek(std::int64_t offset) = 0;
-    virtual std::string path() const = 0;
-};
-
-enum class JsonType : int
-{
-    Null,
-    Boolean,
-    Number,
-    String,
-    Array,
-    Object
-};
-
-// All standard strings in this API contain UTF-8 text (including filesystem paths).
-// BridgeTransport strings contain length-delimited UTF-8 JSON bytes.
+// All standard strings in this API contain UTF-8 text, including filesystem paths.
 class IWebView;
 /// Owns one web view. Destroying it closes the underlying native view.
 using WebViewPtr = std::unique_ptr<IWebView>;
@@ -113,9 +94,10 @@ struct DiagnosticEvent
     std::string message;
 };
 
-/// Receives library diagnostics. The callback runs on the thread that emitted the event.
+/// Receives library diagnostics on the thread that emitted the event.
 using DiagnosticHandler = std::function<void(const DiagnosticEvent&)>;
 
+// URL.
 /// Absolute URL parsed and serialized according to the WHATWG URL Standard.
 class SYSTEM_WEBVIEW_API Url
 {
@@ -170,6 +152,7 @@ struct InitializationResult
     std::string error;
 };
 
+// Lifecycle and navigation.
 struct LoadEvent
 {
     LoadState state = LoadState::Started;
@@ -262,6 +245,7 @@ enum class ExternalNetworkAccess : int
     Allowed ///< Do not add the host-provided external network restriction.
 };
 
+// Application and session configuration.
 struct LocalBundle
 {
     /// Absolute directory containing the bundle.
@@ -419,6 +403,17 @@ struct WebViewSessionHostCallbacks
     std::function<void(const RuntimeFailureEvent&)> onRuntimeFailure;
 };
 
+// Bridge API.
+enum class JsonType : int
+{
+    Null,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object
+};
+
 enum class BridgeMessageKind : int
 {
     Event,   ///< Fire-and-forget notification; requestId and error are empty.
@@ -436,6 +431,8 @@ struct BridgeMessage
     std::string error;
 };
 
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
+// Backend-only bridge transport. It is omitted from installed consumer headers.
 class BridgeTransport
 {
 public:
@@ -445,6 +442,7 @@ public:
     /// Permanently disconnects this transport.
     virtual void invalidate() = 0;
 };
+#endif
 
 /// Structured, schema-validated messaging between the current page and C++.
 class SYSTEM_WEBVIEW_API WebViewBridge final
@@ -454,9 +452,16 @@ public:
     using EventHandler = std::function<void(const Json&)>;
     using Reply = std::function<void(const Json&, const std::string&)>;
     using RequestHandler = std::function<void(const Json&, Reply)>;
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
     using Validator = std::function<bool(const BridgeMessage&, bool, int, std::string*)>;
+#endif
 
-    explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport = {});
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
+    WebViewBridge();
+    explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport);
+#else
+    WebViewBridge();
+#endif
     ~WebViewBridge();
 
     WebViewBridge(const WebViewBridge&) = delete;
@@ -470,11 +475,13 @@ public:
     void setEventHandler(const std::string& type, EventHandler handler);
     /// Sets the sole request handler for type; pass empty to remove it. Replies once.
     void setRequestHandler(const std::string& type, RequestHandler handler);
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
     void setValidator(Validator validator);
     void setTransport(std::unique_ptr<BridgeTransport> transport);
     void receive(const std::string& message, const Url& source = {});
     void cancelPending(const std::string& error = "Bridge request cancelled.");
     void invalidate();
+#endif
 
 private:
     friend class WebViewState;
@@ -484,12 +491,24 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// Published resources.
 struct PublishedResource
 {
     std::string token;
     Url url;
     std::string mimeType;
     std::int64_t size = -1;
+};
+
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
+// Backend-only resource stream and request/response types. They are omitted from installed consumer headers.
+class ResourceBody
+{
+public:
+    virtual ~ResourceBody() = default;
+    virtual std::int64_t read(char* data, std::int64_t maximum) = 0;
+    virtual bool seek(std::int64_t offset) = 0;
+    virtual std::string path() const = 0;
 };
 
 struct ResourceRequest
@@ -513,6 +532,7 @@ struct ResourceResponse
     std::unique_ptr<ResourceBody> body;
     bool acceptRanges = false;
 };
+#endif
 
 class WebResourceManager final
 {
@@ -524,8 +544,10 @@ public:
     /// An empty token indicates failure. Release the token when the page is done.
     SYSTEM_WEBVIEW_API PublishedResource
         publishFile(const std::string& path, const std::string& mimeType = {}, const std::string& documentToken = {});
-    /// Resolves a published URL. Intended for platform backends and tests.
+    /// Resolves a published URL for platform backends and tests.
+#if defined(SYSTEM_WEBVIEW_BUILDING_LIBRARY)
     SYSTEM_WEBVIEW_API ResourceResponse open(const ResourceRequest& request) const;
+#endif
     SYSTEM_WEBVIEW_API void release(const std::string& token);
 
 private:
@@ -541,6 +563,7 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// View and session interfaces.
 class IWebView
 {
 public:
@@ -596,6 +619,7 @@ public:
 /// Owns session state shared by its applications and views.
 using WebViewSessionPtr = std::unique_ptr<IWebViewSession>;
 
+// Security policy.
 struct BridgeMessageSchema
 {
     std::unordered_map<std::string, JsonType> requiredPayloadFields;

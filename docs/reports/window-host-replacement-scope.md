@@ -1,8 +1,8 @@
 # 窗口和控件宿主替代范围调研
 
-> 最后修改时间：2026-10-26 14:49 CST
-> 文档版本：v14
-> 修改说明：修复宿主创建后尺寸和可见性不刷新的问题，适配器现在提供状态刷新回调。
+> 最后修改时间：2026-10-26 20:06 CST
+> 文档版本：v15
+> 修改说明：同步 Qt、GLFW、SDL3 宿主适配器的统一 CMake 配置和默认开关。
 
 ## 结论
 
@@ -119,7 +119,7 @@ struct WebViewHost {
 
 第三阶段已在 [system_webview.h](../../include/system_webview/system_webview.h) 增加 `WebViewHost` 和 `createWebView(WebViewHost)`，并删除 QWidget 创建接口。宿主描述包含原生句柄、初始几何/可见性以及 UI 投递和变化观察回调；[HostView.h](../../src/internal/HostView.h) 提供 `ExternalHostView` 将其接入平台后端。
 
-第四阶段新增 [glfw_host.h](../../include/system_webview/glfw_host.h) 和 [sdl3_host.h](../../include/system_webview/sdl3_host.h)，分别从 GLFW 3 和 SDL 3 窗口生成 `WebViewHost`。CMake 选项 `SYSTEM_WEBVIEW_BUILD_GLFW_HOST`、`SYSTEM_WEBVIEW_BUILD_SDL3_HOST` 默认关闭；启用后分别构建 `system_webview_glfw_host`、`system_webview_sdl3_host` 接口目标。Qt、GLFW、SDL 三种宿主实现共用同一公共创建接口，不通过运行时插件切换。
+第四阶段新增 [glfw_host.h](../../include/system_webview/glfw_host.h) 和 [sdl3_host.h](../../include/system_webview/sdl3_host.h)，分别从 GLFW 3 和 SDL 3 窗口生成 `WebViewHost`。CMake 选项 `SYSTEM_WEBVIEW_BUILD_GLFW_HOST`、`SYSTEM_WEBVIEW_BUILD_SDL3_HOST` 默认开启，`SYSTEM_WEBVIEW_BUILD_QT_HOST` 默认关闭；启用后分别构建对应的接口目标。Qt、GLFW、SDL 三种宿主实现共用同一公共创建接口，不通过运行时插件切换。
 
 第五阶段新增 [qt_host.h](../../include/system_webview/qt_host.h) 和 `system_webview_qt_host` 接口目标。Qt 应用创建 `QtHostWidget` 后，将 `webViewHost()` 传给 `createWebView(WebViewHost)`。popup 通过 `WebViewHostCallbacks::createPopupHost` 由应用提供子宿主，平台后端不再创建 Qt 宿主。`createWebView(QWidget*)` 入口已删除，三种宿主适配器统一使用 `WebViewHost`，并分别拥有独立公共入口和构建目标。
 
@@ -149,3 +149,4 @@ struct WebViewHost {
 | v12 | 2026-10-26 14:10 CST | 修正阶段 5 收尾文案，明确 v2 不提供 QWidget 兼容入口、deprecated alias 或迁移 wrapper。 |
 | v13 | 2026-10-26 14:20 CST | 删除 `QtHostView` 和 HostView 中的 Qt 类型，popup 改由宿主适配器提供 `WebViewHost`。 |
 | v14 | 2026-10-26 14:49 CST | 为宿主适配器增加动态状态刷新，修复 view 创建时 host 尚未显示或布局导致的空白页面。 |
+| v15 | 2026-10-26 20:06 CST | 同步 Qt、GLFW、SDL3 宿主适配器的统一 CMake 配置和默认开关。 |

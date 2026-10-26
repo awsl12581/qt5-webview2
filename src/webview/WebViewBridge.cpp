@@ -152,6 +152,11 @@ WebViewBridge::WebViewBridge(std::unique_ptr<BridgeTransport> transport)
     impl_->transport = std::move(transport);
 }
 
+WebViewBridge::WebViewBridge()
+    : WebViewBridge(std::unique_ptr<BridgeTransport> {})
+{
+}
+
 WebViewBridge::~WebViewBridge()
 {
     invalidate();

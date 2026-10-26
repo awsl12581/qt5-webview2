@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-26 11:29 CST
-> 文档版本：v6
-> 修改说明：Documented nlohmann/json API, submodules, and installed dependencies.
+> 最后修改时间：2026-10-26 20:12 CST
+> 文档版本：v7
+> 修改说明：Documented add_subdirectory integration, unified host options, and default SDL3/GLFW builds.
 
 A small C++20 library for embedding the operating system's web view in a C++ application.
 
@@ -40,9 +40,9 @@ The demo also shows a frameless window whose title bar and controls live in the 
 
 | Platform | Backend | Toolchain | Notes |
 | --- | --- | --- | --- |
-| Windows AMD64 | Microsoft WebView2 | MSVC v143, Qt 5.15 | Requires the WebView2 Evergreen Runtime |
-| Windows ARM64 | Microsoft WebView2 | MSVC, Qt 5.15 | Uses the `arm64-windows` vcpkg triplet |
-| macOS | WKWebView | Apple Clang, Qt 5.15 | Uses the system WebKit framework |
+| Windows AMD64 | Microsoft WebView2 | MSVC v143 | Requires the WebView2 Evergreen Runtime |
+| Windows ARM64 | Microsoft WebView2 | MSVC | Uses the `arm64-windows` vcpkg triplet |
+| macOS | WKWebView | Apple Clang | Uses the system WebKit framework |
 
 Linux is not implemented. WebKit2GTK is documented as a future mapping only.
 
@@ -60,10 +60,10 @@ Use a separate subdirectory under `build/` for temporary installation checks, ke
 
 ## Build on Windows
 
-The presets expect a sibling vcpkg checkout at `../vcpkg`. Install Qt and the WebView2 SDK for your architecture first:
+The presets expect a sibling vcpkg checkout at `../vcpkg`. Install the WebView2 SDK for your architecture first:
 
 ```powershell
-..\vcpkg\vcpkg install qt5-base:x64-windows webview2:x64-windows
+..\vcpkg\vcpkg install webview2:x64-windows
 ```
 
 For ARM64, replace `x64-windows` with `arm64-windows`.
@@ -86,14 +86,22 @@ The vcpkg package supplies the WebView2 SDK and Loader. The target computer stil
 
 ## Build on macOS
 
-The macOS presets expect Homebrew Qt 5 at `/opt/homebrew/opt/qt@5`:
+The default macOS build uses the native backend and GLFW3/SDL3 host adapters. Install CMake and Ninja:
 
 ```sh
-brew install cmake ninja qt@5
+brew install cmake ninja
 cmake --preset macos-appleclang-debug
 cmake --build --preset macos-appleclang-debug
 ctest --preset macos-appleclang-debug --output-on-failure
+```
+
+Enable the optional Qt host/sample with `-DSYSTEM_WEBVIEW_BUILD_QT_HOST=ON -DSYSTEM_WEBVIEW_BUILD_QT_SAMPLE=ON` and install `qt@5`.
+
+Run the Qt sample when it is enabled:
+
+```sh
 ./build/macos-appleclang-debug/samples/demo/system_webview_qt5_demo
+```
 
 The same debug preset also builds the framework-specific host samples:
 
@@ -187,5 +195,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | v4 | 2026-10-25 21:51 CST | Documented C++20 requirements and the isolated verification preset. |
 | v5 | 2026-10-25 22:20 CST | Updated examples for UTF-8 standard strings and standard containers in the public API. |
 | v6 | 2026-10-26 11:29 CST | Documented nlohmann/json API, submodules, and installed dependencies. |
+| v7 | 2026-10-26 20:12 CST | Documented add_subdirectory integration, unified host options, and default SDL3/GLFW builds. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

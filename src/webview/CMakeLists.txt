@@ -1,0 +1,14 @@
+set(SYSTEM_WEBVIEW_WEBVIEW_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/TextEncoding.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Url.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Application.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Diagnostics.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebViewBridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebResourceManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/JsonMessage.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/HostCompletion.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ResourceMapping.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebViewPolicy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebViewState.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/WebViewFactory.cpp
+    PARENT_SCOPE)

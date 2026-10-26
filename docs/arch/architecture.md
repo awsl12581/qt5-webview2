@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 18:47 CST
-> 文档版本：v23
-> 修改说明：同步核心脱 Qt、GoogleTest 测试迁移和原生平台测试边界。
+> 最后修改时间：2026-10-26 20:23 CST
+> 文档版本：v25
+> 修改说明：同步公共头文件分组及内部后端合同隐藏边界。
 
 `system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
@@ -14,6 +14,13 @@ object layout. Pure interfaces and value types remain direct declarations.
 Public scoped enums explicitly use `int` as their underlying type, keeping their representation stable across the shared-library boundary.
 
 The project builds C++ and Objective-C++ sources as C++20 and exports the C++20 requirement to consumers.
+The root CMake file only composes project modules. Production sources are organized under `src/internal`, `src/webview`,
+and `src/platform`; GoogleTest targets are defined under `tests`; and host samples remain under `samples`.
+Platform-specific backend configuration remains in `cmake/platform`, while the core target, host adapters, installation,
+and optional samples/tests are configured by their respective build sections.
+The installed public header contains caller-facing values, policies, callbacks, bridge operations, resource publication,
+and session/view interfaces. Backend-only transport, resource-stream, resource-request/response, and validation hooks are
+available only while building the library and are not part of the installed consumer surface.
 Internal application IDs, routes, diagnostic text, resource paths, and script text use UTF-8 standard strings;
 resource mappings use `std::vector`, and application-ID sets use `std::unordered_set`.
 The portable webview implementation also stores document tokens, initialization errors, bridge handler keys,
@@ -128,7 +135,7 @@ Large local files use `IWebView::resources().publishFile()`. The manager creates
 
 Operational results remain part of the typed API: initialization uses `InitializationResult`, navigation uses `LoadEvent`, and asynchronous operations use their completion result types. Diagnostics do not replace these contracts.
 
-The library emits internal diagnostics through six Qt logging categories: lifecycle, navigation, policy, bridge, resource, and runtime. Messages use stable event codes and process-local session/view/navigation IDs. Debug events are disabled by default. The host controls Qt filtering and installs any message handler needed for persistence, rotation, or upload. The library does not create log files.
+The library emits internal diagnostics through six categories: lifecycle, navigation, policy, bridge, resource, and runtime. Messages use stable event codes and process-local session/view/navigation IDs. The host receives them through the standard C++ diagnostic callback and controls filtering, formatting, persistence, rotation, or upload. The library does not create log files and does not require a logging backend.
 
 Native runtime failures have a separate typed path. View-scoped failures reach `WebViewHostCallbacks::onRuntimeFailure`; session-scoped browser-process failures reach `WebViewSessionHostCallbacks::onRuntimeFailure`. Closed objects suppress late callbacks. On macOS this path uses `webViewWebContentProcessDidTerminate:`. On Windows it uses WebView2 `ProcessFailed` and browser-process-exit events.
 
@@ -149,7 +156,7 @@ Crash dumps remain a process-level host responsibility. The library does not ins
 
 The macOS WKWebView and Windows WebView2 backends are implemented. WebKit2GTK remains a design mapping only. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
 
-On Windows, the ARM64 and AMD64 CMake presets use vcpkg classic mode. Install the matching Qt and WebView2 packages (`qt5-base:arm64-windows` and `webview2:arm64-windows`, or `qt5-base:x64-windows` and `webview2:x64-windows`) in the sibling vcpkg checkout before configuring. These dependencies provide the SDK, import libraries, `WebView2Loader.dll`, and Qt libraries. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
+On Windows, the ARM64 and AMD64 CMake presets use vcpkg classic mode. Install the matching WebView2 package (`webview2:arm64-windows` or `webview2:x64-windows`) in the sibling vcpkg checkout before configuring the core library. Qt5 is needed only when the optional Qt host or Qt sample is enabled. The WebView2 package provides the SDK, import libraries, and `WebView2Loader.dll`. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
 
 Views in one macOS session share its website data store and assigned `WKProcessPool`; each view receives a separate `WKUserContentController` and delegate set. `WKProcessPool` is deprecated on macOS 12 and later because multiple instances no longer affect isolation. It remains assigned for older systems and configuration identity, not as a modern process-isolation guarantee.
 
@@ -185,3 +192,6 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v20 | 2026-10-26 14:20 CST | 同步框架无关 HostView 和 popup 宿主交接设计。 |
 | v21 | 2026-10-26 14:49 CST | 记录 WebViewHost 动态刷新宿主状态，避免初始零尺寸或隐藏状态阻止页面挂载。 |
 | v22 | 2026-10-26 15:05 CST | 同步 Qt5、GLFW3 和 SDL3 三个示例目标名称。 |
+| v23 | 2026-10-26 18:47 CST | 同步核心脱 Qt、GoogleTest 测试迁移和原生平台测试边界。 |
+| v24 | 2026-10-26 19:28 CST | 同步 src/tests/samples CMake 子目录拆分，修正 Qt 日志和 Windows Qt 依赖描述。 |
+| v25 | 2026-10-26 20:23 CST | 同步公共头文件分组及内部后端合同隐藏边界。 |
