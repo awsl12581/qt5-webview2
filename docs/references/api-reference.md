@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 11:29 CST
-> 文档版本：v16
-> 修改说明：同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。
+> 最后修改时间：2026-10-26 14:20 CST
+> 文档版本：v17
+> 修改说明：同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -17,7 +17,7 @@
 
 `src/` 下的头文件属于库内部实现，不安装给使用方。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名），流和控件继续使用 `QIODevice` 和 `QWidget`。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名）。宿主窗口通过框架无关的 `WebViewHost` 描述传入，Qt、GLFW、SDL 和平台原生适配器各自提供实现。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
 
 Windows 原生边界使用 simdutf 严格转换 UTF-8/UTF-16，非法编码不替换为占位字符。传给 WebView2 和 Win32 的 NUL 结尾文本拒绝嵌入 NUL；编码失败按对应接口报告发送失败、初始化/导航失败、资源错误或取消下载。macOS 保留 Foundation 转换。
 
@@ -33,7 +33,7 @@ using WebViewPolicyPtr = std::shared_ptr<const WebViewPolicy>;
 ```
 
 - `IWebViewSession` 管理共享的浏览器配置、缓存和 Cookie。
-- `IWebView` 管理一个原生页面及其 Qt 控件。
+- `IWebView` 管理一个原生页面及其外部宿主。
 - 销毁 session 会关闭它创建的所有 view。已经持有的 `WebViewPtr` 仍可销毁或调用 `isClosed()`，但不能继续浏览。
 - 宿主负责保存 `WebViewPtr`，并在销毁对应界面前调用 `detachNativeView()` 和 `close()`。
 
@@ -60,7 +60,7 @@ struct WebViewSessionOptions {
 
 `Persistent` 保留站点数据，`Ephemeral` 使用临时会话。Windows 将 `profilePath` 作为 WebView2 用户数据目录；macOS 的公开 WKWebView API 不保证数据存放在该物理路径。
 
-接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名），流和控件继续使用 `QIODevice` 和 `QWidget`。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
+接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON 使用 `webview::Json`（`nlohmann::json` 别名）。宿主窗口通过框架无关的 `WebViewHost` 描述传入，Qt、GLFW、SDL 和平台原生适配器各自提供实现。JSON 的键和字符串直接使用 UTF-8；Qt 界面文本在显示时显式转换。
 
 这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
@@ -78,7 +78,7 @@ public:
     virtual InitializationState initializationState() const = 0;
     virtual void whenInitialized(InitializationCompletion completion) = 0;
     virtual WebApplicationPtr createApplication(WebApplicationOptions options) = 0;
-    virtual WebViewPtr createWebView(QWidget* parent = nullptr) = 0;
+    virtual WebViewPtr createWebView(WebViewHost host) = 0;
     virtual void clearCache(ClearCompletion completion = {}) = 0;
     virtual void clearCookies(ClearCompletion completion = {}) = 0;
     virtual void clearWebsiteData(ClearCompletion completion = {}) = 0;
@@ -147,7 +147,6 @@ public:
     using InitializationCompletion = std::function<void(const InitializationResult&)>;
 
     virtual ~IWebView() = default;
-    virtual QWidget* widget() = 0;
     virtual InitializationState initializationState() const = 0;
     virtual void whenInitialized(InitializationCompletion completion) = 0;
     virtual void attachNativeView() = 0;
@@ -165,13 +164,12 @@ public:
 };
 ```
 
-推荐挂载顺序：
+推荐挂载顺序（Qt）：
 
-1. 调用 `createWebView(parent)`。
-2. 把 `widget()` 放进最终的 Qt 布局。
-3. 调用 `setHostCallbacks()`。
-4. 调用 `open()`。
-5. 激活布局后调用 `attachNativeView()`。
+1. 创建 `QtHostWidget` 并将其放进最终的 Qt 布局。
+2. 调用 `createWebView(host.webViewHost())`。
+3. 调用 `setHostCallbacks()` 和 `open()`。
+4. 激活布局后调用 `attachNativeView()`。
 
 `close()` 可以重复调用。页面关闭后，其余浏览与消息操作不会重新激活页面。
 
@@ -204,6 +202,7 @@ struct LoadEvent {
 struct WebViewHostCallbacks {
     std::function<void(const LoadEvent&)> onLoad;
     std::function<void(const webview::Url&)> onOpenExternal;
+    std::function<WebViewHost(const NewWindowRequest&)> createPopupHost;
     std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
     std::function<void(const FileSelectionRequest&, FileSelectionCompletion)> onSelectFiles;
     std::function<void(const DownloadRequest&, DownloadCompletion)> onResolveDownload;
@@ -217,6 +216,7 @@ struct WebViewSessionHostCallbacks {
 
 - `onLoad` 接收主页面加载状态。
 - `onOpenExternal` 在策略返回 `OpenExternally` 时调用。
+- `createPopupHost` 在允许创建 popup 前提供子页面宿主。若返回的 `WebViewHost` 没有有效原生句柄，popup 会被取消。
 - `onNewWindow` 把新建页面的所有权交给宿主。若接受该页面，必须在回调返回前保存传入的 `WebViewPtr`。
 - `onSelectFiles` 和 `onResolveDownload` 由宿主完成用户交互，并各自调用 completion 一次。
 - view 的 `onRuntimeFailure` 接收 WebView2 `ProcessFailed` 或 WKWebView 内容进程终止事件；session 的同名回调接收 WebView2 环境报告的 browser process 故障。同一次 WebView2 browser process 故障可能在两个作用域各报告一次。
@@ -492,6 +492,7 @@ enum class WebViewCapability : int {
 
 ```cpp
 #include <system_webview/system_webview.h>
+#include <system_webview/qt_host.h>
 
 #include <QApplication>
 #include <QDebug>
@@ -524,8 +525,9 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    auto view = session->createWebView(&window);
-    layout->addWidget(view->widget());
+    auto* host = new webview::QtHostWidget(&window);
+    layout->addWidget(host);
+    auto view = session->createWebView(host->webViewHost());
 
     webview::WebViewHostCallbacks callbacks;
     callbacks.onLoad = [](const webview::LoadEvent& event) {
@@ -564,3 +566,4 @@ int main(int argc, char* argv[])
 | v14 | 2026-10-26 10:58 CST | 说明 utf8proc 应用 ID 校验及 Unicode 码点规则。 |
 | v15 | 2026-10-26 11:10 CST | 补充 Windows 原生文本边界的严格编码和 NUL 规则。 |
 | v16 | 2026-10-26 11:29 CST | 同步 nlohmann/json 公开类型、schema 和严格 JSON 规则。 |
+| v17 | 2026-10-26 14:20 CST | 同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。 |

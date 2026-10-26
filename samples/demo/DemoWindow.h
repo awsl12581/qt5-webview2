@@ -8,6 +8,7 @@
 
 class QLabel;
 class QTabWidget;
+namespace webview { class QtHostWidget; }
 
 namespace samples::demo
 {
@@ -17,10 +18,11 @@ public:
     DemoWindow();
 
 private:
-    void addTab(webview::WebViewPtr webView, const std::string& title);
+    void addTab(webview::WebViewPtr webView, const std::string& title, webview::QtHostWidget* host = nullptr);
 
     QTabWidget* tabs_ = nullptr;
     QLabel* status_ = nullptr;
+    webview::QtHostWidget* pendingPopupHost_ = nullptr;
     webview::WebViewSessionPtr session_;
 };
 } // namespace samples::demo

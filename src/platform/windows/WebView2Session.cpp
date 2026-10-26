@@ -2,12 +2,12 @@
 
 #include "internal/Application.h"
 #include "internal/Diagnostics.h"
+#include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
 #include "internal/TextEncoding.h"
 #include "platform/windows/WebView2View.h"
 #include "webview/WebViewState.h"
 
-#include <QWidget>
 #include <unordered_set>
 
 #include <WebView2.h>
@@ -276,8 +276,9 @@ WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions optio
     return application;
 }
 
-WebViewPtr WebView2Session::createWebView(QWidget* parent)
+WebViewPtr WebView2Session::createWebView(WebViewHost host)
 {
+    auto* hostView = new ExternalHostView(std::move(host));
     const auto expectedMode = impl_->options.mode;
     auto registerProfile = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async), expectedMode](ICoreWebView2* webview) -> std::string {
         const auto owner = weak.lock();
@@ -325,7 +326,8 @@ WebViewPtr WebView2Session::createWebView(QWidget* parent)
         return owner && !owner->closed ? owner->environment.Get() : nullptr;
     };
     return std::unique_ptr<IWebView>(new WebView2View(
-        parent,
+        hostView,
+        ownsHost,
         std::move(environmentProvider),
         impl_->async->scheduler,
         impl_->policy,

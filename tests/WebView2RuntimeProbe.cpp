@@ -1,5 +1,6 @@
 #include "internal/TextEncoding.h"
 #include <system_webview/system_webview.h>
+#include <system_webview/qt_host.h>
 
 #include <QApplication>
 #include <QTemporaryDir>
@@ -82,7 +83,7 @@ private:
     bool verifyRetainedViewClose()
     {
         auto closingSession = webview::createWebViewSession({});
-        auto retainedView = closingSession->createWebView(&parent);
+        auto retainedView = closingSession->createWebView(parent.webViewHost());
         closingSession.reset();
         if (!retainedView->isClosed()) {
             fail("A retained WebView2 view remained active after its session was destroyed.");
@@ -148,7 +149,7 @@ private:
             fail("WebView2 Runtime does not expose InPrivate controller options.");
             return;
         }
-        view = session->createWebView(&parent);
+        view = session->createWebView(parent.webViewHost());
         view->attachNativeView();
         armTimeout("controller/profile initialization");
         view->whenInitialized([weak = weak_from_this()](const webview::InitializationResult& result) {
@@ -242,7 +243,7 @@ private:
         options.mode = webview::SessionMode::Persistent;
         options.profilePath = profile.path().toStdString() + "/closing";
         auto closingSession = webview::createWebViewSession(std::move(options));
-        auto retainedView = closingSession->createWebView(&parent);
+        auto retainedView = closingSession->createWebView(parent.webViewHost());
         closingSession.reset();
         if (!retainedView->isClosed()) {
             fail("A retained WebView2 view remained active after its session was destroyed.");
@@ -290,7 +291,7 @@ private:
 
     QApplication& application;
     QTemporaryDir profile;
-    QWidget parent;
+    webview::QtHostWidget parent;
     webview::WebViewSessionPtr session;
     webview::WebViewPtr view;
     std::size_t caseIndex = 0;

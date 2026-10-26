@@ -6,18 +6,14 @@
 #include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
+#include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
 #include "internal/TextEncoding.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 
-#include <QMetaObject>
-#include <QPointer>
-#include <QResizeEvent>
-#include <QThread>
 #include <QUuid>
-#include <QWidget>
 
 #include <WebView2.h>
 #include <shlwapi.h>
@@ -262,26 +258,6 @@ private:
     std::shared_ptr<void> lease_;
 };
 
-class NativeViewHost final : public QWidget
-{
-public:
-    std::function<void()> resized;
-
-    explicit NativeViewHost(QWidget* parent)
-        : QWidget(parent)
-    {
-        setAttribute(Qt::WA_NativeWindow);
-    }
-
-protected:
-    void resizeEvent(QResizeEvent* event) override
-    {
-        QWidget::resizeEvent(event);
-        if (resized) {
-            resized();
-        }
-    }
-};
 }
 
 class WebView2View::Impl : public std::enable_shared_from_this<WebView2View::Impl>
@@ -305,7 +281,8 @@ public:
     };
 
     explicit Impl(
-        QWidget* parent,
+        HostView* host,
+        bool ownsHost,
         std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState,
         WebViewPolicyPtr policy,
@@ -313,7 +290,7 @@ public:
         SessionMode sessionMode,
         std::function<std::string(ICoreWebView2*)> registerProfile,
         std::function<void(std::function<void()>)> registerSessionClose)
-        : container(new NativeViewHost(parent))
+        : container(host)
         , state(std::make_shared<WebViewState>(DiagnosticScope::View, sessionState ? sessionState->diagnosticId : 0))
         , sessionState(std::move(sessionState))
         , environmentProvider(std::move(environmentProvider))
@@ -323,7 +300,7 @@ public:
         , registerProfile(std::move(registerProfile))
         , registerSessionClose(std::move(registerSessionClose))
         , inlineDocuments(std::make_shared<std::unordered_map<std::string, std::string>>())
-        , ownsContainer(parent == nullptr)
+        , ownsContainer(ownsHost)
     {
         state->policy = this->policy;
         state->bindBridgePolicy();
@@ -338,7 +315,7 @@ public:
                 }
             });
         }
-        container->resized = [weak = weak_from_this()] {
+        container->setHostChangedCallback([weak = weak_from_this()] {
             if (const auto owner = weak.lock()) {
                 owner->applyHostState();
             }
@@ -357,7 +334,7 @@ public:
                 owner->state->failInitialization("WebView2 environment is unavailable.");
                 return;
             }
-            const HWND hwnd = reinterpret_cast<HWND>(owner->container->winId());
+            const HWND hwnd = static_cast<HWND>(owner->container->nativeHandle());
             auto completed = Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                 [state = owner->state, owner](HRESULT hr, ICoreWebView2Controller* created) -> HRESULT {
                     if (state->lifetime.isClosed()) {
@@ -649,10 +626,19 @@ public:
                                 args->get_IsUserInitiated(&userInitiated);
                                 const NewWindowRequest request { url, userInitiated != FALSE };
                                 const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
-                                if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow) {
+                                if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow
+                                    || !state->callbacks.createPopupHost) {
                                     qCDebug(systemWebViewPolicy).noquote()
                                         << "event=policy.popup_denied" << "session=" << state->sessionDiagnosticId
                                         << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+                                    args->put_Handled(TRUE);
+                                    if (deferral) {
+                                        deferral->Complete();
+                                    }
+                                    return S_OK;
+                                }
+                                WebViewHost popupHost = state->callbacks.createPopupHost(request);
+                                if (!popupHost.nativeHandle) {
                                     args->put_Handled(TRUE);
                                     if (deferral) {
                                         deferral->Complete();
@@ -663,7 +649,8 @@ public:
                                     return environment.Get();
                                 };
                                 auto child = std::unique_ptr<IWebView>(new WebView2View(
-                                    nullptr,
+                                    new ExternalHostView(std::move(popupHost)),
+                                    true,
                                     std::move(childEnvironment),
                                     sessionState,
                                     policy,
@@ -1073,7 +1060,7 @@ public:
         });
     }
 
-    NativeViewHost* container;
+    HostView* container;
     std::shared_ptr<WebViewState> state;
     std::shared_ptr<WebViewState> sessionState;
     std::function<ICoreWebView2Environment*()> environmentProvider;
@@ -1100,8 +1087,6 @@ public:
     bool attached = false;
     bool eventsRemoved = false;
     bool ownsContainer = false;
-    QThread* uiThread = QThread::currentThread();
-
     void removePendingAction(const std::shared_ptr<PendingAction>& pending)
     {
         pendingActions.erase(std::remove(pendingActions.begin(), pendingActions.end(), pending), pendingActions.end());
@@ -1142,11 +1127,7 @@ public:
         if (!action || !container) {
             return false;
         }
-        if (QThread::currentThread() == uiThread) {
-            action();
-            return true;
-        }
-        return QMetaObject::invokeMethod(container, std::move(action), Qt::QueuedConnection);
+        return container->postToUi(std::move(action));
     }
 
     void applyHostState()
@@ -1158,7 +1139,7 @@ public:
             controller->put_IsVisible(FALSE);
             return;
         }
-        const HWND hwnd = reinterpret_cast<HWND>(container->winId());
+        const HWND hwnd = static_cast<HWND>(container->nativeHandle());
         RECT bounds {};
         GetClientRect(hwnd, &bounds);
         controller->put_ParentWindow(hwnd);
@@ -1199,7 +1180,8 @@ public:
 };
 
 WebView2View::WebView2View(
-    QWidget* parent,
+    HostView* host,
+    bool ownsHost,
     std::function<ICoreWebView2Environment*()> environmentProvider,
     std::shared_ptr<WebViewState> sessionState,
     WebViewPolicyPtr policy,
@@ -1209,7 +1191,8 @@ WebView2View::WebView2View(
     std::function<void(std::function<void()>)> registerSessionClose)
     : impl_(
           std::make_shared<Impl>(
-              parent,
+              host,
+              ownsHost,
               std::move(environmentProvider),
               std::move(sessionState),
               std::move(policy),
@@ -1224,11 +1207,6 @@ WebView2View::WebView2View(
 WebView2View::~WebView2View()
 {
     close();
-}
-
-QWidget* WebView2View::widget()
-{
-    return impl_->container;
 }
 
 InitializationState WebView2View::initializationState() const

@@ -56,6 +56,7 @@ system_webview_add_simdutf()
 
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
+    src/internal/HostView.h
     src/webview/TextEncoding.cpp
     src/webview/Url.cpp
     src/webview/Application.cpp
@@ -94,6 +95,31 @@ elseif(WIN32)
 else()
     target_sources(system_webview PRIVATE src/webview/PathSecurity.cpp)
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+option(SYSTEM_WEBVIEW_BUILD_GLFW_HOST "Build the GLFW 3 host adapter target." OFF)
+option(SYSTEM_WEBVIEW_BUILD_SDL3_HOST "Build the SDL 3 host adapter target." OFF)
+add_library(system_webview_qt_host INTERFACE)
+target_link_libraries(system_webview_qt_host INTERFACE system_webview Qt5::Widgets)
+target_include_directories(system_webview_qt_host INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(SYSTEM_WEBVIEW_BUILD_GLFW_HOST)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(3rdparty/glfw3 EXCLUDE_FROM_ALL)
+    add_library(system_webview_glfw_host INTERFACE)
+    target_link_libraries(system_webview_glfw_host INTERFACE system_webview glfw)
+    target_include_directories(system_webview_glfw_host INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
+
+if(SYSTEM_WEBVIEW_BUILD_SDL3_HOST)
+    set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+    set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(3rdparty/sdl3 EXCLUDE_FROM_ALL)
+    add_library(system_webview_sdl3_host INTERFACE)
+    target_link_libraries(system_webview_sdl3_host INTERFACE system_webview SDL3::SDL3)
+    target_include_directories(system_webview_sdl3_host INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 install(DIRECTORY include/

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "internal/ResourceMapping.h"
+#include "internal/HostView.h"
 #include <system_webview/system_webview.h>
 
 #include <functional>
@@ -9,8 +10,6 @@
 
 struct ICoreWebView2Environment;
 struct ICoreWebView2;
-
-class QWidget;
 
 namespace webview
 {
@@ -22,7 +21,6 @@ class WebView2View final : public IWebView
 public:
     ~WebView2View() override;
 
-    QWidget* widget() override;
     InitializationState initializationState() const override;
     void whenInitialized(InitializationCompletion completion) override;
     void attachNativeView() override;
@@ -41,7 +39,8 @@ public:
 private:
     friend class WebView2Session;
     WebView2View(
-        QWidget* parent,
+        HostView* host,
+        bool ownsHost,
         std::function<ICoreWebView2Environment*()> environmentProvider,
         std::shared_ptr<WebViewState> sessionState,
         WebViewPolicyPtr policy,

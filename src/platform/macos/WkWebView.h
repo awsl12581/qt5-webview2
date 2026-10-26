@@ -1,6 +1,7 @@
 #pragma once
 
 #include <system_webview/system_webview.h>
+#include "internal/HostView.h"
 
 #include <memory>
 
@@ -15,7 +16,6 @@ class WkWebView final : public IWebView
 public:
     ~WkWebView() override;
 
-    QWidget* widget() override;
     InitializationState initializationState() const override;
     void whenInitialized(InitializationCompletion completion) override;
     void attachNativeView() override;
@@ -31,14 +31,15 @@ public:
     WebResourceManager& resources() override;
     void setHostCallbacks(WebViewHostCallbacks callbacks) override;
 
-    void* createPopup(void* configuration, const NewWindowRequest& request);
+    void* createPopup(void* configuration, const NewWindowRequest& request, WebViewHost host);
     std::shared_ptr<WebViewState> stateForHostCompletion() const;
+    HostView* hostView() const;
     bool ownsNativeView(void* nativeView) const;
 
 private:
     friend class WkWebViewSession;
-    WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
-    void initialize(void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
+    WkWebView(HostView* host, bool ownsHost, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
+    void initialize(HostView* host, bool ownsHost, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState);
 
     class Impl;
     std::unique_ptr<Impl> impl_;

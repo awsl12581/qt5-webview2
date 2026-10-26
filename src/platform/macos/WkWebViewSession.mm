@@ -8,6 +8,7 @@
 #include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
+#include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
 
 #include <QRegularExpression>
@@ -296,15 +297,16 @@ WkWebViewSession::~WkWebViewSession()
     qCDebug(systemWebViewLifecycle).noquote() << "event=session.closed" << "session=" << impl_->state->diagnosticId;
 }
 
-WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
+WebViewPtr WkWebViewSession::createWebView(WebViewHost host)
 {
+    auto* hostView = new ExternalHostView(std::move(host));
     auto* configuration = [[WKWebViewConfiguration alloc] init];
     configuration.websiteDataStore = impl_->dataStore;
     configuration.processPool = impl_->processPool;
     if (impl_->schemeHandler) {
         [configuration setURLSchemeHandler:impl_->schemeHandler forURLScheme:@"app"];
     }
-    return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
+    return std::unique_ptr<WkWebView>(new WkWebView(hostView, true, configuration, impl_->policy, impl_->state));
 }
 
 namespace

@@ -1,4 +1,5 @@
 #include <system_webview/system_webview.h>
+#include <system_webview/qt_host.h>
 
 #include <QApplication>
 #include <QEventLoop>
@@ -118,7 +119,7 @@ int main(int argc, char** argv)
     config.hostToPageSchemas["hello"] = { { { "message", webview::JsonType::String } } };
     auto policy = std::make_shared<TestPolicy>(std::move(config));
     auto session = webview::createWebViewSession({}, policy);
-    auto view = session->createWebView();
+    auto view = session->createWebView({});
 
     std::vector<webview::LoadEvent> events;
     int messageCount = 0;
@@ -335,7 +336,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     assert(!policy->downloadRequests.empty());
     assert(policy->downloadRequests.back().url.path() == "/download");
 
-    auto raceView = session->createWebView();
+    auto raceView = session->createWebView({});
     int raceCallbacks = 0;
     webview::WebViewHostCallbacks raceCallbacksConfig;
     raceCallbacksConfig.onLoad = [&](const webview::LoadEvent&) { ++raceCallbacks; };
@@ -354,7 +355,7 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     assert(unavailableServer.listen(QHostAddress::LocalHost, 0));
     const auto unavailablePort = unavailableServer.serverPort();
     unavailableServer.close();
-    auto failureView = session->createWebView();
+    auto failureView = session->createWebView({});
     std::vector<webview::LoadEvent> failureEvents;
     webview::WebViewHostCallbacks failureCallbacks;
     failureCallbacks.onLoad = [&](const webview::LoadEvent& event) {
@@ -372,18 +373,13 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
     assert(failureEvents.back().state == webview::LoadState::Failed);
     assert(!failureEvents.back().error.empty());
 
-    QWidget popupHost;
-    popupHost.resize(640, 480);
-    popupHost.show();
     webview::WebViewPtr popup;
+    webview::QtHostWidget popupHost;
     policy->allowPopups = true;
     webview::WebViewHostCallbacks popupCallbacks;
+    popupCallbacks.createPopupHost = [&](const webview::NewWindowRequest&) { return popupHost.webViewHost(); };
     popupCallbacks.onNewWindow = [&](const webview::NewWindowRequest&, webview::WebViewPtr child) {
         assert(child->initializationState() == webview::InitializationState::Ready);
-        auto* layout = new QVBoxLayout(&popupHost);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->addWidget(child->widget());
-        popupHost.layout()->activate();
         child->attachNativeView();
         popup = std::move(child);
         loop.quit();

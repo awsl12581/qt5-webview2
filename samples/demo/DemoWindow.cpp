@@ -1,5 +1,7 @@
 #include "DemoWindow.h"
 
+#include <system_webview/qt_host.h>
+
 #include <QLabel>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -40,13 +42,16 @@ public:
 class WebViewTab final : public QWidget
 {
 public:
-    explicit WebViewTab(webview::WebViewPtr webView, QWidget* parent)
+    explicit WebViewTab(webview::WebViewPtr webView, webview::QtHostWidget* host, QWidget* parent)
         : QWidget(parent)
         , webView_(std::move(webView))
     {
         auto* layout = new QVBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
-        layout->addWidget(webView_->widget());
+        if (host) {
+            host->setParent(this);
+            layout->addWidget(host);
+        }
     }
 
     ~WebViewTab() override
@@ -100,20 +105,25 @@ DemoWindow::DemoWindow()
         status_->setText(QStringLiteral("Failed to create demo application"));
         return;
     }
-    auto webView = session_->createWebView();
+    auto* host = new webview::QtHostWidget;
+    auto webView = session_->createWebView(host->webViewHost());
     webView->open(application);
-    addTab(std::move(webView), "Home");
+    addTab(std::move(webView), "Home", host);
 }
 
-void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
+void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title, webview::QtHostWidget* host)
 {
-    auto* tab = new WebViewTab(std::move(webView), tabs_);
+    auto* tab = new WebViewTab(std::move(webView), host, tabs_);
     auto* page = tab->webView();
     webview::WebViewHostCallbacks callbacks;
     callbacks.onLoad = [this](const webview::LoadEvent& event) {
         if (event.state == webview::LoadState::Failed) {
             status_->setText(QStringLiteral("Load failed: %1").arg(QString::fromStdString(event.error)));
         }
+    };
+    callbacks.createPopupHost = [this](const webview::NewWindowRequest&) {
+        pendingPopupHost_ = new webview::QtHostWidget;
+        return pendingPopupHost_->webViewHost();
     };
     page->bridge().setEventHandler("window", [this, page](const webview::Json& payload) {
         const auto action = payload.at("action").get<std::string>();
@@ -137,7 +147,8 @@ void DemoWindow::addTab(webview::WebViewPtr webView, const std::string& title)
         page->bridge().emitEvent("ack", { { "message", "Native received your message." } });
     });
     callbacks.onNewWindow = [this](const webview::NewWindowRequest& request, webview::WebViewPtr child) {
-        addTab(std::move(child), request.url.host().empty() ? "New tab" : request.url.host());
+        auto* host = std::exchange(pendingPopupHost_, nullptr);
+        addTab(std::move(child), request.url.host().empty() ? "New tab" : request.url.host(), host);
     };
     page->setHostCallbacks(std::move(callbacks));
     page->whenInitialized([this](const webview::InitializationResult& result) {

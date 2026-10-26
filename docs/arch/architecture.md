@@ -1,12 +1,12 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 11:29 CST
-> 文档版本：v18
-> 修改说明：Documented nlohmann/json public types, strict encoding, and exported package dependency.
+> 最后修改时间：2026-10-26 14:20 CST
+> 文档版本：v20
+> 修改说明：同步框架无关 HostView 和 popup 宿主交接设计。
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
-`include/system_webview/system_webview.h` is the only public header. It exposes standard value types, selected Qt types, and C++ interfaces but no native WebKit,
+`include/system_webview/system_webview.h` is the only public header. It exposes standard value types and C++ interfaces but no native WebKit,
 WebView2, or WebKitGTK types. The CMake target is a shared library with hidden symbols by default. `SYSTEM_WEBVIEW_API` exports only the
 implemented public classes and factory functions; on Windows it selects `dllexport` while building and `dllimport` for consumers.
 Public classes with library-owned state use PImpl, so changes to bridge, resource-manager, and policy internals do not change their public
@@ -33,12 +33,12 @@ Invalid encoding fails the corresponding send, initialization, navigation, resou
 Qt filesystem adapters remain; macOS text conversion continues to use Foundation.
 Ada parses and serializes URLs through the public `webview::Url` value type. The project adopts WHATWG
 normalization, including default-port removal and dot-segment handling; `app:` identity uses the parsed host.
-Qt logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
+Qt logging and filesystem helpers remain in use internally. Host adapters own framework-specific window
 boundaries; path authorization and message schemas retain their existing behavior.
 The public API uses UTF-8 `std::string` for text, filesystem paths, bridge metadata, errors, and serialized bridge
 messages; `std::vector<std::string>` for path lists; standard unordered sets/maps for policy configuration;
-and fixed-width standard integers for counters. `webview::Url`, `webview::Json`, `webview::JsonType`, `QIODevice`, and `QWidget`
-remain at the URL, JSON, stream, and widget boundaries. This migration changes public signatures and value
+and fixed-width standard integers for counters. `webview::Url`, `webview::Json`, and `webview::JsonType` remain at the URL and JSON boundaries.
+Host windows are supplied through `webview::WebViewHost`; Qt, GLFW, SDL, and native adapters provide those values. This migration changes public signatures and value
 layouts, so consumers must update their calls, callbacks, and policy overrides and rebuild against the library.
 There are no compatibility overloads for the replaced Qt value types.
 
@@ -59,7 +59,7 @@ privately as a static PIC dependency; no utf8proc types appear in the public API
 The library separates four responsibilities:
 
 1. `IWebViewSession` owns profile state shared by related pages: website data, cookies, cache, and the native browser process or environment. A session creates every `IWebView`.
-2. `IWebView` owns one native page, its Qt widget, navigation lifecycle, and document-scoped message delivery.
+2. `IWebView` owns one native page, its host attachment, navigation lifecycle, and document-scoped message delivery.
 3. `WebViewPolicy` decides navigation, popups, bridge access, permissions, downloads, and message schemas. Defaults fail closed except for ordinary HTTPS navigation.
 4. The application host owns `WebViewPtr` instances in tabs or windows. It calls `close()` before releasing a view or destroying its surface.
 
@@ -72,8 +72,10 @@ webview::WebViewSessionOptions options;
 options.mode = webview::SessionMode::Persistent;
 options.profilePath = profilePath;
 auto session = webview::createWebViewSession(std::move(options), policy);
-auto view = session->createWebView(parent);
-// The host inserts widget() into its final layout before attaching the native page.
+webview::QtHostWidget host;
+layout->addWidget(&host);
+auto view = session->createWebView(host.webViewHost());
+// The host activates its final layout before attaching the native page.
 view->attachNativeView();
 ```
 
@@ -83,7 +85,7 @@ view->attachNativeView();
 
 `LoadEvent` reports `Started`, `Redirected`, `Committed`, `Finished`, and `Failed`. Events for one native navigation retain one `navigationId`, including overlapping navigation failures. A rejected policy decision occurs before provisional navigation and therefore does not emit a synthetic load sequence.
 
-Hosts receive lifecycle, external URL, popup, and bridge events through one `WebViewHostCallbacks` object. `stop()` and `reload()` forward to the native page. `close()` is idempotent and performs this order:
+Hosts receive lifecycle, external URL, popup, and bridge events through one `WebViewHostCallbacks` object. Before an allowed popup is created, `createPopupHost` supplies its framework-specific `WebViewHost`; the backend never creates a Qt or other framework widget. `stop()` and `reload()` forward to the native page. `close()` is idempotent and performs this order:
 
 1. Mark the page closed and invalidate its document token.
 2. Clear host callbacks and popup creation.
@@ -92,7 +94,7 @@ Hosts receive lifecycle, external URL, popup, and bridge events through one `Web
 
 Queued native callbacks see the closed state or a changed document token and cannot be reported as results for a newer page.
 
-The host owns native attachment timing. It adds `view->widget()` to the final tab or window layout, activates the layout, and then calls `attachNativeView()`. `detachNativeView()` is called before the host surface is moved or destroyed. Backends do not infer attachment from visibility, parent widgets, default size, or event-loop timing.
+The host owns native attachment timing. It places its `WebViewHost` surface in the final tab or window layout, activates the layout, and then calls `attachNativeView()`. `detachNativeView()` is called before the host surface is moved or destroyed. Backends do not infer attachment from visibility, parent widgets, default size, or event-loop timing.
 
 ## Policy and bridge
 
@@ -153,7 +155,7 @@ Views in one macOS session share its website data store and assigned `WKProcessP
 
 ## Migration
 
-The session API is a source-breaking replacement. Remove calls to old session factory names, former standalone view factories, page-level bridge or popup setters, and concrete `WkWebView` casts. There are no forwarding overloads or deprecation shims. Migration consists of constructing `WebViewSessionOptions`, retaining one session per login/profile boundary, creating views from it, inserting each widget into its final host layout, attaching the view, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view.
+The session API is a source-breaking replacement. Remove calls to old session factory names, former standalone view factories, page-level bridge or popup setters, and concrete `WkWebView` casts. There are no forwarding overloads or deprecation shims. Migration consists of constructing `WebViewSessionOptions`, retaining one session per login/profile boundary, creating a framework-specific host adapter, creating each view with its `WebViewHost`, attaching the view, installing policy at session creation, and assigning `WebViewHostCallbacks` to each view, including `createPopupHost` when popups are supported.
 
 `navigate(webview::Url)` remains available for ordinary browser navigation. `loadDocument` remains available only when its base URL passes navigation policy; it is not an application deployment API and follows the same committed-origin bridge checks as network navigation.
 
@@ -179,3 +181,5 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v16 | 2026-10-26 10:58 CST | Documented utf8proc application ID validation and private static linkage. |
 | v17 | 2026-10-26 11:10 CST | Documented simdutf conversion boundaries, strict failures, and private static linkage. |
 | v18 | 2026-10-26 11:29 CST | Documented nlohmann/json public types, strict encoding, and exported package dependency. |
+| v19 | 2026-10-26 14:10 CST | 同步 v2 宿主 API，删除 QWidget 公共入口并改用 WebViewHost。 |
+| v20 | 2026-10-26 14:20 CST | 同步框架无关 HostView 和 popup 宿主交接设计。 |

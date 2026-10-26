@@ -2,7 +2,7 @@
 
 /**
  * \file system_webview.h
- * Single public header for embedding the system web view in a Qt Widgets app.
+ * Single public header for embedding the system web view in an application host.
  *
  * Typical use:
  * \code
@@ -16,8 +16,7 @@
  * if (!application)
  *     return;
  *
- * auto view = session->createWebView(parentWidget);
- * layout->addWidget(view->widget());
+ * auto view = session->createWebView(host.webViewHost());
  * view->open(application);
  * layout->activate();
  * view->attachNativeView();
@@ -53,10 +52,19 @@
 #include <variant>
 #include <vector>
 
-class QWidget;
-
 namespace webview
 {
+/// Framework-neutral native host supplied by the application.
+struct WebViewHost
+{
+    void* nativeHandle = nullptr;
+    int width = 0;
+    int height = 0;
+    bool visible = true;
+    std::function<void(std::function<void()>)> postToUi;
+    std::function<void(std::function<void()>)> observeChanges;
+};
+
 /// UTF-8 JSON values. Payloads must be objects; use Json::object() for an empty payload.
 using Json = nlohmann::json;
 
@@ -371,6 +379,8 @@ struct WebViewHostCallbacks
     std::function<void(const LoadEvent&)> onLoad;
     /// Opens a URL after the policy returns NavigationDecision::OpenExternally.
     std::function<void(const Url&)> onOpenExternal;
+    /// Supplies a host before the backend creates an allowed popup view.
+    std::function<WebViewHost(const NewWindowRequest&)> createPopupHost;
     /// Takes ownership of an allowed popup. Retain the WebViewPtr before returning.
     std::function<void(const NewWindowRequest&, WebViewPtr)> onNewWindow;
     /// Must invoke the completion exactly once; an empty callback cancels selection.
@@ -515,14 +525,12 @@ public:
     using InitializationCompletion = std::function<void(const InitializationResult&)>;
 
     virtual ~IWebView() = default;
-    /// Qt container to insert into the final widget layout. The view retains it.
-    virtual QWidget* widget() = 0;
     virtual InitializationState initializationState() const = 0;
     /// Runs once when initialization reaches Ready, Failed, or Closed.
     virtual void whenInitialized(InitializationCompletion completion) = 0;
-    /// Attaches the native view after widget() has its final geometry.
+    /// Attaches the native view after the supplied host has its final geometry.
     virtual void attachNativeView() = 0;
-    /// Detaches the native view before its Qt host is destroyed or reparented.
+    /// Detaches the native view before its external host is destroyed or reparented.
     virtual void detachNativeView() = 0;
     /// Opens a session-registered application at an optional application route.
     virtual void open(WebApplicationPtr application, const std::string& route = {}) = 0;
@@ -552,8 +560,8 @@ public:
     virtual void whenInitialized(InitializationCompletion completion) = 0;
     /// Validates and registers an application. Returns null for invalid/duplicate options.
     virtual WebApplicationPtr createApplication(WebApplicationOptions options) = 0;
-    /// Creates a view owned by the caller and logically owned by this session.
-    virtual WebViewPtr createWebView(QWidget* parent = nullptr) = 0;
+    /// Creates a view hosted by a platform-native or framework adapter.
+    virtual WebViewPtr createWebView(WebViewHost host) = 0;
     /// Clear operations are asynchronous; omitted completions discard the result.
     virtual void clearCache(ClearCompletion completion = {}) = 0;
     virtual void clearCookies(ClearCompletion completion = {}) = 0;

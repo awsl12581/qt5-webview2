@@ -5,19 +5,14 @@
 #include "internal/Application.h"
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 
-#include <QEvent>
-#include <QMetaObject>
-#include <QPointer>
-#include <QResizeEvent>
-#include <QSize>
 #include <QString>
 #include <QUuid>
-#include <QWidget>
 
 #include <cstdint>
 #include <memory>
@@ -58,43 +53,6 @@ webview::PermissionKind permissionKind(WKMediaCaptureType type)
     return type == WKMediaCaptureTypeMicrophone ? webview::PermissionKind::Microphone : webview::PermissionKind::Camera;
 }
 
-class NativeViewHost final : public QWidget
-{
-public:
-    using ResizeHandler = std::function<void()>;
-
-    explicit NativeViewHost(QWidget* parent)
-        : QWidget(parent)
-    {
-        setAttribute(Qt::WA_NativeWindow);
-    }
-
-    ResizeHandler syncNativeView;
-
-protected:
-    void resizeEvent(QResizeEvent* event) override
-    {
-        QWidget::resizeEvent(event);
-        scheduleNativeViewSync();
-    }
-
-    bool event(QEvent* event) override
-    {
-        const bool handled = QWidget::event(event);
-        if (event->type() == QEvent::Show || event->type() == QEvent::LayoutRequest || event->type() == QEvent::PolishRequest) {
-            scheduleNativeViewSync();
-        }
-        return handled;
-    }
-
-private:
-    void scheduleNativeViewSync()
-    {
-        if (syncNativeView) {
-            syncNativeView();
-        }
-    }
-};
 }
 
 namespace webview
@@ -168,7 +126,8 @@ private:
 class WkWebView::Impl
 {
 public:
-    NativeViewHost* container = nullptr;
+    HostView* container = nullptr;
+    bool ownsContainer = false;
     WKWebView* view = nil;
     std::shared_ptr<WebViewState> state;
     std::shared_ptr<WkNavigationState> navigationState = std::make_shared<WkNavigationState>();
@@ -201,7 +160,7 @@ public:
 @interface SystemWebViewDownloadDelegate : NSObject <WKDownloadDelegate> {
 @public
     std::weak_ptr<webview::WebViewState> state;
-    QPointer<QWidget> context;
+    webview::HostView* context;
 }
 @end
 
@@ -245,7 +204,8 @@ public:
                forNavigationAction:(WKNavigationAction*)navigationAction
                     windowFeatures:(WKWindowFeatures*)windowFeatures
 {
-    if (!self.state || self.state->lifetime.isClosed() || !self.owner || !self.state->callbacks.onNewWindow) {
+    if (!self.state || self.state->lifetime.isClosed() || !self.owner || !self.state->callbacks.onNewWindow
+        || !self.state->callbacks.createPopupHost) {
         return nil;
     }
     const webview::Url url = urlFromNSURL(navigationAction.request.URL);
@@ -256,7 +216,11 @@ public:
                                                << "origin=" << QString::fromStdString(webview::diagnosticOrigin(url));
         return nil;
     }
-    return static_cast<WKWebView*>(self.owner->createPopup(configuration, request));
+    auto host = self.state->callbacks.createPopupHost(request);
+    if (!host.nativeHandle) {
+        return nil;
+    }
+    return static_cast<WKWebView*>(self.owner->createPopup(configuration, request, std::move(host)));
 }
 
 - (void)webView:(WKWebView*)webView
@@ -301,16 +265,14 @@ public:
     const webview::FileSelectionRequest request { webview::normalizedOrigin(documentUrl), documentUrl, parameters.allowsMultipleSelection,
                                                   parameters.allowsDirectories };
     auto guard = std::make_shared<webview::HostCompletionGuard>(self.owner->stateForHostCompletion());
-    const QPointer<QWidget> context(self.owner->widget());
+    const auto context = self.owner->hostView();
     const auto completion = [completionHandler, guard, context, request](webview::FileSelectionResult result) {
         const auto access = guard->claim();
         if (access.claim != webview::HostCompletionClaim::Accepted || !context) {
             return;
         }
         result = webview::normalizeFileSelectionResult(request, std::move(result));
-        QMetaObject::invokeMethod(
-            context.data(),
-            [completionHandler, state = access.state, result = std::move(result)] {
+        context->postToUi([completionHandler, state = access.state, result = std::move(result)] {
                 if (state->lifetime.isClosed()) {
                     return;
                 }
@@ -323,8 +285,7 @@ public:
                     [urls addObject:[NSURL fileURLWithPath:toNSString(path)]];
                 }
                 completionHandler(urls);
-            },
-            Qt::QueuedConnection);
+            });
     };
     self.state->callbacks.onSelectFiles(request, completion);
 }
@@ -350,23 +311,20 @@ public:
                                              urlFromNSURL(response.URL),
                                              std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") };
     auto guard = std::make_shared<webview::HostCompletionGuard>(currentState);
-    const QPointer<QWidget> dispatchContext = context;
+    const auto dispatchContext = context;
     const auto completion = [completionHandler, guard, dispatchContext](webview::DownloadResolution resolution) {
         const auto access = guard->claim();
         if (access.claim != webview::HostCompletionClaim::Accepted || !dispatchContext) {
             return;
         }
-        QMetaObject::invokeMethod(
-            dispatchContext.data(),
-            [completionHandler, statePtr = access.state, resolution = std::move(resolution)] {
+        dispatchContext->postToUi([completionHandler, statePtr = access.state, resolution = std::move(resolution)] {
                 if (statePtr->lifetime.isClosed() || resolution.status != webview::DownloadResolutionStatus::Resolved
                     || resolution.target.handling != webview::DownloadHandling::TargetPath || resolution.target.filePath.empty()) {
                     completionHandler(nil);
                     return;
                 }
                 completionHandler([NSURL fileURLWithPath:toNSString(resolution.target.filePath)]);
-            },
-            Qt::QueuedConnection);
+            });
     };
     currentState->callbacks.onResolveDownload(request, completion);
 }
@@ -562,21 +520,21 @@ public:
 
 namespace webview
 {
-WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
+WkWebView::WkWebView(HostView* host, bool ownsHost, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
     : impl_(std::make_unique<Impl>())
 {
-    initialize(configuration, std::move(policy), std::move(sessionState));
-    impl_->container->setParent(parent);
+    initialize(host, ownsHost, configuration, std::move(policy), std::move(sessionState));
 }
 
-void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
+void WkWebView::initialize(HostView* host, bool ownsHost, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
 {
     const std::uint64_t sessionDiagnosticId = sessionState ? sessionState->diagnosticId : 0;
     impl_->state = std::make_shared<WebViewState>(DiagnosticScope::View, sessionDiagnosticId);
     impl_->state->policy = policy ? std::move(policy) : createDefaultWebViewPolicy();
     impl_->state->bindBridgePolicy();
     impl_->sessionState = std::move(sessionState);
-    impl_->container = new NativeViewHost(nullptr);
+    impl_->container = host;
+    impl_->ownsContainer = ownsHost;
     auto* content = [[WKUserContentController alloc] init];
     impl_->messageDelegate = [[SystemWebViewMessageDelegate alloc] init];
     static_cast<SystemWebViewMessageDelegate*>(impl_->messageDelegate).state = impl_->state.get();
@@ -608,12 +566,12 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::sh
         navigationDelegate.downloadDelegate = downloadDelegate;
     }
     impl_->view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    impl_->container->syncNativeView
-        = [container = impl_->container, view = impl_->view, attachmentRequested = &impl_->nativeViewAttachmentRequested] {
-              if (!*attachmentRequested || !container->parentWidget() || !container->isVisible() || container->size().isEmpty()) {
+    impl_->container->setHostChangedCallback(
+        [container = impl_->container, view = impl_->view, attachmentRequested = &impl_->nativeViewAttachmentRequested] {
+            if (!*attachmentRequested || !container->hasVisibleGeometry()) {
                   return;
               }
-              auto* hostView = reinterpret_cast<NSView*>(container->winId());
+              auto* hostView = static_cast<NSView*>(container->nativeHandle());
               [hostView layoutSubtreeIfNeeded];
               if (NSIsEmptyRect(hostView.bounds)) {
                   return;
@@ -622,7 +580,7 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::sh
               if (view.superview != hostView) {
                   [hostView addSubview:view];
               }
-          };
+          });
     if (impl_->sessionState && impl_->sessionState->valid) {
         std::lock_guard<std::mutex> lock(impl_->sessionState->viewsMutex);
         impl_->sessionState->views.insert(this);
@@ -636,11 +594,6 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::sh
 WkWebView::~WkWebView()
 {
     close();
-}
-
-QWidget* WkWebView::widget()
-{
-    return impl_->container;
 }
 
 InitializationState WkWebView::initializationState() const
@@ -663,7 +616,7 @@ void WkWebView::attachNativeView()
     impl_->nativeViewAttachmentRequested = true;
     impl_->state->runWhenReady([this](const InitializationResult& result) {
         if (result.state == InitializationState::Ready && impl_->nativeViewAttachmentRequested) {
-            impl_->container->syncNativeView();
+            impl_->container->postToUi([this] { impl_->container->refreshHost(); });
         }
         else if (result.state != InitializationState::Ready) {
             impl_->nativeViewAttachmentRequested = false;
@@ -779,7 +732,7 @@ void WkWebView::close()
     impl_->view.UIDelegate = nil;
     [impl_->view.configuration.userContentController removeScriptMessageHandlerForName:@(kBridgeName)];
     [impl_->view removeFromSuperview];
-    impl_->container->syncNativeView = {};
+    impl_->container->setHostChangedCallback({});
     impl_->nativeViewAttachmentRequested = false;
     impl_->messageDelegate = nil;
     impl_->uiDelegate = nil;
@@ -809,12 +762,13 @@ void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
     }
 }
 
-void* WkWebView::createPopup(void* configuration, const NewWindowRequest& request)
+void* WkWebView::createPopup(void* configuration, const NewWindowRequest& request, WebViewHost host)
 {
     if (impl_->state->lifetime.isClosed() || !impl_->state->callbacks.onNewWindow || !impl_->sessionState || !impl_->sessionState->valid) {
         return nullptr;
     }
-    WebViewPtr child = std::unique_ptr<WkWebView>(new WkWebView(nullptr, configuration, impl_->state->policy, impl_->sessionState));
+    WebViewPtr child = std::unique_ptr<WkWebView>(
+        new WkWebView(new ExternalHostView(std::move(host)), true, configuration, impl_->state->policy, impl_->sessionState));
     auto* concreteChild = static_cast<WkWebView*>(child.get());
     auto* nativeView = concreteChild->impl_->view;
     const std::weak_ptr<WebViewState> childState = concreteChild->impl_->state;
@@ -829,6 +783,11 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
 std::shared_ptr<WebViewState> WkWebView::stateForHostCompletion() const
 {
     return impl_->state;
+}
+
+HostView* WkWebView::hostView() const
+{
+    return impl_->container;
 }
 
 bool WkWebView::ownsNativeView(void* nativeView) const
