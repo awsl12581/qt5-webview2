@@ -79,7 +79,7 @@ ctest --preset windows-msvc-amd64-debug --output-on-failure
 Run the demo:
 
 ```powershell
-.\build\windows-msvc-amd64-debug\samples\demo\system_webview_demo.exe
+.\build\windows-msvc-amd64-debug\samples\demo\system_webview_qt5_demo.exe
 ```
 
 The vcpkg package supplies the WebView2 SDK and Loader. The target computer still needs a matching Microsoft Edge WebView2 Evergreen Runtime.
@@ -93,7 +93,14 @@ brew install cmake ninja qt@5
 cmake --preset macos-appleclang-debug
 cmake --build --preset macos-appleclang-debug
 ctest --preset macos-appleclang-debug --output-on-failure
-./build/macos-appleclang-debug/samples/demo/system_webview_demo
+./build/macos-appleclang-debug/samples/demo/system_webview_qt5_demo
+
+The same debug preset also builds the framework-specific host samples:
+
+```sh
+./build/macos-appleclang-debug/samples/glfw_demo/system_webview_glfw3_demo
+./build/macos-appleclang-debug/samples/sdl3_demo/system_webview_sdl3_demo
+```
 ```
 
 Tests that create a real WKWebView need a logged-in GUI session with access to WindowServer.

@@ -77,7 +77,7 @@ ctest --preset windows-msvc-amd64-debug --output-on-failure
 运行示例：
 
 ```powershell
-.\build\windows-msvc-amd64-debug\samples\demo\system_webview_demo.exe
+.\build\windows-msvc-amd64-debug\samples\demo\system_webview_qt5_demo.exe
 ```
 
 vcpkg 提供 WebView2 SDK 和 Loader。目标电脑仍需安装与架构匹配的 Microsoft Edge WebView2 Evergreen Runtime。
@@ -91,7 +91,14 @@ brew install cmake ninja qt@5
 cmake --preset macos-appleclang-debug
 cmake --build --preset macos-appleclang-debug
 ctest --preset macos-appleclang-debug --output-on-failure
-./build/macos-appleclang-debug/samples/demo/system_webview_demo
+./build/macos-appleclang-debug/samples/demo/system_webview_qt5_demo
+
+同一个 debug 预设也会构建按宿主框架区分的示例：
+
+```sh
+./build/macos-appleclang-debug/samples/glfw_demo/system_webview_glfw3_demo
+./build/macos-appleclang-debug/samples/sdl3_demo/system_webview_sdl3_demo
+```
 ```
 
 项目要求支持 C++20 的编译器和标准库，Objective-C++ 后端也使用 C++20。临时验证使用独立构建目录，不覆盖开发构建或安装产物：

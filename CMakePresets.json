@@ -21,7 +21,9 @@
             "inherits": "macos-appleclang-base",
             "binaryDir": "${sourceDir}/build/macos-appleclang-debug",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "SYSTEM_WEBVIEW_BUILD_GLFW_HOST": "ON",
+                "SYSTEM_WEBVIEW_BUILD_SDL3_HOST": "ON"
             }
         },
         {

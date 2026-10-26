@@ -1,10 +1,10 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 14:49 CST
-> 文档版本：v21
-> 修改说明：记录宿主状态动态刷新，确保创建后的布局和显示变化可被后端读取。
+> 最后修改时间：2026-10-26 15:05 CST
+> 文档版本：v22
+> 修改说明：同步 Qt5、GLFW3 和 SDL3 三个示例目标名称。
 
-`system_webview_demo -> webview platform backend -> portable webview contract`
+`system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
 `include/system_webview/system_webview.h` is the only public header. It exposes standard value types and C++ interfaces but no native WebKit,
 WebView2, or WebKitGTK types. The CMake target is a shared library with hidden symbols by default. `SYSTEM_WEBVIEW_API` exports only the
@@ -184,3 +184,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v19 | 2026-10-26 14:10 CST | 同步 v2 宿主 API，删除 QWidget 公共入口并改用 WebViewHost。 |
 | v20 | 2026-10-26 14:20 CST | 同步框架无关 HostView 和 popup 宿主交接设计。 |
 | v21 | 2026-10-26 14:49 CST | 记录 WebViewHost 动态刷新宿主状态，避免初始零尺寸或隐藏状态阻止页面挂载。 |
+| v22 | 2026-10-26 15:05 CST | 同步 Qt5、GLFW3 和 SDL3 三个示例目标名称。 |
