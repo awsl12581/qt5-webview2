@@ -19,7 +19,7 @@ namespace
 {
 void testUnsupportedFileSelectionIsExplicit()
 {
-    auto session = webview::createWebViewSession({ });
+    auto session = webview::createWebViewSession({});
     assert(session);
     assert(!session->supports(webview::WebViewCapability::FileSelection));
 }

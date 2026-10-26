@@ -8,7 +8,8 @@
 
 #include <cassert>
 
-namespace {
+namespace
+{
 bool waitForClear(const std::function<void(webview::IWebViewSession::ClearCompletion)>& clear)
 {
     QEventLoop loop;
@@ -38,7 +39,7 @@ int main(int argc, char** argv)
     persistentOptions.mode = webview::SessionMode::Persistent;
     persistentOptions.profilePath = (profile.path()).toStdString();
     auto session = webview::createWebViewSession(std::move(persistentOptions));
-    auto ephemeral = webview::createWebViewSession({ });
+    auto ephemeral = webview::createWebViewSession({});
     webview::WebApplicationOptions invalidBundle;
     invalidBundle.id = "demo";
     invalidBundle.source = webview::LocalBundle { profile.path().toStdString(), "../index.html" };

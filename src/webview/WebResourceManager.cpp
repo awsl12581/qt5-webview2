@@ -232,7 +232,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
         || impl_->snapshots->occupied() + info.size() > kMaximumPublishedBytes || !impl_->snapshots->directory.isValid()) {
         qCDebug(systemWebViewResource).noquote()
             << "event=resource.publish_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-        return { };
+        return {};
     }
 
     const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
@@ -242,7 +242,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
     if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) {
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-        return { };
+        return {};
     }
     std::vector<char> buffer(static_cast<std::size_t>(kCopyBufferSize));
     std::int64_t copied = 0;
@@ -252,20 +252,20 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
             output.cancelWriting();
             qCWarning(systemWebViewResource).noquote()
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-            return { };
+            return {};
         }
         copied += count;
         if (copied > kMaximumFileSize) {
             output.cancelWriting();
             qCWarning(systemWebViewResource).noquote()
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-            return { };
+            return {};
         }
     }
     if (copied != info.size() || !output.commit()) {
         qCWarning(systemWebViewResource).noquote()
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
-        return { };
+        return {};
     }
 
     auto entry = std::make_shared<Impl::Entry>();

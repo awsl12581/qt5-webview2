@@ -16,7 +16,8 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace
+{
 class TestPolicy final : public webview::WebViewPolicy
 {
 public:
@@ -57,7 +58,8 @@ public:
     bool allowPopups = false;
 };
 
-struct ServerStats {
+struct ServerStats
+{
     int reloadRequests = 0;
     int slowRequests = 0;
 };
@@ -115,7 +117,7 @@ int main(int argc, char** argv)
     config.pageToHostSchemas["hello"] = { { { "message", webview::JsonType::String } }, true };
     config.hostToPageSchemas["hello"] = { { { "message", webview::JsonType::String } } };
     auto policy = std::make_shared<TestPolicy>(std::move(config));
-    auto session = webview::createWebViewSession({ }, policy);
+    auto session = webview::createWebViewSession({}, policy);
     auto view = session->createWebView();
 
     std::vector<webview::LoadEvent> events;
@@ -311,7 +313,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     policy->permissionRequests.clear();
     events.clear();
-    view->loadDocument(R"HTML(
+    view->loadDocument(
+        R"HTML(
 <!doctype html><input id="file" type="file"><script>
 window.addEventListener('DOMContentLoaded', () => document.querySelector('#file').click());
 </script>)HTML",
@@ -386,7 +389,8 @@ window.addEventListener('DOMContentLoaded', () => document.querySelector('#file'
         loop.quit();
     };
     view->setHostCallbacks(std::move(popupCallbacks));
-    view->loadDocument(R"HTML(
+    view->loadDocument(
+        R"HTML(
 <!doctype html><script>
 window.addEventListener('DOMContentLoaded', () => window.open('https://trusted.example/popup'));
 </script>)HTML",

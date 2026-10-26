@@ -28,7 +28,8 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-namespace {
+namespace
+{
 constexpr auto kBridgeName = "systemWebView";
 
 NSString* toNSString(std::string_view value)
@@ -36,7 +37,10 @@ NSString* toNSString(std::string_view value)
     return [[[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding] autorelease];
 }
 
-NSString* toNSString(const QString& value) { return toNSString(value.toStdString()); }
+NSString* toNSString(const QString& value)
+{
+    return toNSString(value.toStdString());
+}
 
 webview::Url urlFromNSURL(NSURL* value)
 {
@@ -93,8 +97,10 @@ private:
 };
 }
 
-namespace webview {
-struct WkNavigationState {
+namespace webview
+{
+struct WkNavigationState
+{
     std::unordered_map<void*, std::uint64_t> navigationIds;
 
     std::uint64_t idForNavigation(void* navigation, std::uint64_t fallback) const
@@ -263,8 +269,8 @@ public:
         decisionHandler(WKPermissionDecisionDeny);
         return;
     }
-    const webview::Url originUrl(std::string(origin.protocol.UTF8String ?: "") + "://" + (origin.host.UTF8String ?: "") + ":"
-                        + std::to_string(origin.port));
+    const webview::Url originUrl(
+        std::string(origin.protocol.UTF8String ?: "") + "://" + (origin.host.UTF8String ?: "") + ":" + std::to_string(origin.port));
     const auto decision
         = webview::decideNativePermission(*self.state->policy, { permissionKind(type), webview::normalizedOrigin(originUrl) });
     if (decision != webview::NativePermissionDecision::Grant) {
@@ -272,9 +278,10 @@ public:
                                                << "view=" << self.state->diagnosticId
                                                << "origin=" << QString::fromStdString(webview::diagnosticOrigin(originUrl));
     }
-    decisionHandler(decision == webview::NativePermissionDecision::Grant ? WKPermissionDecisionGrant
-            : decision == webview::NativePermissionDecision::Prompt      ? WKPermissionDecisionPrompt
-                                                                         : WKPermissionDecisionDeny);
+    decisionHandler(
+        decision == webview::NativePermissionDecision::Grant        ? WKPermissionDecisionGrant
+            : decision == webview::NativePermissionDecision::Prompt ? WKPermissionDecisionPrompt
+                                                                    : WKPermissionDecisionDeny);
 }
 
 - (void)webView:(WKWebView*)webView
@@ -283,9 +290,8 @@ public:
              completionHandler:(void (^)(NSArray<NSURL*>* URLs))completionHandler
 {
     if (!self.state || self.state->lifetime.isClosed() || !frame.mainFrame
-        || webview::decideNativePermission(*self.state->policy,
-               { webview::PermissionKind::FilePicker,
-                   webview::normalizedOrigin(urlFromNSURL(frame.request.URL)) })
+        || webview::decideNativePermission(
+               *self.state->policy, { webview::PermissionKind::FilePicker, webview::normalizedOrigin(urlFromNSURL(frame.request.URL)) })
             != webview::NativePermissionDecision::Grant
         || !self.state->callbacks.onSelectFiles) {
         completionHandler(nil);
@@ -293,7 +299,7 @@ public:
     }
     const webview::Url documentUrl = urlFromNSURL(frame.request.URL);
     const webview::FileSelectionRequest request { webview::normalizedOrigin(documentUrl), documentUrl, parameters.allowsMultipleSelection,
-        parameters.allowsDirectories };
+                                                  parameters.allowsDirectories };
     auto guard = std::make_shared<webview::HostCompletionGuard>(self.owner->stateForHostCompletion());
     const QPointer<QWidget> context(self.owner->widget());
     const auto completion = [completionHandler, guard, context, request](webview::FileSelectionResult result) {
@@ -332,17 +338,17 @@ public:
 {
     const auto currentState = state.lock();
     if (!currentState || currentState->lifetime.isClosed()
-        || currentState->policy->decideDownload({ urlFromNSURL(response.URL),
-               currentState->committedUrl, urlFromNSURL(response.URL),
-               std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") })
+        || currentState->policy->decideDownload(
+               { urlFromNSURL(response.URL), currentState->committedUrl, urlFromNSURL(response.URL),
+                 std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") })
             != webview::DownloadDecision::Allow
         || !currentState->callbacks.onResolveDownload || !context) {
         completionHandler(nil);
         return;
     }
-    const webview::DownloadRequest request { urlFromNSURL(response.URL),
-        webview::normalizedOrigin(currentState->committedUrl), urlFromNSURL(response.URL),
-        std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") };
+    const webview::DownloadRequest request { urlFromNSURL(response.URL), webview::normalizedOrigin(currentState->committedUrl),
+                                             urlFromNSURL(response.URL),
+                                             std::string(suggestedFilename.UTF8String ? suggestedFilename.UTF8String : "") };
     auto guard = std::make_shared<webview::HostCompletionGuard>(currentState);
     const QPointer<QWidget> dispatchContext = context;
     const auto completion = [completionHandler, guard, dispatchContext](webview::DownloadResolution resolution) {
@@ -398,8 +404,8 @@ public:
                 self.state->explicitMainFrameNavigationPending = false;
                 self.state->provisionalMainFrameNavigation = false;
             }
-            decisionHandler(self.state->policy->decideDownload(
-                                { url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
+            decisionHandler(
+                self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
                             == webview::DownloadDecision::Allow
                         && self.state->callbacks.onResolveDownload
                     ? WKNavigationActionPolicyDownload
@@ -454,8 +460,8 @@ public:
     }
     const webview::Url url = urlFromNSURL(navigationResponse.response.URL);
     if (@available(macOS 11.3, *)) {
-        decisionHandler(self.state->policy->decideDownload(
-                            { url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
+        decisionHandler(
+            self.state->policy->decideDownload({ url, webview::normalizedOrigin(self.state->committedUrl), url, url.fileName() })
                         == webview::DownloadDecision::Allow
                     && self.state->callbacks.onResolveDownload
                 ? WKNavigationResponsePolicyDownload
@@ -474,15 +480,14 @@ public:
     ++self.state->navigationId;
     self.state->provisionalMainFrameNavigation = true;
     self.navigationState->navigationIds[static_cast<void*>(navigation)] = self.state->navigationId;
-    self.state->emitLoad(
-        webview::LoadState::Started, self.state->navigationId, urlFromNSURL(webView.URL));
+    self.state->emitLoad(webview::LoadState::Started, self.state->navigationId, urlFromNSURL(webView.URL));
 }
 
 - (void)webView:(WKWebView*)webView didReceiveServerRedirectForProvisionalNavigation:(WKNavigation*)navigation
 {
     if (self.state) {
-        self.state->emitLoad(webview::LoadState::Redirected,
-            self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId),
+        self.state->emitLoad(
+            webview::LoadState::Redirected, self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId),
             urlFromNSURL(webView.URL));
     }
 }
@@ -496,8 +501,9 @@ public:
     if (!self.state->resourceOrigin.isEmpty()) {
         self.state->setResourceContext(self.state->resourceOrigin, self.state->committedUrl, self.state->documentToken);
     }
-    self.state->emitLoad(webview::LoadState::Committed,
-        self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId), self.state->committedUrl);
+    self.state->emitLoad(
+        webview::LoadState::Committed, self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId),
+        self.state->committedUrl);
 }
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation
@@ -514,10 +520,11 @@ public:
 {
     if (self.state) {
         const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
-        self.state->emitLoad(webview::LoadState::Failed, navigationId,
-            webview::Url(error.userInfo[NSURLErrorFailingURLErrorKey]
-                    ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
-                    : ""),
+        self.state->emitLoad(
+            webview::LoadState::Failed, navigationId,
+            webview::Url(
+                error.userInfo[NSURLErrorFailingURLErrorKey] ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
+                                                             : ""),
             QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
@@ -528,7 +535,8 @@ public:
 {
     if (self.state) {
         const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
-        self.state->emitLoad(webview::LoadState::Failed, navigationId, urlFromNSURL(webView.URL),
+        self.state->emitLoad(
+            webview::LoadState::Failed, navigationId, urlFromNSURL(webView.URL),
             QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
@@ -552,7 +560,8 @@ public:
 }
 @end
 
-namespace webview {
+namespace webview
+{
 WkWebView::WkWebView(QWidget* parent, void* configuration, WebViewPolicyPtr policy, std::shared_ptr<WkSessionState> sessionState)
     : impl_(std::make_unique<Impl>())
 {
@@ -624,11 +633,20 @@ void WkWebView::initialize(void* configuration, WebViewPolicyPtr policy, std::sh
     }
 }
 
-WkWebView::~WkWebView() { close(); }
+WkWebView::~WkWebView()
+{
+    close();
+}
 
-QWidget* WkWebView::widget() { return impl_->container; }
+QWidget* WkWebView::widget()
+{
+    return impl_->container;
+}
 
-InitializationState WkWebView::initializationState() const { return impl_->state->initializationState(); }
+InitializationState WkWebView::initializationState() const
+{
+    return impl_->state->initializationState();
+}
 
 void WkWebView::whenInitialized(InitializationCompletion completion)
 {
@@ -666,7 +684,8 @@ void WkWebView::open(WebApplicationPtr application, const std::string& route)
 {
     if (!application)
         return;
-    impl_->state->bridgeOrigin = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : webview::Url();
+    impl_->state->bridgeOrigin
+        = application->bridgeAccess() == BridgeAccess::Allowed ? normalizedOrigin(application->origin()) : webview::Url();
     impl_->state->resourceOrigin = webview::Url("app://" + application->id());
     impl_->state->setResourceContext(impl_->state->resourceOrigin, application->origin(), impl_->state->documentToken);
     navigate(application->urlForRoute(route));
@@ -701,8 +720,7 @@ void WkWebView::loadDocument(const std::string& html, const webview::Url& baseUr
             impl_->state->emitLoad(LoadState::Failed, ++impl_->state->navigationId, baseUrl, "The HTML base URL was rejected by policy.");
             return;
         }
-        if (baseUrl.scheme() == "app"
-            && (!impl_->sessionState || !findResourceMapping(impl_->sessionState->resourceMappings, baseUrl))) {
+        if (baseUrl.scheme() == "app" && (!impl_->sessionState || !findResourceMapping(impl_->sessionState->resourceMappings, baseUrl))) {
             impl_->state->emitLoad(
                 LoadState::Failed, ++impl_->state->navigationId, baseUrl, "The app origin has no configured resource mapping.");
             return;
@@ -741,7 +759,7 @@ void WkWebView::close()
         return;
     }
     impl_->state->close();
-    impl_->state->callbacks = { };
+    impl_->state->callbacks = {};
     impl_->state->documentToken.clear();
     impl_->state->documentTransportPrepared = false;
     impl_->state->provisionalMainFrameNavigation = false;
@@ -761,7 +779,7 @@ void WkWebView::close()
     impl_->view.UIDelegate = nil;
     [impl_->view.configuration.userContentController removeScriptMessageHandlerForName:@(kBridgeName)];
     [impl_->view removeFromSuperview];
-    impl_->container->syncNativeView = { };
+    impl_->container->syncNativeView = {};
     impl_->nativeViewAttachmentRequested = false;
     impl_->messageDelegate = nil;
     impl_->uiDelegate = nil;
@@ -770,10 +788,19 @@ void WkWebView::close()
     impl_->view = nil;
 }
 
-bool WkWebView::isClosed() const { return impl_->state->lifetime.isClosed(); }
+bool WkWebView::isClosed() const
+{
+    return impl_->state->lifetime.isClosed();
+}
 
-WebViewBridge& WkWebView::bridge() { return *impl_->state->bridge; }
-WebResourceManager& WkWebView::resources() { return *impl_->state->resources; }
+WebViewBridge& WkWebView::bridge()
+{
+    return *impl_->state->bridge;
+}
+WebResourceManager& WkWebView::resources()
+{
+    return *impl_->state->resources;
+}
 
 void WkWebView::setHostCallbacks(WebViewHostCallbacks callbacks)
 {
@@ -799,8 +826,14 @@ void* WkWebView::createPopup(void* configuration, const NewWindowRequest& reques
     return nativeView;
 }
 
-std::shared_ptr<WebViewState> WkWebView::stateForHostCompletion() const { return impl_->state; }
+std::shared_ptr<WebViewState> WkWebView::stateForHostCompletion() const
+{
+    return impl_->state;
+}
 
-bool WkWebView::ownsNativeView(void* nativeView) const { return static_cast<void*>(impl_->view) == nativeView; }
+bool WkWebView::ownsNativeView(void* nativeView) const
+{
+    return static_cast<void*>(impl_->view) == nativeView;
+}
 
 } // namespace webview

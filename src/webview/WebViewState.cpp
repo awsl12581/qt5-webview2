@@ -32,8 +32,8 @@ void InitializationScheduler::markReady()
         return;
     }
     state_ = InitializationState::Ready;
-    finishQueuedOperations({ InitializationState::Ready, { } });
-    finishInitializationCompletions({ InitializationState::Ready, { } });
+    finishQueuedOperations({ InitializationState::Ready, {} });
+    finishInitializationCompletions({ InitializationState::Ready, {} });
 }
 
 void InitializationScheduler::fail(std::string error)
@@ -233,7 +233,7 @@ void WebViewState::invalidateDocument()
     if (bridge) {
         bridge->cancelPending("The document changed.");
     }
-    setResourceDocumentToken({ });
+    setResourceDocumentToken({});
 }
 
 void WebViewState::setResourceDocumentToken(std::string_view token)

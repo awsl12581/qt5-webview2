@@ -548,11 +548,8 @@ public:
                                     return encodingError();
                                 }
                                 Microsoft::WRL::ComPtr<IStream> stream;
-                                auto* fileStream = new FileRangeStream(
-                                    std::filesystem::path(*nativePath),
-                                    offset,
-                                    length,
-                                    std::move(lease));
+                                auto* fileStream =
+                                    new FileRangeStream(std::filesystem::path(*nativePath), offset, length, std::move(lease));
                                 if (!fileStream->valid()) {
                                     fileStream->Release();
                                     return S_OK;
@@ -765,8 +762,7 @@ public:
                                         return S_OK;
                                     }
                                     const auto separator = suggestedPath->find_last_of("/\\");
-                                    const auto suggestedName = suggestedPath->substr(
-                                        separator == std::string::npos ? 0 : separator + 1);
+                                    const auto suggestedName = suggestedPath->substr(separator == std::string::npos ? 0 : separator + 1);
                                     const DownloadRequest request { url,
                                                                     normalizedOrigin(state->committedUrl),
                                                                     state->committedUrl,
@@ -1080,16 +1076,16 @@ public:
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview;
-    EventRegistrationToken navigationStartingToken { };
-    EventRegistrationToken sourceChangedToken { };
-    EventRegistrationToken contentLoadingToken { };
-    EventRegistrationToken navigationCompletedToken { };
-    EventRegistrationToken webMessageToken { };
-    EventRegistrationToken processFailedToken { };
-    EventRegistrationToken webResourceToken { };
-    EventRegistrationToken permissionToken { };
-    EventRegistrationToken newWindowToken { };
-    EventRegistrationToken downloadToken { };
+    EventRegistrationToken navigationStartingToken {};
+    EventRegistrationToken sourceChangedToken {};
+    EventRegistrationToken contentLoadingToken {};
+    EventRegistrationToken navigationCompletedToken {};
+    EventRegistrationToken webMessageToken {};
+    EventRegistrationToken processFailedToken {};
+    EventRegistrationToken webResourceToken {};
+    EventRegistrationToken permissionToken {};
+    EventRegistrationToken newWindowToken {};
+    EventRegistrationToken downloadToken {};
     WebViewPolicyPtr policy;
     std::shared_ptr<std::vector<ResourceMapping>> resourceMappings;
     SessionMode sessionMode = SessionMode::Persistent;
@@ -1133,7 +1129,7 @@ public:
             controller.Reset();
             webview.Reset();
         }
-        state->callbacks = { };
+        state->callbacks = {};
         state->close();
     }
 
@@ -1159,7 +1155,7 @@ public:
             return;
         }
         const HWND hwnd = reinterpret_cast<HWND>(container->winId());
-        RECT bounds { };
+        RECT bounds {};
         GetClientRect(hwnd, &bounds);
         controller->put_ParentWindow(hwnd);
         controller->put_Bounds(bounds);
@@ -1296,8 +1292,7 @@ void WebView2View::navigate(const Url& url)
 
 void WebView2View::loadDocument(const std::string& html, const Url& baseUrl)
 {
-    if (baseUrl.scheme() == "app"
-        && (!impl_->resourceMappings || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
+    if (baseUrl.scheme() == "app" && (!impl_->resourceMappings || !findResourceMapping(*impl_->resourceMappings, baseUrl))) {
         const auto id = ++impl_->state->navigationId;
         impl_->state->emitLoad(LoadState::Failed, id, baseUrl, "The document base URL is unavailable.");
         return;

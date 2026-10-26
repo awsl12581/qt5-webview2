@@ -32,8 +32,7 @@ public:
 
     webview::NewWindowDecision decideNewWindow(const webview::NewWindowRequest& request) const override
     {
-        return request.url == webview::Url("https://example.com/") ? webview::NewWindowDecision::Allow
-                                                                           : webview::NewWindowDecision::Cancel;
+        return request.url == webview::Url("https://example.com/") ? webview::NewWindowDecision::Allow : webview::NewWindowDecision::Cancel;
     }
 };
 }

@@ -14,11 +14,11 @@ HostCompletionGuard::HostCompletionGuard(const std::shared_ptr<WebViewState>& st
 HostCompletionAccess HostCompletionGuard::claim()
 {
     if (completed_.exchange(true)) {
-        return { HostCompletionClaim::Duplicate, { } };
+        return { HostCompletionClaim::Duplicate, {} };
     }
     auto state = state_.lock();
     if (!state || state->lifetime.isClosed()) {
-        return { HostCompletionClaim::OwnerUnavailable, { } };
+        return { HostCompletionClaim::OwnerUnavailable, {} };
     }
     return { HostCompletionClaim::Accepted, std::move(state) };
 }

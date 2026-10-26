@@ -17,7 +17,7 @@ bool hasExternalFileLink(const std::filesystem::path& path)
     if (handle == INVALID_HANDLE_VALUE) {
         return true;
     }
-    FILE_STANDARD_INFO information { };
+    FILE_STANDARD_INFO information {};
     const auto success = GetFileInformationByHandleEx(handle, FileStandardInfo, &information, sizeof(information)) != FALSE;
     const auto attributes = GetFileAttributesW(path.c_str());
     CloseHandle(handle);

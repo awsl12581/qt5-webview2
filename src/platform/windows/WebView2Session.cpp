@@ -55,7 +55,7 @@ public:
         Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment;
         Microsoft::WRL::ComPtr<ICoreWebView2Environment5> environment5;
         Microsoft::WRL::ComPtr<ICoreWebView2Profile2> profile;
-        EventRegistrationToken browserProcessExitedToken { };
+        EventRegistrationToken browserProcessExitedToken {};
         WebViewSessionHostCallbacks callbacks;
         std::vector<std::function<void()>> closeCallbacks;
         bool closed = false;
@@ -223,7 +223,7 @@ WebView2Session::~WebView2Session()
 {
     if (impl_) {
         impl_->async->closed = true;
-        impl_->async->callbacks = { };
+        impl_->async->callbacks = {};
         if (impl_->async->environment5) {
             impl_->async->environment5->remove_BrowserProcessExited(impl_->async->browserProcessExitedToken);
         }
@@ -259,7 +259,7 @@ WebApplicationPtr WebView2Session::createApplication(WebApplicationOptions optio
     std::string error;
     const auto application = webview::createApplication(std::move(options), &error);
     if (!application || impl_->applicationIds.contains(application->id())) {
-        return { };
+        return {};
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
         std::vector<ResourceMapping> candidate = *impl_->resourceMappings;
@@ -308,7 +308,7 @@ WebViewPtr WebView2Session::createWebView(QWidget* parent)
         }
         owner->profile = std::move(profile2);
         owner->profileScheduler->markReady();
-        return { };
+        return {};
     };
     auto registerSessionClose = [weak = std::weak_ptr<Impl::AsyncState>(impl_->async)](std::function<void()> callback) {
         const auto owner = weak.lock();

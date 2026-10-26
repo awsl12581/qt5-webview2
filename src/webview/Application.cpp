@@ -49,7 +49,7 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
         if (error) {
             *error = "Application IDs must be nonempty UTF-8 containing only Unicode letters, numbers, and ASCII hyphens.";
         }
-        return { };
+        return {};
     }
     if (const auto* bundle = std::get_if<LocalBundle>(&options.source)) {
         const QFileInfo root(QString::fromStdString(bundle->directory));
@@ -59,27 +59,26 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
             if (error) {
                 *error = "LocalBundle requires an existing directory and entry document.";
             }
-            return { };
+            return {};
         }
         if (bundle->externalNetworkAccess != ExternalNetworkAccess::Denied
             && bundle->externalNetworkAccess != ExternalNetworkAccess::Allowed) {
             if (error) {
                 *error = "LocalBundle external network access is invalid.";
             }
-            return { };
+            return {};
         }
     }
     else {
         const bool developmentServer = std::holds_alternative<DevelopmentServer>(options.source);
         const Url& url = developmentServer ? std::get<DevelopmentServer>(options.source).url : std::get<RemoteOrigin>(options.source).url;
         const auto scheme = url.scheme();
-        if (!url.isValid() || url.host().empty()
-            || (developmentServer ? scheme != "http" && scheme != "https" : scheme != "https")
+        if (!url.isValid() || url.host().empty() || (developmentServer ? scheme != "http" && scheme != "https" : scheme != "https")
             || (url.path() != "/" && !url.path().empty()) || url.hasQuery() || url.hasFragment()) {
             if (error) {
                 *error = "Application URL sources require an absolute origin URL.";
             }
-            return { };
+            return {};
         }
     }
     auto application = std::make_shared<WebApplication>();
@@ -99,8 +98,9 @@ Url WebApplication::origin() const
 
 Url WebApplication::urlForRoute(std::string_view route) const
 {
-    const auto path = route.empty() && std::holds_alternative<LocalBundle>(source_) ? std::string_view(std::get<LocalBundle>(source_).entryDocument)
-                                                                                    : route;
+    const auto path = route.empty() && std::holds_alternative<LocalBundle>(source_)
+                          ? std::string_view(std::get<LocalBundle>(source_).entryDocument)
+                          : route;
     if (path.empty()) {
         return origin();
     }

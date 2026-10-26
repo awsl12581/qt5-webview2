@@ -1,9 +1,9 @@
 #pragma once
 
 #include <QLoggingCategory>
-#include <system_webview/system_webview.h>
 #include <cstdint>
 #include <string>
+#include <system_webview/system_webview.h>
 
 Q_DECLARE_LOGGING_CATEGORY(systemWebViewLifecycle)
 Q_DECLARE_LOGGING_CATEGORY(systemWebViewNavigation)

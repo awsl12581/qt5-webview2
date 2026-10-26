@@ -415,7 +415,7 @@ public:
     using RequestHandler = std::function<void(const Json&, Reply)>;
     using Validator = std::function<bool(const BridgeMessage&, bool, int, std::string*)>;
 
-    explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport = { });
+    explicit WebViewBridge(std::unique_ptr<BridgeTransport> transport = {});
     ~WebViewBridge();
 
     WebViewBridge(const WebViewBridge&) = delete;
@@ -476,7 +476,7 @@ struct ResourceResponse
 class WebResourceManager final
 {
 public:
-    SYSTEM_WEBVIEW_API explicit WebResourceManager(Url origin = { });
+    SYSTEM_WEBVIEW_API explicit WebResourceManager(Url origin = {});
     SYSTEM_WEBVIEW_API ~WebResourceManager();
 
     /// Publishes an immutable snapshot of path to the current document.
@@ -546,9 +546,9 @@ public:
     /// Creates a view owned by the caller and logically owned by this session.
     virtual WebViewPtr createWebView(QWidget* parent = nullptr) = 0;
     /// Clear operations are asynchronous; omitted completions discard the result.
-    virtual void clearCache(ClearCompletion completion = { }) = 0;
-    virtual void clearCookies(ClearCompletion completion = { }) = 0;
-    virtual void clearWebsiteData(ClearCompletion completion = { }) = 0;
+    virtual void clearCache(ClearCompletion completion = {}) = 0;
+    virtual void clearCookies(ClearCompletion completion = {}) = 0;
+    virtual void clearWebsiteData(ClearCompletion completion = {}) = 0;
     virtual void setHostCallbacks(WebViewSessionHostCallbacks callbacks) = 0;
     /// Query runtime support instead of inferring it from the operating system.
     virtual bool supports(WebViewCapability capability) const = 0;
@@ -584,7 +584,7 @@ struct WebViewPolicyConfig
 class SYSTEM_WEBVIEW_API WebViewPolicy
 {
 public:
-    explicit WebViewPolicy(WebViewPolicyConfig config = { });
+    explicit WebViewPolicy(WebViewPolicyConfig config = {});
     WebViewPolicy(const WebViewPolicy& other);
     WebViewPolicy& operator=(const WebViewPolicy& other);
     virtual ~WebViewPolicy();
@@ -609,7 +609,7 @@ private:
 using WebViewPolicyPtr = std::shared_ptr<const WebViewPolicy>;
 
 /// Creates the deny-by-default policy configured by config.
-SYSTEM_WEBVIEW_API WebViewPolicyPtr createDefaultWebViewPolicy(WebViewPolicyConfig config = { });
+SYSTEM_WEBVIEW_API WebViewPolicyPtr createDefaultWebViewPolicy(WebViewPolicyConfig config = {});
 /// Creates a platform session. Keep it alive until all of its views are destroyed.
-SYSTEM_WEBVIEW_API WebViewSessionPtr createWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy = { });
+SYSTEM_WEBVIEW_API WebViewSessionPtr createWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy = {});
 } // namespace webview

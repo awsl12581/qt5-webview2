@@ -148,14 +148,14 @@ std::string resolveMappedResource(const ResourceMapping& mapping, const Url& url
         if (error) {
             *error = "The mapped resource is unavailable or outside its root.";
         }
-        return { };
+        return {};
     }
 }
 
 std::string localBundleContentSecurityPolicy(ExternalNetworkAccess access)
 {
     if (access == ExternalNetworkAccess::Allowed) {
-        return { };
+        return {};
     }
     return std::string(
         "default-src 'self' data: blob:; connect-src 'self'; "

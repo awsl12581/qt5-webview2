@@ -149,8 +149,9 @@
         }
     }
     if (status == webview::httpStatus::kPartialContent) {
-        headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset),
-            static_cast<long long>(offset + length - 1), static_cast<long long>(totalSize)];
+        headers[@"Content-Range"] =
+            [NSString stringWithFormat:@"bytes %lld-%lld/%lld", static_cast<long long>(offset), static_cast<long long>(offset + length - 1),
+                                       static_cast<long long>(totalSize)];
     }
     else if (status == webview::httpStatus::kRangeNotSatisfiable) {
         headers[@"Content-Range"] = [NSString stringWithFormat:@"bytes */%lld", static_cast<long long>(totalSize)];
@@ -205,7 +206,8 @@
 }
 @end
 
-namespace webview {
+namespace webview
+{
 class WkWebViewSession::Impl
 {
 public:
@@ -235,7 +237,10 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
     qCInfo(systemWebViewLifecycle).noquote() << "event=session.ready" << "session=" << impl_->state->diagnosticId;
 }
 
-InitializationState WkWebViewSession::initializationState() const { return impl_->state->initialization.state(); }
+InitializationState WkWebViewSession::initializationState() const
+{
+    return impl_->state->initialization.state();
+}
 
 void WkWebViewSession::whenInitialized(InitializationCompletion completion)
 {
@@ -249,10 +254,10 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
     std::string error;
     const auto application = webview::createApplication(std::move(options), &error);
     if (!application || impl_->applicationIds.contains(application->id()))
-        return { };
+        return {};
     if (const auto* bundle = std::get_if<LocalBundle>(&application->source())) {
         ResourceMapping mapping { application->origin(), bundle->directory, bundle->entryDocument, bundle->spaFallback,
-            bundle->externalNetworkAccess };
+                                  bundle->externalNetworkAccess };
         std::vector<ResourceMapping> candidate = impl_->state->resourceMappings;
         candidate.push_back(std::move(mapping));
         if (!validateResourceMappings(&candidate, &error)
@@ -268,7 +273,7 @@ WebApplicationPtr WkWebViewSession::createApplication(WebApplicationOptions opti
 WkWebViewSession::~WkWebViewSession()
 {
     impl_->state->valid = false;
-    impl_->state->callbacks = { };
+    impl_->state->callbacks = {};
     impl_->state->initialization.close();
     std::vector<WkWebView*> views;
     {
@@ -297,7 +302,8 @@ WebViewPtr WkWebViewSession::createWebView(QWidget* parent)
     return std::unique_ptr<WkWebView>(new WkWebView(parent, configuration, impl_->policy, impl_->state));
 }
 
-namespace {
+namespace
+{
     void clearData(WkSessionState& state, WKWebsiteDataStore* store, NSSet<NSString*>* types, IWebViewSession::ClearCompletion completion)
     {
         state.initialization.runWhenReady([store, types, completion = std::move(completion)](const InitializationResult& result) {
@@ -311,7 +317,7 @@ namespace {
                        modifiedSince:[NSDate distantPast]
                    completionHandler:^{
                        if (completion) {
-                           completion({ });
+                           completion({});
                        }
                    }];
         });
@@ -320,7 +326,8 @@ namespace {
 
 void WkWebViewSession::clearCache(ClearCompletion completion)
 {
-    clearData(*impl_->state, impl_->dataStore, [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil],
+    clearData(
+        *impl_->state, impl_->dataStore, [NSSet setWithObjects:WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, nil],
         std::move(completion));
 }
 

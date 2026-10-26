@@ -81,7 +81,7 @@ public:
 private:
     bool verifyRetainedViewClose()
     {
-        auto closingSession = webview::createWebViewSession({ });
+        auto closingSession = webview::createWebViewSession({});
         auto retainedView = closingSession->createWebView(&parent);
         closingSession.reset();
         if (!retainedView->isClosed()) {

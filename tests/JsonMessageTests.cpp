@@ -83,7 +83,7 @@ void testJsonMigrationBoundaries()
     webview::WebViewPolicyConfig config;
     config.pageToHostSchemas["number"] = { { { "value", webview::JsonType::Number } } };
     webview::WebViewPolicy policy(std::move(config));
-    for (const Json value : { Json(-1), Json(std::uint64_t(18446744073709551615ULL)), Json(1.25) }) {
+    for (const Json value : { Json(-1), Json(std::uint64_t(18'446'744'073'709'551'615ULL)), Json(1.25) }) {
         assert(policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, "number", {}, Json { { "value", value } }, {} }));
     }
     assert(!policy.validatePageToHostMessage({ 1, webview::BridgeMessageKind::Event, "number", {}, Json { { "value", nullptr } }, {} }));
@@ -165,8 +165,10 @@ int main()
         assert(!webview::utf8ToUtf16(text));
         assert(!webview::utf8ToUtf16("valid prefix" + text));
     }
-    for (const auto text : { std::u16string { 0xD800 }, std::u16string { 0xDC00 },
-                            std::u16string { u'a', 0xD800, u'b' }, std::u16string { 0xDC00, 0xD800 } }) {
+    for (const auto text : { std::u16string { 0xD800 },
+                             std::u16string { 0xDC00 },
+                             std::u16string { u'a', 0xD800, u'b' },
+                             std::u16string { 0xDC00, 0xD800 } }) {
         assert(!webview::utf16ToUtf8(text));
     }
 #ifdef _WIN32
@@ -425,10 +427,8 @@ int main()
     assert(navigation("not a url") == webview::NavigationDecision::Cancel);
 
     assert(policy.decideNewWindow({ webview::Url("https://example.com"), true }) == webview::NewWindowDecision::Cancel);
-    assert(
-        policy.decidePermission({ webview::PermissionKind::Camera, webview::Url("app://ui") })
-        == webview::PermissionDecision::Deny);
-    assert(policy.decideDownload({ webview::Url("https://example.com/file"), { }, { } }) == webview::DownloadDecision::Cancel);
+    assert(policy.decidePermission({ webview::PermissionKind::Camera, webview::Url("app://ui") }) == webview::PermissionDecision::Deny);
+    assert(policy.decideDownload({ webview::Url("https://example.com/file"), {}, {} }) == webview::DownloadDecision::Cancel);
     assert(policy.allowsBridge(webview::Url("app://ui/page")));
     assert(policy.allowsBridge(webview::Url("http://127.0.0.1:5173/page")));
     assert(policy.allowsBridge(webview::Url("https://trusted.example/path")));
@@ -444,7 +444,7 @@ int main()
         { 1, webview::BridgeMessageKind::Event, "pong", {}, { { "accepted", true } }, {} },
         &validationError));
     assert(!policy.validatePageToHostMessage(
-        { 2, webview::BridgeMessageKind::Event, validMessage.type, { }, validMessage.payload, { } },
+        { 2, webview::BridgeMessageKind::Event, validMessage.type, {}, validMessage.payload, {} },
         &validationError));
     assert(validationError.find("version") != std::string::npos);
     assert(!policy.validatePageToHostMessage(
@@ -583,7 +583,7 @@ int main()
         singleFileRequest,
         { webview::FileSelectionStatus::Selected, { selectedFile.toStdString() }, {} });
     assert(selected.status == webview::FileSelectionStatus::Selected);
-    const auto empty = webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, { }, { } });
+    const auto empty = webview::normalizeFileSelectionResult(singleFileRequest, { webview::FileSelectionStatus::Selected, {}, {} });
     assert(empty.status == webview::FileSelectionStatus::Cancelled);
     const auto multiple = webview::normalizeFileSelectionResult(
         singleFileRequest,
@@ -631,8 +631,7 @@ int main()
     std::vector<webview::ResourceMapping> duplicateMappings { { webview::Url("app://demo"), selectedRoot.path().toStdString() },
                                                               { webview::Url("APP://DEMO"), selectedRoot.path().toStdString() } };
     assert(webview::validateResourceMappings(&duplicateMappings, &mappingError));
-    std::vector<webview::ResourceMapping> invalidMappings { { webview::Url("https://demo/path"),
-                                                              selectedRoot.path().toStdString() } };
+    std::vector<webview::ResourceMapping> invalidMappings { { webview::Url("https://demo/path"), selectedRoot.path().toStdString() } };
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
     const auto createBundleWithId = [&selectedRoot](const std::string& id) {
@@ -660,10 +659,20 @@ int main()
         assert(unicodePolicy.decideNavigation({ route }) == webview::NavigationDecision::Allow);
         assert(unicodePolicy.allowsBridge(route));
     }
-    const std::vector<std::string> invalidIds {
-        "", "a b", "a_b", "a/b", "🌍", "e\xCC\x81", "\xCC\x81", "\xFF", "\xE4\xB8", "\xC0\xAF",
-        "\xED\xA0\x80", "\xF4\x90\x80\x80", std::string("a\0b", 3), std::string("\0", 1)
-    };
+    const std::vector<std::string> invalidIds { "",
+                                                "a b",
+                                                "a_b",
+                                                "a/b",
+                                                "🌍",
+                                                "e\xCC\x81",
+                                                "\xCC\x81",
+                                                "\xFF",
+                                                "\xE4\xB8",
+                                                "\xC0\xAF",
+                                                "\xED\xA0\x80",
+                                                "\xF4\x90\x80\x80",
+                                                std::string("a\0b", 3),
+                                                std::string("\0", 1) };
     for (const auto& id : invalidIds) {
         assert(!createBundleWithId(id));
     }
