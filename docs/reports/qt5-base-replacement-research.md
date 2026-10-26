@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 16:05 CST
-> 文档版本：v14
-> 修改说明：实施标准 C++ 诊断事件回调，移除生产日志路径的 Qt 日志依赖，并同步测试与接入文档。
+> 最后修改时间：2026-10-26 16:35 CST
+> 文档版本：v16
+> 修改说明：完成 QUuid 替换，接入平台安全随机源、统一令牌编码和核心测试。
 
 ## 结论与范围
 
@@ -94,7 +94,7 @@
 | QThread、QMetaObject::invokeMethod | UI 线程 ID + 受锁任务队列 + PostMessageW 唤醒 | 投递失败、窗口销毁、任务取消和队列释放都要有结果；避免把未管理裸指针塞入消息 |
 | QPointer、PendingAction | weak_ptr 生命周期状态、代际标识、一次完成保护 | HWND 可被复用，IsWindow 检查不能替代所有权保护 |
 | QString 的 COM 转换 | UTF-8 公共文本 + simdutf UTF-8/UTF-16 转码 | 已接入 v9.3.2 并私有静态链接，Windows 转码已替换；macOS 验证构建及 3 项测试通过，Windows 编译运行待验证；严格拒绝非法输入，文件路径使用原生 UTF-16，详见 [专项调研](simdutf-replacement-scope.md) |
-| QUuid 文档/资源令牌 | BCryptGenRandom，或 macOS 对应安全随机源 | 保留令牌不可预测性；std::random_device 不作为可移植的密码学保证 |
+| QUuid 文档/资源令牌 | 项目内部 128-bit 安全随机令牌；Windows 使用 `BCryptGenRandom`，macOS 使用 `SecRandomCopyBytes`，统一十六进制编码 | C++20 没有标准 UUID API；不引入 UUID 三方库，不使用时间、计数器或 `std::random_device` 作为安全令牌来源 |
 | QTimer 清理重试 | 消息循环定时器或可取消的原生定时调度 | 回调不能访问已销毁状态；到期语义与现有时间口径需明确 |
 | QIODevice/QFile 与 FileRangeStream 的衔接 | 项目 ByteStream/文件响应描述 + 原生文件范围流 | 保留租约、偏移、短读、范围限制；不能换成全文件读入内存 |
 | QRegularExpression 解析 Range | 小型语法解析 + from_chars | 保留支持的 Range 形式、溢出检查及 416 响应，不需要通用正则库 |
@@ -134,7 +134,7 @@ Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/�
 | 核心生产库的 Qt 链接 | [CMakeLists.txt](../../CMakeLists.txt) 第 22、78 行 | `find_package(Qt5 ...)` 和 `system_webview` 对 `Qt5::Widgets` 的 PUBLIC 链接仍存在。必须先让核心 target 不再导出 Qt，再由宿主适配器单独链接 Qt。 |
 | Qt 宿主适配器 | [qt_host.h](../../include/system_webview/qt_host.h) | `QWidget`、`QThread`、`QMetaObject`、`QResizeEvent` 仍是 Qt 实现。它可以作为可选适配器保留，但不应进入核心 API 或核心链接。 |
 | 诊断日志 | [Diagnostics.h](../../src/internal/Diagnostics.h)、[Diagnostics.cpp](../../src/webview/Diagnostics.cpp)、[WebViewState.cpp](../../src/webview/WebViewState.cpp) 及 Windows/macOS 后端 | `QLoggingCategory`、`QDebug` 和 Qt 字符串格式化仍在生产代码中。建议用标准类型定义结构化诊断事件并通过调用方注入的回调交付；库不做过滤、输出或持久化。 |
-| UUID 和令牌 | [WebViewBridge.cpp](../../src/webview/WebViewBridge.cpp)、[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebView.mm](../../src/platform/macos/WkWebView.mm)、[WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | `QUuid` 仍生成请求 ID、文档令牌和快照临时目录名。需要系统安全随机源和项目内部 UUID 文本格式，不能用无安全保证的普通伪随机数替代。 |
+| UUID 和令牌 | [WebViewBridge.cpp](../../src/webview/WebViewBridge.cpp)、[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebView.mm](../../src/platform/macos/WkWebView.mm)、[WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | `QUuid` 仍生成请求 ID、文档令牌和快照临时目录名。统一替换为项目内部 128-bit 安全随机令牌；请求匹配只要求唯一性，document/resource token 还要求不可预测性。 |
 | 定时器和应用调度 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | `QCoreApplication`/`QTimer` 仍用于快照删除重试。需要平台 dispatcher 或宿主调度接口，并处理取消、销毁和重试截止时间。 |
 | Range 正则和 Qt 字符串边界 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm)、平台后端 | `QRegularExpression` 解析 HTTP Range，平台文件中仍有 `QString`/Qt 日志。可用 `std::string_view`、`from_chars`、原生 NSString/UTF-16 边界和统一日志 facade 替代。 |
 | 文件和流 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、测试及平台资源响应 | 生产路径已有标准文件/平台流替代方向，但测试仍大量使用 `QFile`、`QDir`、`QFileInfo`、`QTemporaryDir` 和 `QIODevice`。迁移必须保留快照、Range、租约、目录边界、链接/reparse point 和删除重试语义，详见 [文件与流替代范围调研](file-stream-replacement-scope.md)。 |
@@ -189,6 +189,18 @@ C++ 库通常不会假定所有调用方使用同一个日志后端。常见边�
 
 本方案已实施：`DiagnosticEvent`、`DiagnosticHandler` 和 `WebViewSessionOptions::diagnosticHandler` 已加入公共接口，生产日志调用已改为标准 C++ `DiagnosticStream`。核心测试已改用注入接收器，并验证事件分类、事件码、脱敏字段和关闭后的行为。
 
+## UUID 替代方案
+
+C++20 标准库没有 UUID 类型或密码学随机字节接口。本项目的三个用途都不需要完整 UUID 语义、版本字段或 UUID 解析：Bridge request ID 只需要高概率唯一，document token 和资源 token 还会参与页面/资源边界校验，因此必须不可预测，快照目录名也应避免被猜测。
+
+最简方案是项目内部提供一个 `randomToken128()`：在 Windows 调用 `BCryptGenRandom`，在 macOS 调用 `SecRandomCopyBytes`，读取 16 个随机字节，再编码为 32 个小写十六进制字符。该格式不带连字符，但现有代码只把值当作不透明字符串，不依赖 UUID version/variant 字段，行为足够稳定。失败时应返回明确错误并终止本次生成，不能回退到时间、进程 ID、地址、递增计数器或普通伪随机数。
+
+不建议使用 `std::random_device` 作为唯一实现。标准只保证它是非确定性随机源的抽象，具体实现可能退化为伪随机设备，不能为 document token 或 resource token 提供跨平台的密码学保证。Boost.UUID、libuuid、stduuid 等库可以生成 UUID 文本，但会增加依赖、许可/安装配置和格式适配；其中 UUID 生成是否使用系统安全随机源仍需逐平台核验，不能仅凭库名判定安全性。
+
+因此推荐优先级为：平台安全随机源 + 项目内部编码；只有未来需要对外暴露 UUID version/variant、解析或跨系统互操作时，才单独引入 UUID 库。该方案不新增 3rdparty 子模块，能直接移除当前 `QUuid` 头文件和 Qt Core 对这些调用点的依赖。
+
+该方案已实施于 [RandomToken.cpp](../../src/internal/RandomToken.cpp)：Windows 链接 `bcrypt`，macOS 链接 `Security.framework`，生成失败时返回空值并由请求、快照或文档初始化路径明确失败。`WebViewBridge`、`WebResourceManager`、`WkWebView` 和 `WebView2View` 均已改用该接口；核心测试验证 32 位小写十六进制格式和连续生成不重复。macOS `macos-appleclang-debug` preset 下主库和 `webview_core_tests` 构建通过，核心测试通过。
+
 ## 外部资料
 
 以下为本次查阅的上游依据；主分支资料可能继续变化，正式接入需使用锁定版本重新核验。
@@ -226,3 +238,5 @@ C++ 库通常不会假定所有调用方使用同一个日志后端。常见边�
 | v12 | 2026-10-26 15:39 CST | 按当前源码和 CMake 实际依赖重新盘点 Qt 生产库、适配器、示例、测试和包配置的剩余范围。 |
 | v13 | 2026-10-26 15:39 CST | 调研 Qt 日志的标准库替代边界、调用方接收模式，并盘点当前生产日志调用点。 |
 | v14 | 2026-10-26 16:05 CST | 实施标准 C++ 诊断事件回调，移除生产日志路径的 Qt 日志依赖，并同步测试与接入文档。 |
+| v15 | 2026-10-26 16:20 CST | 确定 QUuid 的替代方案，采用平台安全随机源和项目内部令牌编码，不引入 UUID 三方库。 |
+| v16 | 2026-10-26 16:35 CST | 完成 QUuid 替换，接入平台安全随机源、统一令牌编码和核心测试。 |

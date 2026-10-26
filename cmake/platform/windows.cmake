@@ -4,5 +4,6 @@ target_link_libraries(system_webview
     PRIVATE
         unofficial::webview2::webview2
         ole32
+        bcrypt
         shlwapi)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_PLATFORM_WINDOWS=1)

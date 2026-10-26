@@ -7,13 +7,12 @@
 #include "internal/Diagnostics.h"
 #include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
+#include "internal/RandomToken.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 
 #include <QString>
-#include <QUuid>
-
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -70,7 +69,11 @@ struct WkNavigationState
 
 void installDocumentTransport(WebViewState& state, WKUserContentController* content)
 {
-    state.documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    state.documentToken = randomToken128();
+    if (state.documentToken.empty()) {
+        state.failInitialization("Secure document token generation failed.");
+        return;
+    }
     state.setResourceDocumentToken(state.documentToken);
     const auto tokenLiteral = serializeJson(state.documentToken);
     if (!tokenLiteral) {

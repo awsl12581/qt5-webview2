@@ -3,6 +3,7 @@ target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_PLATFORM_MACOS=
 
 find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
 find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+find_library(SECURITY_FRAMEWORK Security REQUIRED)
 
 target_sources(system_webview PRIVATE
     src/webview/WebViewFactory.cpp
@@ -13,4 +14,5 @@ target_sources(system_webview PRIVATE
 target_link_libraries(system_webview PRIVATE
     "${WEBKIT_FRAMEWORK}"
     "${COCOA_FRAMEWORK}"
+    "${SECURITY_FRAMEWORK}"
 )

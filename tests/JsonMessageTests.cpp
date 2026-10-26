@@ -2,6 +2,7 @@
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
+#include "internal/RandomToken.h"
 #include "internal/TextEncoding.h"
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
@@ -147,6 +148,13 @@ void testJsonMigrationBoundaries()
 
 int main()
 {
+    const auto tokenA = webview::randomToken128();
+    const auto tokenB = webview::randomToken128();
+    assert(tokenA.size() == 32);
+    assert(tokenB.size() == 32);
+    assert(tokenA != tokenB);
+    assert(tokenA.find_first_not_of("0123456789abcdef") == std::string::npos);
+
     testJsonMigrationBoundaries();
     for (const std::string text : { "", "ASCII", "中文", "🌍", "\U00020000", "a中文🌍z" }) {
         const auto utf16 = webview::utf8ToUtf16(text);

@@ -1,9 +1,8 @@
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "internal/RandomToken.h"
 #include "webview/JsonMessage.h"
 #include <system_webview/system_webview.h>
-
-#include <QUuid>
 
 #include <cstdint>
 #include <limits>
@@ -182,7 +181,13 @@ void WebViewBridge::call(const std::string& type, const Json& payload, RequestCo
         }
         return;
     }
-    const auto requestId = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    const auto requestId = randomToken128();
+    if (requestId.empty()) {
+        if (completion) {
+            completion(Json::object(), "Unable to generate a secure request ID.");
+        }
+        return;
+    }
     const bool hasCompletion = static_cast<bool>(completion);
     if (hasCompletion) {
         impl_->pending.insert_or_assign(requestId, Impl::Pending { type, std::move(completion) });

@@ -8,12 +8,11 @@
 #include "internal/MimeType.h"
 #include "internal/HostView.h"
 #include "internal/ResourceMapping.h"
+#include "internal/RandomToken.h"
 #include "internal/TextEncoding.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
-
-#include <QUuid>
 
 #include <WebView2.h>
 #include <shlwapi.h>
@@ -866,7 +865,11 @@ public:
                                 }
                                 if (!redirected) {
                                     state->invalidateDocument();
-                                    state->documentToken = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+                                    state->documentToken = randomToken128();
+                                    if (state->documentToken.empty()) {
+                                        state->failInitialization("Secure document token generation failed.");
+                                        return S_OK;
+                                    }
                                     state->setResourceDocumentToken(state->documentToken);
                                 }
                                 state->emitLoad(redirected ? LoadState::Redirected : LoadState::Started, id, url);

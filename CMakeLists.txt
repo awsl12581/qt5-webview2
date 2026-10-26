@@ -58,6 +58,7 @@ add_library(system_webview SHARED
     include/system_webview/system_webview.h
     src/internal/HostView.h
     src/webview/TextEncoding.cpp
+    src/internal/RandomToken.cpp
     src/webview/Url.cpp
     src/webview/Application.cpp
     src/webview/Diagnostics.cpp
@@ -160,6 +161,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(webview_core_tests
         tests/JsonMessageTests.cpp
+        src/internal/RandomToken.cpp
         src/webview/Application.cpp
         src/webview/TextEncoding.cpp
         src/webview/Url.cpp
@@ -176,6 +178,11 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
     target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets nlohmann_json::nlohmann_json ada::ada utf8proc::utf8proc simdutf::simdutf)
+    if(APPLE)
+        target_link_libraries(webview_core_tests PRIVATE "${SECURITY_FRAMEWORK}")
+    elseif(WIN32)
+        target_link_libraries(webview_core_tests PRIVATE bcrypt)
+    endif()
     add_test(NAME webview_core_tests COMMAND webview_core_tests)
 
     if(APPLE)

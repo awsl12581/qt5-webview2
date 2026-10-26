@@ -2,13 +2,12 @@
 #include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
+#include "internal/RandomToken.h"
 #include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
 #include <QRegularExpression>
 #include <QTimer>
-#include <QUuid>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -51,7 +50,12 @@ public:
             const auto root = std::filesystem::temp_directory_path(error);
             if (!error) {
                 for (int attempt = 0; attempt != 8 && directory.empty(); ++attempt) {
-                    const auto candidate = root / ("system-webview-" + QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString());
+                    const auto token = randomToken128();
+                    if (token.empty()) {
+                        error = std::make_error_code(std::errc::io_error);
+                        continue;
+                    }
+                    const auto candidate = root / ("system-webview-" + token);
                     if (std::filesystem::create_directory(candidate, error)) {
                         directory = candidate;
                     }
@@ -236,7 +240,12 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
         return {};
     }
 
-    const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+    const auto token = randomToken128();
+    if (token.empty()) {
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
+            << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
+        return {};
+    }
     const auto snapshotPath = impl_->snapshots->directory / token;
     const auto temporaryPath = pathFromUtf8(pathToUtf8(snapshotPath) + ".tmp");
     std::ifstream input(sourcePath, std::ios::binary);
