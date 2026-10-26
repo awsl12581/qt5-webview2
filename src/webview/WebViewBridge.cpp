@@ -168,7 +168,7 @@ void WebViewBridge::emitEvent(const std::string& type, const Json& payload)
     const auto bytes = encodeBridgeMessage(message);
     if (bytes && (!impl_->validator || impl_->validator(message, true, bytes->size(), &error))) {
         if (!impl_->transport->send(*bytes)) {
-            qCWarning(systemWebViewBridge).noquote()
+            diagnosticLog(DiagnosticLevel::Warning, "system_webview.bridge")
                 << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         }
     }
@@ -188,7 +188,7 @@ void WebViewBridge::call(const std::string& type, const Json& payload, RequestCo
         impl_->pending.insert_or_assign(requestId, Impl::Pending { type, std::move(completion) });
     }
     if (!impl_->transport) {
-        qCDebug(systemWebViewBridge).noquote() << "event=bridge.transport_unavailable" << "session=" << impl_->sessionDiagnosticId
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.transport_unavailable" << "session=" << impl_->sessionDiagnosticId
                                                << "view=" << impl_->viewDiagnosticId;
         if (hasCompletion) {
             auto callback = impl_->takePending(requestId);
@@ -207,7 +207,7 @@ void WebViewBridge::call(const std::string& type, const Json& payload, RequestCo
         return;
     }
     if (!impl_->transport->send(*bytes)) {
-        qCWarning(systemWebViewBridge).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.bridge")
             << "event=bridge.transport_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         auto callback = impl_->takePending(requestId);
         if (callback.completion) {
@@ -262,7 +262,7 @@ void WebViewBridge::receive(const std::string& message, const Url&)
     }
     BridgeMessage envelope;
     if (!decode(message, &envelope)) {
-        qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
                                                << "view=" << impl_->viewDiagnosticId << "reason=invalid_envelope";
         return;
     }
@@ -273,7 +273,7 @@ void WebViewBridge::receive(const std::string& message, const Url&)
     if (envelope.kind == BridgeMessageKind::Response) {
         const auto it = impl_->pending.find(envelope.requestId);
         if (it == impl_->pending.end() || it->second.type != envelope.type) {
-            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
+            diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.message_rejected" << "session=" << impl_->sessionDiagnosticId
                                                    << "view=" << impl_->viewDiagnosticId << "reason=unexpected_response";
             return;
         }

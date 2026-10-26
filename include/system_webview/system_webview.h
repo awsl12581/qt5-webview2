@@ -98,6 +98,24 @@ class WebApplication;
 /// Immutable application source registered with a session.
 using WebApplicationPtr = std::shared_ptr<const WebApplication>;
 
+enum class DiagnosticLevel : int
+{
+    Debug,
+    Info,
+    Warning,
+    Critical
+};
+
+struct DiagnosticEvent
+{
+    DiagnosticLevel level = DiagnosticLevel::Info;
+    std::string category;
+    std::string message;
+};
+
+/// Receives library diagnostics. The callback runs on the thread that emitted the event.
+using DiagnosticHandler = std::function<void(const DiagnosticEvent&)>;
+
 /// Absolute URL parsed and serialized according to the WHATWG URL Standard.
 class SYSTEM_WEBVIEW_API Url
 {
@@ -282,6 +300,8 @@ struct WebViewSessionOptions
     SessionMode mode = SessionMode::Ephemeral;
     /// User-data directory for a persistent WebView2 profile; ignored by WKWebView.
     std::string profilePath;
+    /// Optional process-level diagnostic receiver. The library never writes logs itself.
+    DiagnosticHandler diagnosticHandler;
 };
 
 struct PermissionRequest

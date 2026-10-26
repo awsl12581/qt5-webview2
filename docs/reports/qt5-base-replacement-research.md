@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 12:55 CST
-> 文档版本：v11
-> 修改说明：补充文件与流 Qt 用途的专项替代方案及标准库/平台 API 边界。
+> 最后修改时间：2026-10-26 16:05 CST
+> 文档版本：v14
+> 修改说明：实施标准 C++ 诊断事件回调，移除生产日志路径的 Qt 日志依赖，并同步测试与接入文档。
 
 ## 结论与范围
 
@@ -127,20 +127,67 @@ JSON、URL、Unicode 转码和应用 ID 校验的 macOS 验证已经完成；Win
 
 ## Qt5-base 剩余范围
 
-Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分别承担 Windows 转码、Unicode 分类和 URL 解析职责。当前剩余 Qt 主要是 UI 与平台适配：`QApplication`/`QWidget`/布局、事件循环和定时器、`QFile`/`QDir`/`QFileInfo`、`QIODevice`、Qt 日志以及少量 QString 的原生边界转换。文件和流的具体调用、Range/快照契约及迁移顺序见 [文件与流替代范围调研](file-stream-replacement-scope.md)。
+Qt JSON、URL、Unicode 分类、Windows UTF-8/UTF-16 转换、公共字符串/容器和 MIME 固定扩展名 helper 已完成替代。Qt 仍未从项目中完全移除，当前实际范围如下：
 
-建议的辅助库和边界如下：
-
-| 剩余 Qt 范围 | 可评估的三方库或原生方案 | 结论 |
+| 范围 | 当前代码位置 | 当前状态与替代方向 |
 | --- | --- | --- |
-| 文件、目录和路径 | C++20 `std::filesystem`，Windows UTF-16 API，macOS Foundation | 优先标准库和平台 API；保留 symlink/reparse point、硬链接和并发替换检查 |
-| 流和资源文件 | `std::ifstream`/`std::fstream`、项目自有 range reader、Windows `IStream` | 先移除公共 `QIODevice` ABI，再迁移快照、Range、租约和平台响应；详见 [文件与流报告](file-stream-replacement-scope.md) |
-| MIME 检测 | 项目内部固定扩展名 helper；未来可选 libmagic | 已完成显式 MIME、固定扩展名表和 `application/octet-stream` 回退；当前不需要第三方 MIME 库 |
-| 主线程调度、定时器和异步 I/O | Windows dispatcher、Grand Central Dispatch、libuv 或 Boost.Asio | WebView2 STA 和 WKWebView 主线程仍依赖平台循环；libuv/Asio 不能直接替代 Qt Widgets 事件循环 |
-| 日志 | spdlog 或自有日志 facade | 先保持 QLoggingCategory 行为，单独迁移日志分类和过滤 |
-| Widgets、布局、跨平台窗口 | Win32/Windows App SDK、AppKit，或保留 Qt Widgets | 没有一个轻量三方库能无损替代当前 UI；这是最大剩余范围 |
+| 核心生产库的 Qt 链接 | [CMakeLists.txt](../../CMakeLists.txt) 第 22、78 行 | `find_package(Qt5 ...)` 和 `system_webview` 对 `Qt5::Widgets` 的 PUBLIC 链接仍存在。必须先让核心 target 不再导出 Qt，再由宿主适配器单独链接 Qt。 |
+| Qt 宿主适配器 | [qt_host.h](../../include/system_webview/qt_host.h) | `QWidget`、`QThread`、`QMetaObject`、`QResizeEvent` 仍是 Qt 实现。它可以作为可选适配器保留，但不应进入核心 API 或核心链接。 |
+| 诊断日志 | [Diagnostics.h](../../src/internal/Diagnostics.h)、[Diagnostics.cpp](../../src/webview/Diagnostics.cpp)、[WebViewState.cpp](../../src/webview/WebViewState.cpp) 及 Windows/macOS 后端 | `QLoggingCategory`、`QDebug` 和 Qt 字符串格式化仍在生产代码中。建议用标准类型定义结构化诊断事件并通过调用方注入的回调交付；库不做过滤、输出或持久化。 |
+| UUID 和令牌 | [WebViewBridge.cpp](../../src/webview/WebViewBridge.cpp)、[WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebView.mm](../../src/platform/macos/WkWebView.mm)、[WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | `QUuid` 仍生成请求 ID、文档令牌和快照临时目录名。需要系统安全随机源和项目内部 UUID 文本格式，不能用无安全保证的普通伪随机数替代。 |
+| 定时器和应用调度 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | `QCoreApplication`/`QTimer` 仍用于快照删除重试。需要平台 dispatcher 或宿主调度接口，并处理取消、销毁和重试截止时间。 |
+| Range 正则和 Qt 字符串边界 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、[WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm)、平台后端 | `QRegularExpression` 解析 HTTP Range，平台文件中仍有 `QString`/Qt 日志。可用 `std::string_view`、`from_chars`、原生 NSString/UTF-16 边界和统一日志 facade 替代。 |
+| 文件和流 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp)、测试及平台资源响应 | 生产路径已有标准文件/平台流替代方向，但测试仍大量使用 `QFile`、`QDir`、`QFileInfo`、`QTemporaryDir` 和 `QIODevice`。迁移必须保留快照、Range、租约、目录边界、链接/reparse point 和删除重试语义，详见 [文件与流替代范围调研](file-stream-replacement-scope.md)。 |
+| Qt 示例和控件 | [samples/demo](../../samples/demo)、[windows_widget_demo](../../samples/windows_widget_demo) | Qt Widgets 示例仍使用 `QApplication`、`QMainWindow`、标签页、布局和按钮。GLFW3/SDL3 示例已提供其他宿主，但 Qt 示例可继续作为独立适配器示例。 |
+| Qt 测试工具 | [tests](../../tests) | 测试仍依赖 `QApplication`、`QEventLoop`、`QTimer`、`QFile`、`QTemporaryDir`、`QTcpServer` 和 QWidget。需要平台事件循环、标准文件 API 和测试 HTTP 服务逐项替换，不能通过关闭测试目标宣称完成。 |
+| 包配置和开发文档 | [system_webviewConfig.cmake.in](../../cmake/system_webviewConfig.cmake.in)、README 和诊断/架构文档 | 包配置仍导出 Qt5 查找依赖，README 仍以 Qt5 为主要构建前提，部分架构/诊断文档仍描述 Qt 日志和宿主。核心脱 Qt 后需同步更新。 |
 
-这些库只解决各自边界，不能为了“完全替代 Qt5-base”把 libuv、Boost.Asio、libmagic 或 spdlog 混合成新的通用层。下一阶段应按文件系统、MIME、日志、调度、Widgets 的顺序分别调研和验证。libmagic 的具体调查和验证矩阵见 [专项报告](libmagic-replacement-scope.md)。
+`CMakeLists.txt` 第 106 行起的 `SYSTEM_WEBVIEW_BUILD_GLFW_HOST`、`add_subdirectory(3rdparty/glfw3)` 和 `system_webview_glfw_host` 只是 GLFW 宿主适配器的可选构建入口，不是剩余 Qt 内容。第 116 行起的 SDL3 逻辑同理；两者与 [system_webview_qt_host](../../CMakeLists.txt) 并列，均不应把宿主实现重新耦合进核心库。
+
+建议的替代边界如下：
+
+| Qt 能力 | 替代方案 | 结论 |
+| --- | --- | --- |
+| 文件、目录、路径和基础流 | C++20 `std::filesystem`、`std::ifstream`/自有 range reader、Windows 原生 UTF-16 API、macOS Foundation | 优先标准库和平台 API；安全检查与快照契约必须原样保留。 |
+| 主线程调度和定时器 | Win32 dispatcher、Grand Central Dispatch/NSRunLoop、宿主回调 | WebView2 STA 与 WKWebView 主线程契约由平台实现保证；libuv/Asio 不能直接替代 Widgets 消息泵。 |
+| 日志 | 自有日志 facade，宿主提供回调；必要时再评估 spdlog | 先迁移行为和分类，不为替换 Qt 强行引入新的全局日志后端。 |
+| Widgets 和布局 | Win32/AppKit，或独立保留 Qt/GLFW3/SDL3 适配器 | 没有一个库能自动覆盖现有 UI 语义；按宿主实现分别维护。 |
+
+当前结论：Qt 尚未完全替代。已替代的是数据格式、URL、Unicode、编码、公共基础类型和 MIME helper；未替代的是核心 Qt 链接、生产诊断/调度/UUID/正则边界、Qt 宿主适配器、Qt 示例、Qt 测试工具以及包配置和文档中的 Qt 声明。只有这些范围完成并通过 Windows/macOS 实机验证，才能移除 Qt5 的核心构建要求。
+
+## Qt 日志替代方案
+
+### 常见库的处理方式
+
+C++ 库通常不会假定所有调用方使用同一个日志后端。常见边界有两种：库接受调用方注入的 logger/sink 接口，或通过回调把日志记录交给宿主；应用再把记录适配到自己的日志系统、终端、文件、遥测或测试捕获器。成熟库也常提供全局日志回调，但全局可变状态会增加多实例隔离和并发配置难度，不适合本库优先采用。
+
+`std::string`、`std::string_view`、枚举、整数和 `std::format` 可以替代 Qt 的文本构造与类型依赖，但标准库没有日志分类、过滤器、sink 或持久化设施。因此建议本库定义窄小的结构化事件接口，而不是把 Qt 操作符流简单换成 `std::format` 后继续在库内打印。事件至少包含 severity、category、稳定 event code、session/view/navigation 关联 ID，以及经审查允许的字段；可读消息可以用 `std::format` 在生产端构造，也可以由宿主根据结构化字段格式化。
+
+调用方通过创建 session/view 的配置或宿主回调注册接收函数。库发生事件时同步调用该接收函数；没有注册接收函数时直接丢弃事件。库不创建日志文件、不指定目录/轮转策略、不维护后台队列，也不依赖具体第三方日志库。接收器由调用方负责线程安全、级别过滤、格式化、写入和上传。
+
+同步回调简单且不会引入隐式线程，但接收器运行在事件发生线程，不能阻塞 UI/WebView 回调线程。契约需说明回调线程、生命周期、并发可能性和不允许抛出异常；库应捕获并吞掉接收器异常，避免日志代码破坏 WebView 回调。若未来需要异步处理，应由调用方接收后自行排队。若希望提供轻量接口，可允许调用方设置最小级别，但过滤仍属于调用方策略；库本身只避免不必要的低级别消息构造。
+
+### 当前生产代码涉及范围
+
+当前生产实现有 44 个 Qt 分类日志调用点，分布在以下 7 个文件；分类声明和定义在 [Diagnostics.h](../../src/internal/Diagnostics.h) 与 [Diagnostics.cpp](../../src/webview/Diagnostics.cpp)：
+
+| 文件 | 当前日志用途 |
+| --- | --- |
+| [WebViewState.cpp](../../src/webview/WebViewState.cpp) | session/view 创建、就绪、初始化失败、关闭、Bridge 校验拒绝、导航失败 |
+| [WebViewBridge.cpp](../../src/webview/WebViewBridge.cpp) | Bridge JSON/传输失败、transport 不可用、消息校验拒绝 |
+| [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) | 资源发布/快照失败、资源请求拒绝、范围读取失败 |
+| [WkWebView.mm](../../src/platform/macos/WkWebView.mm) | Bridge 拒绝、popup/权限/导航策略拒绝、Web 内容进程终止 |
+| [WkWebViewSession.mm](../../src/platform/macos/WkWebViewSession.mm) | session 创建、就绪和关闭 |
+| [WebView2View.cpp](../../src/platform/windows/WebView2View.cpp) | 权限/popup/下载/导航策略拒绝、Bridge 边界拒绝、进程故障 |
+| [WebView2Session.cpp](../../src/platform/windows/WebView2Session.cpp) | WebView2 browser process 终止 |
+
+目前有六个分类：`lifecycle`、`navigation`、`policy`、`bridge`、`resource`、`runtime`。Debug 调用默认关闭，Info、Warning、Critical 默认开启；依赖 Qt 的 `QT_LOGGING_RULES` 做宿主外部过滤。日志采用 `event=... key=value` 文本，诊断字段包含关联 ID、来源、状态、固定原因码和原生错误码。现有脱敏规则禁止记录 URL path/query、Bridge payload、request/document token 和本地绝对路径，应继续作为事件接口契约。
+
+生产日志以外，[JsonMessageTests.cpp](../../tests/JsonMessageTests.cpp) 使用 `qInstallMessageHandler` 捕获文本，并用 `QLoggingCategory::setFilterRules` 改变过滤状态；替代时应改为注入测试接收器，检查 severity/category/event/字段、默认无接收器时不输出、敏感数据不进入事件，以及接收器异常不会逃出日志调用。`docs/guides/diagnostics.md` 和 [API 参考](../references/api-reference.md) 目前也将 Qt logging category、`QT_LOGGING_RULES` 和 `qInstallMessageHandler` 写为公开接入方式，实施替代时要同步更新。
+
+推荐结论：由本库拥有稳定的分类名、severity、event code 和字段语义；由调用方拥有过滤规则、最终文本格式、日志后端和持久化。公开 API 使用标准 C++ 类型，不暴露 Qt 或 spdlog 类型。该方案更符合“库产生诊断、宿主决定怎么处理”，也允许调用方接入现有日志体系而不增加必需三方库。
+
+本方案已实施：`DiagnosticEvent`、`DiagnosticHandler` 和 `WebViewSessionOptions::diagnosticHandler` 已加入公共接口，生产日志调用已改为标准 C++ `DiagnosticStream`。核心测试已改用注入接收器，并验证事件分类、事件码、脱敏字段和关闭后的行为。
 
 ## 外部资料
 
@@ -176,3 +223,6 @@ Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分
 | v9 | 2026-10-26 11:40 CST | 补充 WebView2 资源响应中的 MIME 作用及 libmagic 的边界。 |
 | v10 | 2026-10-26 12:48 CST | 同步固定 MIME 扩展名 helper 已实施，明确暂不引入 libmagic。 |
 | v11 | 2026-10-26 12:55 CST | 补充文件与流 Qt 用途的专项替代方案及标准库/平台 API 边界。 |
+| v12 | 2026-10-26 15:39 CST | 按当前源码和 CMake 实际依赖重新盘点 Qt 生产库、适配器、示例、测试和包配置的剩余范围。 |
+| v13 | 2026-10-26 15:39 CST | 调研 Qt 日志的标准库替代边界、调用方接收模式，并盘点当前生产日志调用点。 |
+| v14 | 2026-10-26 16:05 CST | 实施标准 C++ 诊断事件回调，移除生产日志路径的 Qt 日志依赖，并同步测试与接入文档。 |

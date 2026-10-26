@@ -12,7 +12,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QLoggingCategory>
 #include <QTemporaryDir>
 
 #include <array>
@@ -25,9 +24,9 @@ namespace
 {
 std::vector<std::string> capturedMessages;
 
-void captureMessage(QtMsgType, const QMessageLogContext& context, const QString& message)
+void captureMessage(const webview::DiagnosticEvent& event)
 {
-    capturedMessages.push_back(std::string(context.category) + "|" + message.toStdString());
+    capturedMessages.push_back(event.category + "|" + event.message);
 }
 
 class MemoryBridgeTransport final : public webview::BridgeTransport
@@ -198,8 +197,7 @@ int main()
     assert(pageScript.find("const label = '%1';") != std::string::npos);
     assert(pageScript.find("native.listen();") != std::string::npos);
 
-    const auto previousHandler = qInstallMessageHandler(captureMessage);
-    QLoggingCategory::setFilterRules(QStringLiteral("system_webview.*.debug=true\nsystem_webview.*.info=true"));
+    webview::setDiagnosticHandler(captureMessage);
     {
         webview::WebViewState diagnosticState(webview::DiagnosticScope::View, 41);
         bool runtimeFailureReceived = false;
@@ -230,13 +228,12 @@ int main()
     assert(diagnosticText.find("event=view.ready") == diagnosticText.rfind("event=view.ready"));
     assert(diagnosticText.find("event=navigation.failed") != std::string::npos);
     assert(diagnosticText.find("event=view.closed") != std::string::npos);
-    assert(diagnosticText.find("session= 41") != std::string::npos);
-    assert(diagnosticText.find("origin= https://example.com") != std::string::npos);
+    assert(diagnosticText.find("session=41") != std::string::npos);
+    assert(diagnosticText.find("origin=https://example.com") != std::string::npos);
     assert(diagnosticText.find("password") == std::string::npos);
     assert(diagnosticText.find("private") == std::string::npos);
     assert(diagnosticText.find("secret") == std::string::npos);
-    qInstallMessageHandler(previousHandler);
-    QLoggingCategory::setFilterRules(QString());
+    webview::setDiagnosticHandler({});
 
     auto transport = std::make_unique<MemoryBridgeTransport>();
     auto* transportProbe = transport.get();

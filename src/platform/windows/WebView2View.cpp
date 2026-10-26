@@ -593,9 +593,9 @@ public:
                                 const auto decision =
                                     state->policy ? state->policy->decidePermission({ kind, origin }) : PermissionDecision::Deny;
                                 if (decision != PermissionDecision::Allow) {
-                                    qCDebug(systemWebViewPolicy).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.policy")
                                         << "event=policy.permission_denied" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(origin));
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(origin);
                                 }
                                 args->put_State(
                                     decision == PermissionDecision::Allow ? COREWEBVIEW2_PERMISSION_STATE_ALLOW
@@ -628,9 +628,9 @@ public:
                                 const auto decision = state->policy ? state->policy->decideNewWindow(request) : NewWindowDecision::Cancel;
                                 if (decision != NewWindowDecision::Allow || !state->callbacks.onNewWindow
                                     || !state->callbacks.createPopupHost) {
-                                    qCDebug(systemWebViewPolicy).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.policy")
                                         << "event=policy.popup_denied" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Handled(TRUE);
                                     if (deferral) {
                                         deferral->Complete();
@@ -757,9 +757,9 @@ public:
                                                                     suggestedName };
                                     if (!state->policy || state->policy->decideDownload(request) != DownloadDecision::Allow
                                         || !state->callbacks.onResolveDownload) {
-                                        qCDebug(systemWebViewPolicy).noquote()
+                                        diagnosticLog(DiagnosticLevel::Debug, "system_webview.policy")
                                             << "event=policy.download_denied" << "session=" << state->sessionDiagnosticId
-                                            << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+                                            << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                         args->put_Cancel(TRUE);
                                         return S_OK;
                                     }
@@ -848,16 +848,16 @@ public:
                                         ? state->policy->decideNavigation({ url, true, userInitiated != FALSE, redirected != FALSE })
                                         : NavigationDecision::Allow;
                                 if (decision == NavigationDecision::Cancel) {
-                                    qCDebug(systemWebViewPolicy).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.policy")
                                         << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Cancel(TRUE);
                                     return S_OK;
                                 }
                                 if (decision == NavigationDecision::OpenExternally) {
-                                    qCDebug(systemWebViewPolicy).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.policy")
                                         << "event=navigation.rejected" << "session=" << state->sessionDiagnosticId
-                                        << "view=" << state->diagnosticId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+                                        << "view=" << state->diagnosticId << "origin=" << diagnosticOrigin(url);
                                     args->put_Cancel(TRUE);
                                     if (state->callbacks.onOpenExternal) {
                                         state->callbacks.onOpenExternal(url);
@@ -957,7 +957,7 @@ public:
                                 CoTaskMemFree(rawJson);
                                 CoTaskMemFree(rawSource);
                                 if (state->committedUrl.isEmpty()) {
-                                    qCDebug(systemWebViewBridge).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge")
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                         << "view=" << state->diagnosticId << "reason=no_committed_document";
                                     return S_OK;
@@ -968,7 +968,7 @@ public:
                                     || !state->policy->allowsBridge(source) || source.origin() != state->committedUrl.origin()
                                     || !parseMessage(*json, &object, &error)
                                     || jsonString(object, "documentToken") != state->documentToken) {
-                                    qCDebug(systemWebViewBridge).noquote()
+                                    diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge")
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                         << "view=" << state->diagnosticId << "reason=native_boundary";
                                     return S_OK;
@@ -996,7 +996,7 @@ public:
                                     kind = COREWEBVIEW2_PROCESS_FAILED_KIND_UNKNOWN_PROCESS_EXITED;
                                 }
                                 const auto event = runtimeFailureEvent(kind);
-                                qCCritical(systemWebViewRuntime).noquote()
+                                diagnosticLog(DiagnosticLevel::Critical, "system_webview.runtime")
                                     << "event=runtime.process_failed" << "session=" << state->sessionDiagnosticId
                                     << "view=" << state->diagnosticId << "native_code=" << event.nativeCode;
                                 state->emitRuntimeFailure(event);

@@ -1,10 +1,10 @@
 # 诊断日志与崩溃信息接入
 
-> 最后修改时间：2026-09-24 18:53 CST
-> 文档版本：v2
-> 修改说明：补充 WebView2 browser process 故障在 view 和 session 两个作用域的回调语义。
+> 最后修改时间：2026-10-26 16:05 CST
+> 文档版本：v3
+> 修改说明：改用标准 C++ 诊断事件回调，移除 Qt 日志接入说明。
 
-system_webview 只产生诊断信息，不创建日志或 dump 文件。初始化、导航和异步操作的业务结果仍通过公开 API 返回；宿主使用 Qt 日志设施决定过滤、落盘、轮转和上传方式。进程级 dump 由宿主或操作系统负责。
+system_webview 只产生诊断信息，不创建日志或 dump 文件。初始化、导航和异步操作的业务结果仍通过公开 API 返回；宿主通过 `WebViewSessionOptions::diagnosticHandler` 接收事件并决定过滤、格式化、落盘、轮转和上传方式。进程级 dump 由宿主或操作系统负责。
 
 ## 数据流
 
@@ -12,12 +12,12 @@ system_webview 只产生诊断信息，不创建日志或 dump 文件。初始�
 公共逻辑 / WKWebView / WebView2
     |-- 业务结果 ------> InitializationResult、LoadEvent、completion
     |-- 运行时故障 ----> WebViewHostCallbacks / WebViewSessionHostCallbacks
-    `-- 诊断事件 ------> QLoggingCategory ------> 宿主 Qt message handler
+    `-- 诊断事件 ------> DiagnosticHandler ------> 宿主日志设施
 
 宿主进程或浏览器进程崩溃 ----------------------> WER、Crashpad 或 macOS crash report
 ```
 
-日志调用在事件发生线程同步执行。库不维护日志队列；宿主的 message handler 不应执行阻塞 I/O。
+日志回调在事件发生线程同步执行。库不维护日志队列；宿主回调不应执行阻塞 I/O，也不应抛出异常。未设置回调时事件被丢弃。
 
 ## 日志分类
 
@@ -30,14 +30,7 @@ system_webview 只产生诊断信息，不创建日志或 dump 文件。初始�
 | `system_webview.resource` | 发布资源、快照和读取失败 |
 | `system_webview.runtime` | WebContent、renderer、browser 和辅助进程故障 |
 
-Debug 事件默认关闭，Info、Warning 和 Critical 默认开启。开发环境可以通过环境变量启用完整诊断：
-
-```sh
-QT_LOGGING_RULES="system_webview.*.debug=true"
-QT_MESSAGE_PATTERN="%{time process} %{type} %{category} %{message}"
-```
-
-应用需要持久化日志时，应在宿主入口安装 `qInstallMessageHandler`，再将消息交给应用现有的日志设施。库不规定文件格式、目录、大小或保留时间。
+库不在内部执行级别过滤；调用方根据 `DiagnosticEvent::level`、`category` 和稳定事件码决定是否记录。应用需要持久化日志时，应在创建 session 时设置 `diagnosticHandler`，再将事件交给应用现有的日志设施。库不规定文件格式、目录、大小或保留时间。
 
 ## 公共字段
 
@@ -115,3 +108,4 @@ WebView 子进程故障首先通过 runtime failure 回调报告。操作系统�
 | --- | --- | --- |
 | v1 | 2026-09-24 18:29 CST | 新增诊断框架、事件码、脱敏规则和 dump 接入边界。 |
 | v2 | 2026-09-24 18:53 CST | 补充 WebView2 browser process 故障的双作用域回调语义。 |
+| v3 | 2026-10-26 16:05 CST | 改用标准 C++ 诊断事件回调，移除 Qt 日志接入说明。 |

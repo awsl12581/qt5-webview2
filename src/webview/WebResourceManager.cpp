@@ -231,7 +231,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
         || !sourceIsFile || fileError || sourceSize > kMaximumFileSize || impl_->entries.size() >= kMaximumResourceCount
         || impl_->snapshots->occupied() + static_cast<std::int64_t>(sourceSize) > kMaximumPublishedBytes
         || impl_->snapshots->directory.empty()) {
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.publish_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
@@ -242,7 +242,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
     std::ifstream input(sourcePath, std::ios::binary);
     std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
     if (!input || !output) {
-        qCWarning(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
@@ -255,7 +255,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
             output.close();
             std::error_code error;
             std::filesystem::remove(temporaryPath, error);
-            qCWarning(systemWebViewResource).noquote()
+            diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return {};
         }
@@ -264,7 +264,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
             output.close();
             std::error_code error;
             std::filesystem::remove(temporaryPath, error);
-            qCWarning(systemWebViewResource).noquote()
+            diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
                 << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
             return {};
         }
@@ -277,7 +277,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
     if (!outputGood || copied != static_cast<std::int64_t>(sourceSize) || commitError) {
         std::error_code error;
         std::filesystem::remove(temporaryPath, error);
-        qCWarning(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
             << "event=resource.snapshot_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         return {};
     }
@@ -301,10 +301,9 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const auto origin = request.url.origin();
     const auto sourceOrigin = request.sourceOrigin.origin();
     if (!impl_->origin.isValid() || origin != impl_->origin.origin() || sourceOrigin != impl_->documentOrigin) {
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
-            << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << httpStatus::kForbidden;
         return { httpStatus::kForbidden };
     }
 
@@ -314,23 +313,22 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const auto it = impl_->entries.find(token);
     if (it == impl_->entries.cend()) {
         const int status = impl_->revoked.contains(token) ? httpStatus::kGone : httpStatus::kNotFound;
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << "status=" << status;
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << status;
         return { status };
     }
     const auto entry = it->second;
     if (entry->expiresAt <= std::chrono::system_clock::now()) {
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url)) << QStringLiteral("status=%1").arg(httpStatus::kGone);
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << httpStatus::kGone;
         return { httpStatus::kGone };
     }
     if (!entry->document.empty() && entry->document != request.documentToken) {
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
-            << QStringLiteral("status=%1").arg(httpStatus::kForbidden);
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << httpStatus::kForbidden;
         return { httpStatus::kForbidden };
     }
 
@@ -368,10 +366,9 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     }
     if ((hasRange && (entry->size == 0 || start < 0 || start > end || start >= entry->size))
         || (!hasRange && entry->size > 0 && (start < 0 || start > end))) {
-        qCDebug(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.resource")
             << "event=resource.request_rejected" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId
-            << "origin=" << QString::fromStdString(diagnosticOrigin(request.url))
-            << QStringLiteral("status=%1").arg(httpStatus::kRangeNotSatisfiable);
+            << "origin=" << diagnosticOrigin(request.url) << "status=" << httpStatus::kRangeNotSatisfiable;
         ResourceResponse response;
         response.status = httpStatus::kRangeNotSatisfiable;
         response.mimeType = entry->mime;
@@ -382,7 +379,7 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     const std::int64_t length = entry->size == 0 ? 0 : end - start + 1;
     auto file = std::make_unique<FileResource>(entry->path, start + length);
     if (!file->seek(start)) {
-        qCWarning(systemWebViewResource).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.resource")
             << "event=resource.read_failed" << "session=" << impl_->sessionDiagnosticId << "view=" << impl_->viewDiagnosticId;
         ResourceResponse response;
         response.status = httpStatus::kInternalServerError;

@@ -1,4 +1,5 @@
 #include <system_webview/system_webview.h>
+#include "internal/Diagnostics.h"
 
 #if defined(__APPLE__)
 #include "platform/macos/WkWebViewSession.h"
@@ -10,6 +11,7 @@ namespace webview
 {
 WebViewSessionPtr createWebViewSession(WebViewSessionOptions options, WebViewPolicyPtr policy)
 {
+    setDiagnosticHandler(options.diagnosticHandler);
 #if defined(__APPLE__)
     return std::make_unique<WkWebViewSession>(std::move(options), std::move(policy));
 #elif defined(_WIN32)

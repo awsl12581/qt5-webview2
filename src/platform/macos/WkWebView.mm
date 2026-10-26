@@ -173,7 +173,7 @@ public:
         || !self.state->policy->allowsBridge(self.state->committedUrl)
         || webview::normalizedOrigin(frameUrl) != webview::normalizedOrigin(self.state->committedUrl)) {
         if (self.state) {
-            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << self.state->sessionDiagnosticId
+            webview::diagnosticLog(webview::DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.message_rejected" << "session=" << self.state->sessionDiagnosticId
                                                    << "view=" << self.state->diagnosticId << "reason=native_boundary";
         }
         return;
@@ -211,9 +211,9 @@ public:
     const webview::Url url = urlFromNSURL(navigationAction.request.URL);
     const webview::NewWindowRequest request { url, navigationAction.navigationType == WKNavigationTypeLinkActivated };
     if (self.state->policy->decideNewWindow(request) != webview::NewWindowDecision::Allow) {
-        qCDebug(systemWebViewPolicy).noquote() << "event=policy.popup_denied" << "session=" << self.state->sessionDiagnosticId
+        webview::diagnosticLog(webview::DiagnosticLevel::Debug, "system_webview.policy") << "event=policy.popup_denied" << "session=" << self.state->sessionDiagnosticId
                                                << "view=" << self.state->diagnosticId
-                                               << "origin=" << QString::fromStdString(webview::diagnosticOrigin(url));
+                                               << "origin=" << webview::diagnosticOrigin(url);
         return nil;
     }
     auto host = self.state->callbacks.createPopupHost(request);
@@ -238,9 +238,9 @@ public:
     const auto decision
         = webview::decideNativePermission(*self.state->policy, { permissionKind(type), webview::normalizedOrigin(originUrl) });
     if (decision != webview::NativePermissionDecision::Grant) {
-        qCDebug(systemWebViewPolicy).noquote() << "event=policy.permission_denied" << "session=" << self.state->sessionDiagnosticId
+        webview::diagnosticLog(webview::DiagnosticLevel::Debug, "system_webview.policy") << "event=policy.permission_denied" << "session=" << self.state->sessionDiagnosticId
                                                << "view=" << self.state->diagnosticId
-                                               << "origin=" << QString::fromStdString(webview::diagnosticOrigin(originUrl));
+                                               << "origin=" << webview::diagnosticOrigin(originUrl);
     }
     decisionHandler(
         decision == webview::NativePermissionDecision::Grant        ? WKPermissionDecisionGrant
@@ -394,9 +394,9 @@ public:
     if (decision == webview::NavigationDecision::OpenExternally && self.state->callbacks.onOpenExternal) {
         self.state->callbacks.onOpenExternal(url);
     }
-    qCDebug(systemWebViewPolicy).noquote() << "event=navigation.rejected" << "session=" << self.state->sessionDiagnosticId
+    webview::diagnosticLog(webview::DiagnosticLevel::Debug, "system_webview.policy") << "event=navigation.rejected" << "session=" << self.state->sessionDiagnosticId
                                            << "view=" << self.state->diagnosticId
-                                           << "origin=" << QString::fromStdString(webview::diagnosticOrigin(url));
+                                           << "origin=" << webview::diagnosticOrigin(url);
     if (isMainFrame) {
         self.state->explicitMainFrameNavigationPending = false;
         self.state->provisionalMainFrameNavigation = false;
@@ -512,7 +512,7 @@ public:
         "The WKWebView content process terminated.",
         0,
     };
-    qCCritical(systemWebViewRuntime).noquote() << "event=runtime.web_content_terminated" << "session=" << self.state->sessionDiagnosticId
+    webview::diagnosticLog(webview::DiagnosticLevel::Critical, "system_webview.runtime") << "event=runtime.web_content_terminated" << "session=" << self.state->sessionDiagnosticId
                                                << "view=" << self.state->diagnosticId;
     self.state->emitRuntimeFailure(event);
 }

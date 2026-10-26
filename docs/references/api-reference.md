@@ -292,7 +292,7 @@ using DownloadCompletion = std::function<void(DownloadResolution)>;
 
 ## 诊断日志
 
-库通过 `system_webview.lifecycle`、`navigation`、`policy`、`bridge`、`resource` 和 `runtime` 六个 Qt logging category 输出诊断。Debug 默认关闭，宿主可用 `QT_LOGGING_RULES` 开启，并通过 `qInstallMessageHandler` 接入自己的持久化设施。
+库通过 `DiagnosticEvent` 的 `category` 字段输出 `system_webview.lifecycle`、`navigation`、`policy`、`bridge`、`resource` 和 `runtime` 六类诊断。调用方在 `WebViewSessionOptions::diagnosticHandler` 中接收事件并自行过滤、格式化和持久化；库不依赖 Qt 日志设施，也不创建日志文件。
 
 库不创建日志或 dump 文件，也不记录 URL path/query、Bridge payload、token 或本地绝对路径。完整事件码和 dump 接入边界见 `docs/guides/diagnostics.md`。
 

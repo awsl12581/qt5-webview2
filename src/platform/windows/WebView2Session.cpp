@@ -144,7 +144,7 @@ public:
                                         "The WebView2 browser process terminated unexpectedly.",
                                         static_cast<std::int64_t>(processId),
                                     };
-                                    qCCritical(systemWebViewRuntime).noquote()
+                                    diagnosticLog(DiagnosticLevel::Critical, "system_webview.runtime")
                                         << "event=runtime.browser_process_terminated"
                                         << "session=" << current->scheduler->diagnosticId << "process=" << processId;
                                     if (current->callbacks.onRuntimeFailure) {

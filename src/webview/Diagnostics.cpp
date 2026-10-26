@@ -1,16 +1,73 @@
 #include "internal/Diagnostics.h"
 
 #include <atomic>
-
-Q_LOGGING_CATEGORY(systemWebViewLifecycle, "system_webview.lifecycle", QtInfoMsg)
-Q_LOGGING_CATEGORY(systemWebViewNavigation, "system_webview.navigation", QtInfoMsg)
-Q_LOGGING_CATEGORY(systemWebViewPolicy, "system_webview.policy", QtInfoMsg)
-Q_LOGGING_CATEGORY(systemWebViewBridge, "system_webview.bridge", QtInfoMsg)
-Q_LOGGING_CATEGORY(systemWebViewResource, "system_webview.resource", QtInfoMsg)
-Q_LOGGING_CATEGORY(systemWebViewRuntime, "system_webview.runtime", QtInfoMsg)
+#include <mutex>
+#include <utility>
 
 namespace webview
 {
+namespace
+{
+std::mutex handlerMutex;
+DiagnosticHandler handler;
+}
+
+DiagnosticStream::DiagnosticStream(DiagnosticLevel level, std::string_view category)
+    : level_(level)
+    , category_(category)
+{
+}
+
+DiagnosticStream::DiagnosticStream(DiagnosticStream&& other) noexcept
+    : level_(other.level_)
+    , category_(std::move(other.category_))
+    , stream_(std::move(other.stream_))
+    , active_(std::exchange(other.active_, false))
+{
+}
+
+DiagnosticStream::~DiagnosticStream()
+{
+    if (!active_) {
+        return;
+    }
+    DiagnosticHandler callback;
+    {
+        std::lock_guard<std::mutex> lock(handlerMutex);
+        callback = handler;
+    }
+    if (callback) {
+        try {
+            callback({ level_, std::move(category_), stream_.str() });
+        }
+        catch (...) {
+        }
+    }
+}
+
+DiagnosticStream& DiagnosticStream::operator=(DiagnosticStream&& other) noexcept
+{
+    if (this == &other) {
+        return *this;
+    }
+    level_ = other.level_;
+    category_ = std::move(other.category_);
+    stream_ = std::move(other.stream_);
+    active_ = std::exchange(other.active_, false);
+    return *this;
+}
+
+DiagnosticStream diagnosticLog(DiagnosticLevel level, std::string_view category)
+{
+    return DiagnosticStream(level, category);
+}
+
+void setDiagnosticHandler(DiagnosticHandler newHandler)
+{
+    std::lock_guard<std::mutex> lock(handlerMutex);
+    handler = std::move(newHandler);
+}
+
 std::uint64_t nextDiagnosticId()
 {
     static std::atomic<std::uint64_t> nextId { 1 };

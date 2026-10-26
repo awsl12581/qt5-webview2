@@ -239,8 +239,8 @@ WkWebViewSession::WkWebViewSession(WebViewSessionOptions options, WebViewPolicyP
     schemeHandler->state = impl_->state;
     impl_->schemeHandler = schemeHandler;
     impl_->state->initialization.markReady();
-    qCDebug(systemWebViewLifecycle).noquote() << "event=session.created" << "session=" << impl_->state->diagnosticId;
-    qCInfo(systemWebViewLifecycle).noquote() << "event=session.ready" << "session=" << impl_->state->diagnosticId;
+    diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=session.created" << "session=" << impl_->state->diagnosticId;
+    diagnosticLog(DiagnosticLevel::Info, "system_webview.lifecycle") << "event=session.ready" << "session=" << impl_->state->diagnosticId;
 }
 
 InitializationState WkWebViewSession::initializationState() const
@@ -294,7 +294,7 @@ WkWebViewSession::~WkWebViewSession()
         impl_->state->views.clear();
     }
     impl_->policy.reset();
-    qCDebug(systemWebViewLifecycle).noquote() << "event=session.closed" << "session=" << impl_->state->diagnosticId;
+    diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=session.closed" << "session=" << impl_->state->diagnosticId;
 }
 
 WebViewPtr WkWebViewSession::createWebView(WebViewHost host)

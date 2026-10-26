@@ -1,8 +1,6 @@
 #include "webview/WebViewState.h"
 #include "webview/JsonMessage.h"
 
-#include <QDebug>
-
 namespace webview
 {
 WebViewState::WebViewState(DiagnosticScope scope, std::uint64_t sessionId)
@@ -12,10 +10,10 @@ WebViewState::WebViewState(DiagnosticScope scope, std::uint64_t sessionId)
 {
     if (scope == DiagnosticScope::Session) {
         sessionDiagnosticId = diagnosticId;
-        qCDebug(systemWebViewLifecycle).noquote() << "event=session.created" << "session=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=session.created" << "session=" << diagnosticId;
     }
     else if (scope == DiagnosticScope::View) {
-        qCDebug(systemWebViewLifecycle).noquote() << "event=view.created" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=view.created" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
     }
     bridge->setDiagnosticContext(sessionDiagnosticId, diagnosticId);
     resources->setDiagnosticContext(sessionDiagnosticId, diagnosticId);
@@ -122,10 +120,10 @@ void WebViewState::markReady()
     }
     initialization_.markReady();
     if (diagnosticScope == DiagnosticScope::Session) {
-        qCInfo(systemWebViewLifecycle).noquote() << "event=session.ready" << "session=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Info, "system_webview.lifecycle") << "event=session.ready" << "session=" << diagnosticId;
     }
     else if (diagnosticScope == DiagnosticScope::View) {
-        qCInfo(systemWebViewLifecycle).noquote() << "event=view.ready" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Info, "system_webview.lifecycle") << "event=view.ready" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
     }
 }
 
@@ -136,10 +134,10 @@ void WebViewState::failInitialization(std::string error)
     }
     initialization_.fail(std::move(error));
     if (diagnosticScope == DiagnosticScope::Session) {
-        qCWarning(systemWebViewLifecycle).noquote() << "event=session.initialization_failed" << "session=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.lifecycle") << "event=session.initialization_failed" << "session=" << diagnosticId;
     }
     else if (diagnosticScope == DiagnosticScope::View) {
-        qCWarning(systemWebViewLifecycle).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.lifecycle")
             << "event=view.initialization_failed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
     }
 }
@@ -168,10 +166,10 @@ void WebViewState::close()
     }
     initialization_.close();
     if (diagnosticScope == DiagnosticScope::Session) {
-        qCDebug(systemWebViewLifecycle).noquote() << "event=session.closed" << "session=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=session.closed" << "session=" << diagnosticId;
     }
     else if (diagnosticScope == DiagnosticScope::View) {
-        qCDebug(systemWebViewLifecycle).noquote() << "event=view.closed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
+        diagnosticLog(DiagnosticLevel::Debug, "system_webview.lifecycle") << "event=view.closed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId;
     }
 }
 
@@ -195,7 +193,7 @@ void WebViewState::bindBridgePolicy()
                 *error = detail;
             }
             if (state) {
-                qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+                diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                                        << "view=" << state->diagnosticId << "reason=" << reason;
             }
             return false;
@@ -220,7 +218,7 @@ void WebViewState::bindBridgePolicy()
                                  ? state->policy->validateHostToPageMessage(message, error)
                                  : state->policy->validatePageToHostMessage(message, error);
         if (!allowed) {
-            qCDebug(systemWebViewBridge).noquote() << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
+            diagnosticLog(DiagnosticLevel::Debug, "system_webview.bridge") << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
                                                    << "view=" << state->diagnosticId << "reason=schema";
         }
         return allowed;
@@ -253,9 +251,9 @@ void WebViewState::setResourceContext(const Url& origin, const Url& documentOrig
 void WebViewState::emitLoad(LoadState loadState, std::uint64_t eventNavigationId, const Url& url, std::string_view error)
 {
     if (loadState == LoadState::Failed) {
-        qCWarning(systemWebViewNavigation).noquote()
+        diagnosticLog(DiagnosticLevel::Warning, "system_webview.navigation")
             << "event=navigation.failed" << "session=" << sessionDiagnosticId << "view=" << diagnosticId
-            << "navigation=" << eventNavigationId << "origin=" << QString::fromStdString(diagnosticOrigin(url));
+            << "navigation=" << eventNavigationId << "origin=" << diagnosticOrigin(url);
     }
     if (!lifetime.isClosed() && callbacks.onLoad) {
         callbacks.onLoad({ loadState, url, std::string(error), eventNavigationId, true });
