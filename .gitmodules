@@ -7,3 +7,6 @@
 [submodule "3rdparty/utf8proc"]
 	path = 3rdparty/utf8proc
 	url = https://github.com/JuliaStrings/utf8proc.git
+[submodule "3rdparty/simdutf"]
+	path = 3rdparty/simdutf
+	url = https://github.com/simdutf/simdutf.git
