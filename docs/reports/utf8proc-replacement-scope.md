@@ -1,8 +1,8 @@
 # utf8proc 替代范围调研
 
-> 最后修改时间：2026-10-26 10:58 CST
-> 文档版本：v2
-> 修改说明：记录 utf8proc 校验替代、构建接入和测试结果。
+> 最后修改时间：2026-10-26 11:10 CST
+> 文档版本：v4
+> 修改说明：同步 simdutf 已完成转码替换，utf8proc 继续负责字符分类。
 
 ## 结论
 
@@ -23,7 +23,7 @@
 | [Application.cpp](../../src/webview/Application.cpp) 的 `validId` | `QString::fromStdString` 后按 QChar 遍历，调用 `isLetterOrNumber()`，另允许 `-` | 用 `utf8proc_iterate()` 按长度解码 UTF-8，再用 `utf8proc_category()` 接受字母类、数字类和 ASCII 连字符 |
 | 同文件的入口文档路径拆分 | QString 按 `/` 拆分，检查 `..` | 属于路径分段，可用标准字符串处理，不需要 utf8proc |
 | [WebResourceManager.cpp](../../src/webview/WebResourceManager.cpp) 的 Range 头处理 | QString `trimmed()` 和 QRegularExpression | 属于 HTTP 协议解析；后续按协议定义空白和数字语法，不在本次 Unicode 分类迁移中改动 |
-| [WebView2View.cpp](../../src/platform/windows/WebView2View.cpp)、[WebView2Session.cpp](../../src/platform/windows/WebView2Session.cpp) 的文本和路径边界 | UTF-8 与 Windows 宽字符串之间经 QString 转换 | utf8proc 没有现成的 UTF-8/UTF-16 整串互转接口；去 Qt 时另用 Windows 转码 API，例如 `MultiByteToWideChar` / `WideCharToMultiByte` |
+| [WebView2View.cpp](../../src/platform/windows/WebView2View.cpp)、[WebView2Session.cpp](../../src/platform/windows/WebView2Session.cpp) 的文本和路径边界 | UTF-8 与 Windows 宽字符串之间经 QString 转换 | utf8proc 没有现成的 UTF-8/UTF-16 整串互转接口；已选用 simdutf，具体替代范围见 [专项调研](simdutf-replacement-scope.md)，已完成转码替换及 macOS 构建测试，Windows 编译运行待验证 |
 | [WkWebView.mm](../../src/platform/macos/WkWebView.mm) 的原生文本边界 | NSString UTF-8 转换，部分错误文本经过 QString | 保留 Foundation 转换，移除多余 QString 中转时不需要 utf8proc |
 | 核心文件、JSON、日志、demo 和测试中的 QString 转换 | 适配 QFileInfo、QJsonValue、Qt 日志和 QWidget 等接口 | 随各自 Qt API 的替代处理，不能用 utf8proc 单独接管 |
 | [Url.cpp](../../src/webview/Url.cpp) | Ada 解析 URL，项目处理文件路径与百分号编码 | 继续由 Ada 和现有路径逻辑负责，不引入第二套 Unicode 域名处理 |
@@ -58,3 +58,5 @@ CMake 通过 `add_subdirectory` 接入现有子模块，业务库和单独编译
 | --- | --- | --- |
 | v1 | 2026-10-26 10:55 CST | 核对 Unicode 处理调用，明确 utf8proc 的直接替代点、迁移规则及验收范围。 |
 | v2 | 2026-10-26 10:58 CST | 记录 utf8proc 校验替代、构建接入和测试结果。 |
+| v3 | 2026-10-26 11:04 CST | 同步 Windows 转码选用 simdutf 的决策，保持 utf8proc 字符分类职责。 |
+| v4 | 2026-10-26 11:10 CST | 同步 simdutf 已完成转码替换，utf8proc 继续负责字符分类。 |

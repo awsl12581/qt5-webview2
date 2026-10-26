@@ -37,8 +37,20 @@ function(system_webview_add_utf8proc)
 endfunction()
 system_webview_add_utf8proc()
 
+function(system_webview_add_simdutf)
+    set(BUILD_SHARED_LIBS OFF)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set(SIMDUTF_TESTS OFF CACHE BOOL "" FORCE)
+    set(SIMDUTF_TOOLS OFF CACHE BOOL "" FORCE)
+    set(SIMDUTF_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(SIMDUTF_FUZZERS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(3rdparty/simdutf EXCLUDE_FROM_ALL)
+endfunction()
+system_webview_add_simdutf()
+
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
+    src/webview/TextEncoding.cpp
     src/webview/Url.cpp
     src/webview/Application.cpp
     src/webview/Diagnostics.cpp
@@ -56,7 +68,7 @@ target_include_directories(system_webview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(system_webview PUBLIC Qt5::Widgets PRIVATE ada::ada utf8proc::utf8proc)
+target_link_libraries(system_webview PUBLIC Qt5::Widgets PRIVATE ada::ada utf8proc::utf8proc simdutf::simdutf)
 target_compile_features(system_webview PUBLIC cxx_std_20)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
 set_target_properties(system_webview PROPERTIES
@@ -117,6 +129,7 @@ if(BUILD_TESTING)
     add_executable(webview_core_tests
         tests/JsonMessageTests.cpp
         src/webview/Application.cpp
+        src/webview/TextEncoding.cpp
         src/webview/Url.cpp
         src/webview/Diagnostics.cpp
         src/webview/WebViewBridge.cpp
@@ -130,7 +143,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
-    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets ada::ada utf8proc::utf8proc)
+    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets ada::ada utf8proc::utf8proc simdutf::simdutf)
     add_test(NAME webview_core_tests COMMAND webview_core_tests)
 
     if(APPLE)
@@ -146,14 +159,14 @@ if(BUILD_TESTING)
         add_test(NAME webview_macos_view_tests COMMAND webview_macos_view_tests)
     elseif(WIN32)
         target_sources(webview_core_tests PRIVATE src/platform/windows/PathSecurity.cpp)
-        add_executable(webview_windows_contract_tests tests/WebView2ContractTests.cpp)
+        add_executable(webview_windows_contract_tests tests/WebView2ContractTests.cpp src/webview/TextEncoding.cpp)
         target_include_directories(webview_windows_contract_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_windows_contract_tests PRIVATE system_webview Qt5::Network)
+        target_link_libraries(webview_windows_contract_tests PRIVATE system_webview Qt5::Network simdutf::simdutf)
         add_test(NAME webview_windows_contract_tests COMMAND webview_windows_contract_tests)
 
-        add_executable(webview_windows_runtime_probe tests/WebView2RuntimeProbe.cpp)
+        add_executable(webview_windows_runtime_probe tests/WebView2RuntimeProbe.cpp src/webview/TextEncoding.cpp)
         target_include_directories(webview_windows_runtime_probe PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(webview_windows_runtime_probe PRIVATE system_webview Qt5::Network)
+        target_link_libraries(webview_windows_runtime_probe PRIVATE system_webview Qt5::Network simdutf::simdutf)
         add_test(NAME webview_windows_runtime_probe COMMAND webview_windows_runtime_probe)
     endif()
 endif()

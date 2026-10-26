@@ -3,6 +3,7 @@
 #include "internal/Application.h"
 #include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
+#include "internal/TextEncoding.h"
 #include "platform/windows/WebView2View.h"
 #include "webview/WebViewState.h"
 
@@ -78,7 +79,12 @@ public:
         }
         std::filesystem::path profilePath;
         if (this->options.mode == SessionMode::Persistent) {
-            profilePath = std::filesystem::path(QString::fromStdString(this->options.profilePath).toStdWString());
+            const auto nativePath = utf8ToWide(this->options.profilePath);
+            if (!nativePath) {
+                async->scheduler->failInitialization("Invalid WebView2 profile path encoding.");
+                return;
+            }
+            profilePath = std::filesystem::path(*nativePath);
             std::error_code error;
             std::filesystem::create_directories(profilePath, error);
             if (error) {

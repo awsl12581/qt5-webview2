@@ -1,8 +1,8 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 10:58 CST
-> 文档版本：v3
-> 修改说明：同步 utf8proc 校验替代完成及 macOS 验证结果。
+> 最后修改时间：2026-10-26 11:10 CST
+> 文档版本：v5
+> 修改说明：同步 simdutf 已接入、Windows 转码调用已替换及 macOS 验证结果。
 
 ## 结论与范围
 
@@ -95,7 +95,7 @@
 | resizeEvent、applyHostState | 窗口过程/宿主通知 + GetClientRect + controller 的 Bounds/ParentWindow | 现有 GetClientRect 和 COM 设置代码可保留，不做机械重写 |
 | QThread、QMetaObject::invokeMethod | UI 线程 ID + 受锁任务队列 + PostMessageW 唤醒 | 投递失败、窗口销毁、任务取消和队列释放都要有结果；避免把未管理裸指针塞入消息 |
 | QPointer、PendingAction | weak_ptr 生命周期状态、代际标识、一次完成保护 | HWND 可被复用，IsWindow 检查不能替代所有权保护 |
-| QString 的 COM 转换 | UTF-8 公共文本 + MultiByteToWideChar/WideCharToMultiByte | 长度显式传递并拒绝非法输入；文件路径使用原生 UTF-16，避免 ANSI 代码页 |
+| QString 的 COM 转换 | UTF-8 公共文本 + simdutf UTF-8/UTF-16 转码 | 已接入 v9.3.2 并私有静态链接，Windows 转码已替换；macOS 验证构建及 3 项测试通过，Windows 编译运行待验证；严格拒绝非法输入，文件路径使用原生 UTF-16，详见 [专项调研](simdutf-replacement-scope.md) |
 | QUuid 文档/资源令牌 | BCryptGenRandom，或 macOS 对应安全随机源 | 保留令牌不可预测性；std::random_device 不作为可移植的密码学保证 |
 | QTimer 清理重试 | 消息循环定时器或可取消的原生定时调度 | 回调不能访问已销毁状态；到期语义与现有时间口径需明确 |
 | QIODevice/QFile 与 FileRangeStream 的衔接 | 项目 ByteStream/文件响应描述 + 原生文件范围流 | 保留租约、偏移、短读、范围限制；不能换成全文件读入内存 |
@@ -153,3 +153,5 @@ macOS 对应使用 NSApplication/NSRunLoop、NSView、主队列和安全随机�
 | v1 | 2026-10-25 21:31 CST | 完成 C++20 去 Qt 选型、Windows 后端映射、兼容性边界及验证建议。 |
 | v2 | 2026-10-26 10:55 CST | 补充 utf8proc 源码审计结论、实际锁定版本和直接替代范围。 |
 | v3 | 2026-10-26 10:58 CST | 同步 utf8proc 校验替代完成及 macOS 验证结果。 |
+| v4 | 2026-10-26 11:04 CST | 将 Windows 编码转换候选更新为已选定的 simdutf，并链接专项范围审计。 |
+| v5 | 2026-10-26 11:10 CST | 同步 simdutf 已接入、Windows 转码调用已替换及 macOS 验证结果。 |

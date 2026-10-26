@@ -5,6 +5,7 @@
 #include "internal/Diagnostics.h"
 #include "internal/HttpStatus.h"
 #include "internal/ResourceMapping.h"
+#include "internal/TextEncoding.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
@@ -43,7 +44,8 @@ namespace
 {
 Url urlFromWide(const wchar_t* value)
 {
-    return Url(QString::fromWCharArray(value ? value : L"").toStdString());
+    const auto text = wideToUtf8(value ? value : L"");
+    return text ? Url(*text) : Url();
 }
 
 RuntimeFailureEvent runtimeFailureEvent(COREWEBVIEW2_PROCESS_FAILED_KIND kind)
@@ -89,8 +91,8 @@ public:
         if (!view_) {
             return false;
         }
-        const auto text = QString::fromStdString(message).toStdWString();
-        return SUCCEEDED(view_->PostWebMessageAsJson(text.c_str()));
+        const auto text = utf8ToWide(message);
+        return text && SUCCEEDED(view_->PostWebMessageAsJson(text->c_str()));
     }
 
     void invalidate() override { view_.Reset(); }
@@ -454,15 +456,31 @@ public:
                                     return S_OK;
                                 }
                                 ResourceResponse resourceResponse;
+                                const auto encodingError = [&]() -> HRESULT {
+                                    Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
+                                    const HRESULT result = environment->CreateWebResourceResponse(
+                                        nullptr,
+                                        httpStatus::kInternalServerError,
+                                        L"Invalid text encoding",
+                                        L"Content-Length: 0\r\n",
+                                        &response);
+                                    return SUCCEEDED(result) && response ? args->put_Response(response.Get()) : result;
+                                };
                                 if (url.path().starts_with("/resource/")) {
                                     std::string rangeHeader;
                                     Microsoft::WRL::ComPtr<ICoreWebView2HttpRequestHeaders> headers;
                                     LPWSTR rawRange = nullptr;
                                     if (SUCCEEDED(request->get_Headers(headers.GetAddressOf())) && headers
                                         && SUCCEEDED(headers->GetHeader(L"Range", &rawRange)) && rawRange) {
-                                        rangeHeader = QString::fromWCharArray(rawRange).toStdString();
+                                        const auto converted = wideToUtf8(rawRange);
                                         CoTaskMemFree(rawRange);
+                                        rawRange = nullptr;
+                                        if (!converted) {
+                                            return encodingError();
+                                        }
+                                        rangeHeader = *converted;
                                     }
+                                    CoTaskMemFree(rawRange);
                                     resourceResponse =
                                         state->resources->open({ url, state->committedUrl, state->documentToken, rangeHeader });
                                     status = resourceResponse.status;
@@ -526,9 +544,14 @@ public:
                                     }
                                     return S_OK;
                                 }
+                                const auto nativePath = utf8ToWide(filePath);
+                                const auto nativeMime = utf8ToWide(mime);
+                                if (!nativePath || !nativeMime) {
+                                    return encodingError();
+                                }
                                 Microsoft::WRL::ComPtr<IStream> stream;
                                 auto* fileStream = new FileRangeStream(
-                                    std::filesystem::path(QString::fromStdString(filePath).toStdWString()),
+                                    std::filesystem::path(*nativePath),
                                     offset,
                                     length,
                                     std::move(lease));
@@ -538,14 +561,16 @@ public:
                                 }
                                 stream.Attach(fileStream);
                                 std::wstring headerText =
-                                    L"Content-Type: " + QString::fromStdString(mime).toStdWString() + L"\r\nContent-Length: "
-                                    + std::to_wstring(length)
+                                    L"Content-Type: " + *nativeMime + L"\r\nContent-Length: " + std::to_wstring(length)
                                     + L"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nContent-Disposition: inline\r\n";
                                 if (mapping && mime == "text/html") {
                                     const auto policy = localBundleContentSecurityPolicy(mapping->externalNetworkAccess);
                                     if (!policy.empty()) {
-                                        headerText +=
-                                            L"Content-Security-Policy: " + QString::fromStdString(policy).toStdWString() + L"\r\n";
+                                        const auto nativePolicy = utf8ToWide(policy);
+                                        if (!nativePolicy) {
+                                            return encodingError();
+                                        }
+                                        headerText += L"Content-Security-Policy: " + *nativePolicy + L"\r\n";
                                     }
                                 }
                                 if (status == httpStatus::kPartialContent) {
@@ -735,9 +760,15 @@ public:
                                     CoTaskMemFree(rawUri);
                                     LPWSTR rawPath = nullptr;
                                     args->get_ResultFilePath(&rawPath);
-                                    const auto suggestedName =
-                                        QFileInfo(QString::fromWCharArray(rawPath ? rawPath : L"")).fileName().toStdString();
+                                    const auto suggestedPath = wideToUtf8(rawPath ? rawPath : L"");
                                     CoTaskMemFree(rawPath);
+                                    if (!suggestedPath) {
+                                        args->put_Cancel(TRUE);
+                                        return S_OK;
+                                    }
+                                    const auto separator = suggestedPath->find_last_of("/\\");
+                                    const auto suggestedName = suggestedPath->substr(
+                                        separator == std::string::npos ? 0 : separator + 1);
                                     const DownloadRequest request { url,
                                                                     normalizedOrigin(state->committedUrl),
                                                                     state->committedUrl,
@@ -792,13 +823,13 @@ public:
                                                         argsRef->put_Cancel(TRUE);
                                                     }
                                                     else if (resolution.target.handling == DownloadHandling::TargetPath) {
+                                                        const auto nativeTarget = utf8ToWide(resolution.target.filePath);
                                                         const QFileInfo target(QString::fromStdString(resolution.target.filePath));
-                                                        if (!target.isAbsolute() || !target.dir().exists()) {
+                                                        if (!nativeTarget || !target.isAbsolute() || !target.dir().exists()) {
                                                             argsRef->put_Cancel(TRUE);
                                                         }
-                                                        else {
-                                                            argsRef->put_ResultFilePath(
-                                                                QString::fromStdString(resolution.target.filePath).toStdWString().c_str());
+                                                        else if (FAILED(argsRef->put_ResultFilePath(nativeTarget->c_str()))) {
+                                                            argsRef->put_Cancel(TRUE);
                                                         }
                                                     }
                                                     deferral->Complete();
@@ -882,11 +913,14 @@ public:
                                     state->setResourceContext(state->resourceOrigin, state->committedUrl, state->documentToken);
                                 }
                                 CoTaskMemFree(rawSource);
-                                const auto tokenLiteral =
-                                    QString::fromUtf8(QJsonDocument(QJsonArray { QString::fromStdString(state->documentToken) })
-                                                          .toJson(QJsonDocument::Compact))
-                                        .toStdWString();
-                                const auto tokenScript = L"window.__systemWebViewToken=" + tokenLiteral + L"[0];";
+                                const auto tokenLiteral = utf8ToWide(
+                                    QJsonDocument(QJsonArray { QString::fromStdString(state->documentToken) })
+                                        .toJson(QJsonDocument::Compact).toStdString());
+                                if (!tokenLiteral) {
+                                    state->emitLoad(LoadState::Failed, id, state->committedUrl, "Invalid document token encoding.");
+                                    return S_OK;
+                                }
+                                const auto tokenScript = L"window.__systemWebViewToken=" + *tokenLiteral + L"[0];";
                                 sender->ExecuteScript(
                                     tokenScript.c_str(),
                                     Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>([](HRESULT, LPCWSTR) -> HRESULT {
@@ -934,7 +968,7 @@ public:
                                 LPWSTR rawSource = nullptr;
                                 args->get_WebMessageAsJson(&rawJson);
                                 args->get_Source(&rawSource);
-                                const auto json = QString::fromWCharArray(rawJson ? rawJson : L"").toStdString();
+                                const auto json = wideToUtf8(rawJson ? rawJson : L"");
                                 const Url source = urlFromWide(rawSource);
                                 CoTaskMemFree(rawJson);
                                 CoTaskMemFree(rawSource);
@@ -946,10 +980,10 @@ public:
                                 }
                                 QJsonObject object;
                                 std::string error;
-                                if (state->bridgeOrigin != normalizedOrigin(source) || !state->policy
+                                if (!json || state->bridgeOrigin != normalizedOrigin(source) || !state->policy
                                     || !state->policy->allowsBridge(source)
                                     || source.origin() != state->committedUrl.origin()
-                                    || !parseMessage(json, &object, &error)
+                                    || !parseMessage(*json, &object, &error)
                                     || object.value(QStringLiteral("documentToken")).toString().toStdString() != state->documentToken) {
                                     qCDebug(systemWebViewBridge).noquote()
                                         << "event=bridge.message_rejected" << "session=" << state->sessionDiagnosticId
@@ -989,8 +1023,13 @@ public:
                         "window.chrome.webview.postMessage",
                         "window.chrome.webview.addEventListener('message', event => window.__systemWebViewReceive(event.data));",
                         "window.__systemWebViewToken = null;");
+                    const auto nativeTransport = utf8ToWide(transport);
+                    if (!nativeTransport) {
+                        state->failInitialization("Invalid WebView2 transport script encoding.");
+                        return S_OK;
+                    }
                     const HRESULT transportResult = webview->AddScriptToExecuteOnDocumentCreated(
-                        QString::fromStdString(transport).toStdWString().c_str(),
+                        nativeTransport->c_str(),
                         Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
                             [state, owner](HRESULT result, LPCWSTR) -> HRESULT {
                                 if (FAILED(result)) {
@@ -1236,12 +1275,16 @@ void WebView2View::navigate(const Url& url)
         }
         const auto view = owner.lock();
         const auto webview = view ? view->webview : nullptr;
-        const auto text = QString::fromStdString(url.toString()).toStdWString();
+        const auto text = utf8ToWide(url.toString());
         if (!webview) {
             state->emitLoad(LoadState::Failed, ++state->navigationId, url, "WebView2 core object is unavailable.");
             return;
         }
-        const HRESULT navigateResult = webview->Navigate(text.c_str());
+        if (!text) {
+            state->emitLoad(LoadState::Failed, ++state->navigationId, url, "Invalid navigation URL encoding.");
+            return;
+        }
+        const HRESULT navigateResult = webview->Navigate(text->c_str());
         if (FAILED(navigateResult)) {
             state->emitLoad(
                 LoadState::Failed,

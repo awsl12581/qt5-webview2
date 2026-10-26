@@ -1,3 +1,4 @@
+#include "internal/TextEncoding.h"
 #include "webview/HostCompletion.h"
 #include "webview/WebViewState.h"
 #include <system_webview/system_webview.h>
@@ -49,7 +50,7 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     source.close();
 
     auto state = std::make_shared<webview::WebViewState>();
-    const webview::Url origin(QStringLiteral("https://trusted.example"));
+    const webview::Url origin("https://trusted.example");
     state->setResourceContext(webview::Url("app://resource-test"), origin, "doc-1");
     const auto published = state->resources->publishFile(source.fileName().toStdString());
     assert(!published.token.empty());
@@ -59,8 +60,9 @@ void testSnapshotDeletionRetriesAfterFileUnlock()
     response.body.reset();
     response.lease.reset();
 
-    const auto path = snapshotPath.toStdWString();
-    HANDLE lockedFile = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    const auto path = webview::utf8ToWide(snapshotPath.toStdString());
+    assert(path);
+    HANDLE lockedFile = CreateFileW(path->c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     assert(lockedFile != INVALID_HANDLE_VALUE);
     state->resources->release(published.token);
     assert(QFileInfo::exists(snapshotPath));

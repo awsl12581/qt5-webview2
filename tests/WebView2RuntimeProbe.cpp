@@ -1,3 +1,4 @@
+#include "internal/TextEncoding.h"
 #include <system_webview/system_webview.h>
 
 #include <QApplication>
@@ -36,11 +37,12 @@ std::string runtimeVersion()
     LPWSTR version = nullptr;
     const HRESULT result = GetAvailableCoreWebView2BrowserVersionString(nullptr, &version);
     if (result < 0) {
+        CoTaskMemFree(version);
         return std::format("unavailable:hresult=0x{:x}", static_cast<std::uint32_t>(result));
     }
-    const auto value = QString::fromWCharArray(version ? version : L"").toStdString();
+    const auto value = webview::wideToUtf8(version ? version : L"");
     CoTaskMemFree(version);
-    return value;
+    return value.value_or("unavailable:invalid_utf16");
 }
 
 enum class ClearKind

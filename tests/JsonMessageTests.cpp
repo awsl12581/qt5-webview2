@@ -2,6 +2,7 @@
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
 #include "internal/ResourceMapping.h"
+#include "internal/TextEncoding.h"
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
@@ -46,6 +47,38 @@ public:
 
 int main()
 {
+    for (const std::string text : { "", "ASCII", "中文", "🌍", "\U00020000", "a中文🌍z" }) {
+        const auto utf16 = webview::utf8ToUtf16(text);
+        assert(utf16);
+        const auto utf8 = webview::utf16ToUtf8(*utf16);
+        assert(utf8 && *utf8 == text);
+    }
+    assert(webview::utf8ToUtf16("中文")->size() == 2);
+    assert(webview::utf8ToUtf16("🌍")->size() == 2);
+    assert(webview::utf16ToUtf8(u"🌍")->size() == 4);
+    const std::string embeddedNul("a\0🌍", 6);
+    const auto nulUtf16 = webview::utf8ToUtf16(embeddedNul);
+    assert(nulUtf16 && nulUtf16->size() == 4 && (*nulUtf16)[1] == 0);
+    assert(webview::utf16ToUtf8(*nulUtf16) == embeddedNul);
+    for (const std::string text : { "\xFF", "\x80", "\xE4\xB8", "\xC0\xAF", "\xED\xA0\x80", "\xF4\x90\x80\x80" }) {
+        assert(!webview::utf8ToUtf16(text));
+        assert(!webview::utf8ToUtf16("valid prefix" + text));
+    }
+    for (const auto text : { std::u16string { 0xD800 }, std::u16string { 0xDC00 },
+                            std::u16string { u'a', 0xD800, u'b' }, std::u16string { 0xDC00, 0xD800 } }) {
+        assert(!webview::utf16ToUtf8(text));
+    }
+#ifdef _WIN32
+    const auto wide = webview::utf8ToWide("中文🌍");
+    assert(wide && wide->size() == 4);
+    assert(webview::wideToUtf8(*wide) == "中文🌍");
+    assert(webview::utf8ToWide("") == L"");
+    assert(webview::wideToUtf8(L"") == "");
+    assert(!webview::utf8ToWide(embeddedNul));
+    assert(!webview::wideToUtf8(std::wstring(L"a\0b", 3)));
+    assert(!webview::utf8ToWide("\xFF"));
+    assert(!webview::wideToUtf8(std::wstring { static_cast<wchar_t>(0xD800) }));
+#endif
     const QJsonObject unicodeMessage { { QStringLiteral("文本"), QStringLiteral("你好🌍") } };
     const auto jsonText = webview::jsonForJavaScriptArgument(unicodeMessage);
     const auto framedJson = "prefix" + jsonText + "suffix";

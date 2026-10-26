@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 10:58 CST
-> 文档版本：v16
-> 修改说明：Documented utf8proc application ID validation and private static linkage.
+> 最后修改时间：2026-10-26 11:10 CST
+> 文档版本：v17
+> 修改说明：Documented simdutf conversion boundaries, strict failures, and private static linkage.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -26,7 +26,11 @@ for navigation and resource byte counts. Resource paths and MIME text use UTF-8 
 resource reader uses `std::vector<char>`; bridge script text uses standard strings before conversion to
 `NSString`. Windows stores inline HTML in `std::unordered_map<std::string, std::string>`, passes profile errors
 as standard strings, formats internal errors with `std::format`, and opens native file streams through
-`std::filesystem::path`. Qt/native text conversions occur at the corresponding API boundaries.
+`std::filesystem::path`. Windows UTF-8/UTF-16 boundaries use private, statically linked simdutf through internal TextEncoding helpers.
+The helpers validate input, return optional results without throwing, and copy code units for Win32 wchar_t
+adapters. Length-based conversion preserves embedded NUL; NUL-terminated native API adapters reject it.
+Invalid encoding fails the corresponding send, initialization, navigation, resource request, or download.
+Qt JSON and filesystem adapters remain; macOS text conversion continues to use Foundation.
 Ada parses and serializes URLs through the public `webview::Url` value type. The project adopts WHATWG
 normalization, including default-port removal and dot-segment handling; `app:` identity uses the parsed host.
 Qt JSON, logging, filesystem helpers, and widget interfaces remain in use. Callers convert text at those
@@ -166,3 +170,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v14 | 2026-10-25 22:20 CST | Documented standard value types in the public API and the required consumer rebuild. |
 | v15 | 2026-10-25 23:24 CST | Documented the Ada-backed URL value type and WHATWG URL normalization. |
 | v16 | 2026-10-26 10:58 CST | Documented utf8proc application ID validation and private static linkage. |
+| v17 | 2026-10-26 11:10 CST | Documented simdutf conversion boundaries, strict failures, and private static linkage. |

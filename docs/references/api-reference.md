@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 10:58 CST
-> 文档版本：v14
-> 修改说明：说明 utf8proc 应用 ID 校验及 Unicode 码点规则。
+> 最后修改时间：2026-10-26 11:10 CST
+> 文档版本：v15
+> 修改说明：补充 Windows 原生文本边界的严格编码和 NUL 规则。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -18,6 +18,8 @@
 `src/` 下的头文件属于库内部实现，不安装给使用方。
 
 接口中的文本和文件路径统一使用 UTF-8 `std::string`；URL 使用 `webview::Url`，由 Ada 按 WHATWG 规则解析和序列化；JSON、流和控件继续使用 `QJsonObject`、`QJsonValue`、`QIODevice` 和 `QWidget`。JSON 键值和 Qt 界面文本需要在调用处显式转换。
+
+Windows 原生边界使用 simdutf 严格转换 UTF-8/UTF-16，非法编码不替换为占位字符。传给 WebView2 和 Win32 的 NUL 结尾文本拒绝嵌入 NUL；编码失败按对应接口报告发送失败、初始化/导航失败、资源错误或取消下载。macOS 保留 Foundation 转换。
 
 这次迁移改变了源码和二进制接口。调用方必须更新参数、回调和策略覆盖方法的类型，并重新构建；不提供旧 Qt 值类型重载。`BridgeTransport::send()` 和 `WebViewBridge::receive()` 现在使用 `const std::string&` 传递完整的 UTF-8 JSON 字节序列。
 
@@ -554,3 +556,4 @@ int main(int argc, char* argv[])
 | v12 | 2026-10-25 22:20 CST | 将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。 |
 | v13 | 2026-10-25 23:24 CST | 将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。 |
 | v14 | 2026-10-26 10:58 CST | 说明 utf8proc 应用 ID 校验及 Unicode 码点规则。 |
+| v15 | 2026-10-26 11:10 CST | 补充 Windows 原生文本边界的严格编码和 NUL 规则。 |
