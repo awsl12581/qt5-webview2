@@ -1,6 +1,9 @@
 #include "internal/Application.h"
 
 #include <QFileInfo>
+#include <utf8proc.h>
+
+#include <algorithm>
 
 namespace webview
 {
@@ -8,12 +11,31 @@ namespace
 {
 bool validId(const std::string& text)
 {
-    const auto id = QString::fromStdString(text);
-    if (id.isEmpty()) {
+    if (text.empty()) {
         return false;
     }
-    for (const auto character : id) {
-        if (!(character.isLetterOrNumber() || character == QLatin1Char('-'))) {
+    for (std::size_t offset = 0; offset < text.size();) {
+        utf8proc_int32_t codepoint;
+        const auto available = static_cast<utf8proc_ssize_t>(std::min<std::size_t>(text.size() - offset, 4));
+        const auto consumed = utf8proc_iterate(reinterpret_cast<const utf8proc_uint8_t*>(text.data() + offset), available, &codepoint);
+        if (consumed <= 0) {
+            return false;
+        }
+        offset += static_cast<std::size_t>(consumed);
+        if (codepoint == '-') {
+            continue;
+        }
+        switch (utf8proc_category(codepoint)) {
+        case UTF8PROC_CATEGORY_LU:
+        case UTF8PROC_CATEGORY_LL:
+        case UTF8PROC_CATEGORY_LT:
+        case UTF8PROC_CATEGORY_LM:
+        case UTF8PROC_CATEGORY_LO:
+        case UTF8PROC_CATEGORY_ND:
+        case UTF8PROC_CATEGORY_NL:
+        case UTF8PROC_CATEGORY_NO:
+            break;
+        default:
             return false;
         }
     }
@@ -25,7 +47,7 @@ WebApplicationPtr createApplication(WebApplicationOptions options, std::string* 
 {
     if (!validId(options.id)) {
         if (error) {
-            *error = "Application IDs must contain only letters, digits, and hyphens.";
+            *error = "Application IDs must be nonempty UTF-8 containing only Unicode letters, numbers, and ASCII hyphens.";
         }
         return { };
     }

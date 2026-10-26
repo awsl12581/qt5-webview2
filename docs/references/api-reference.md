@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-25 23:24 CST
-> 文档版本：v13
-> 修改说明：将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。
+> 最后修改时间：2026-10-26 10:58 CST
+> 文档版本：v14
+> 修改说明：说明 utf8proc 应用 ID 校验及 Unicode 码点规则。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -86,6 +86,8 @@ public:
 ```
 
 `createApplication()` 校验应用 ID 和页面来源。失败时返回空指针。Windows 的 WebView2 环境异步初始化，调用方可通过 `whenInitialized()` 等待 `Ready` 或接收失败原因。
+
+应用 ID 必须为非空、合法的 UTF-8，只接受 Unicode 字母、数字（类别 `L*`、`N*`）和 ASCII 连字符 `-`，由 utf8proc 2.12.0 按 Unicode 18.0.0 码点分类，包括补充平面字母和数字。空白、下划线、组合标记、emoji 和嵌入 NUL 均拒绝。不自动规范化或折叠大小写，也不限制连字符位置；例如 `é` 合法，分解形式 `e` 加组合重音不合法。相较于旧 Qt 实现，补充平面字母/数字和新 Unicode 数据中的字母/数字可以获得支持。策略配置中的 `allowedAppHosts` 使用 Ada 序列化后的 host，Unicode ID 的 URL host 可能为百分号编码形式。
 
 清理接口的结果结构：
 
@@ -551,3 +553,4 @@ int main(int argc, char* argv[])
 | v11 | 2026-09-24 18:53 CST | 明确 WebView2 browser process 故障在 view 和 session 两个作用域的回调语义。 |
 | v12 | 2026-10-25 22:20 CST | 将公开字符串、容器和整数类型同步为标准库类型，并说明 UTF-8 和接口迁移要求。 |
 | v13 | 2026-10-25 23:24 CST | 将公开 URL 参数和字段同步为 Ada-backed `webview::Url`。 |
+| v14 | 2026-10-26 10:58 CST | 说明 utf8proc 应用 ID 校验及 Unicode 码点规则。 |

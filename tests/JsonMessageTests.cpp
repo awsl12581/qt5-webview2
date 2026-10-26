@@ -532,6 +532,39 @@ int main()
                                                               selectedRoot.path().toStdString() } };
     assert(!webview::validateResourceMappings(&invalidMappings, &mappingError));
 
+    const auto createBundleWithId = [&selectedRoot](const std::string& id) {
+        webview::WebApplicationOptions options;
+        options.id = id;
+        options.source = webview::LocalBundle { selectedRoot.path().toStdString() };
+        return webview::createApplication(std::move(options), nullptr);
+    };
+    for (const std::string id : { "demo-42", "中文应用", "é", "١٢", "Ⅻ", "²", "\U00020000", "\U00010400", "---" }) {
+        const auto application = createBundleWithId(id);
+        assert(application && application->id() == id);
+        const auto origin = application->origin();
+        assert(origin.isValid() && !origin.host().empty());
+        const auto route = application->urlForRoute("index.html");
+        std::vector<webview::ResourceMapping> unicodeMappings { { origin, selectedRoot.path().toStdString() } };
+        assert(webview::validateResourceMappings(&unicodeMappings, &mappingError));
+        const auto* unicodeMapping = webview::findResourceMapping(unicodeMappings, route);
+        assert(unicodeMapping);
+        assert(
+            webview::resolveMappedResource(*unicodeMapping, route, &mappingError)
+            == QFileInfo(indexFile).canonicalFilePath().toStdString());
+        webview::WebViewPolicyConfig unicodeConfig;
+        unicodeConfig.allowedAppHosts.insert(origin.host());
+        const webview::WebViewPolicy unicodePolicy(std::move(unicodeConfig));
+        assert(unicodePolicy.decideNavigation({ route }) == webview::NavigationDecision::Allow);
+        assert(unicodePolicy.allowsBridge(route));
+    }
+    const std::vector<std::string> invalidIds {
+        "", "a b", "a_b", "a/b", "🌍", "e\xCC\x81", "\xCC\x81", "\xFF", "\xE4\xB8", "\xC0\xAF",
+        "\xED\xA0\x80", "\xF4\x90\x80\x80", std::string("a\0b", 3), std::string("\0", 1)
+    };
+    for (const auto& id : invalidIds) {
+        assert(!createBundleWithId(id));
+    }
+
     webview::WebApplicationOptions bundleOptions;
     bundleOptions.id = "demo-app";
     bundleOptions.source = webview::LocalBundle { selectedRoot.path().toStdString() };

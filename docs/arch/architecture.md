@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-25 23:24 CST
-> 文档版本：v15
-> 修改说明：Documented the Ada-backed URL value type and WHATWG URL normalization.
+> 最后修改时间：2026-10-26 10:58 CST
+> 文档版本：v16
+> 修改说明：Documented utf8proc application ID validation and private static linkage.
 
 `system_webview_demo -> webview platform backend -> portable webview contract`
 
@@ -37,6 +37,11 @@ and fixed-width standard integers for counters. `webview::Url`, `QJsonObject`, `
 remain at the URL, JSON, stream, and widget boundaries. This migration changes public signatures and value
 layouts, so consumers must update their calls, callbacks, and policy overrides and rebuild against the library.
 There are no compatibility overloads for the replaced Qt value types.
+
+Application IDs are decoded as UTF-8 codepoints and classified with utf8proc 2.12.0 (Unicode 18.0.0).
+Validation accepts Unicode letters, numbers, and ASCII hyphens, including supplementary-plane letters and numbers;
+it rejects malformed UTF-8 and embedded NUL without normalization or case folding. The library links utf8proc
+privately as a static PIC dependency; no utf8proc types appear in the public API.
 
 ## Ownership model
 
@@ -160,3 +165,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v13 | 2026-10-25 22:11 CST | Documented standard-library storage and conversion boundaries in platform backends. |
 | v14 | 2026-10-25 22:20 CST | Documented standard value types in the public API and the required consumer rebuild. |
 | v15 | 2026-10-25 23:24 CST | Documented the Ada-backed URL value type and WHATWG URL normalization. |
+| v16 | 2026-10-26 10:58 CST | Documented utf8proc application ID validation and private static linkage. |

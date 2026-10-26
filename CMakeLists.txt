@@ -29,6 +29,14 @@ set(ADA_INCLUDE_URL_PATTERN OFF CACHE BOOL "" FORCE)
 set(ADA_BUILD_SINGLE_HEADER_LIB OFF CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/ada EXCLUDE_FROM_ALL)
 
+function(system_webview_add_utf8proc)
+    set(BUILD_SHARED_LIBS OFF)
+    set(UTF8PROC_INSTALL OFF CACHE BOOL "" FORCE)
+    set(UTF8PROC_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    add_subdirectory(3rdparty/utf8proc EXCLUDE_FROM_ALL)
+endfunction()
+system_webview_add_utf8proc()
+
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
     src/webview/Url.cpp
@@ -48,7 +56,7 @@ target_include_directories(system_webview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(system_webview PUBLIC Qt5::Widgets PRIVATE ada::ada)
+target_link_libraries(system_webview PUBLIC Qt5::Widgets PRIVATE ada::ada utf8proc::utf8proc)
 target_compile_features(system_webview PUBLIC cxx_std_20)
 target_compile_definitions(system_webview PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
 set_target_properties(system_webview PROPERTIES
@@ -122,7 +130,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(webview_core_tests PRIVATE SYSTEM_WEBVIEW_BUILDING_LIBRARY=1)
-    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets ada::ada)
+    target_link_libraries(webview_core_tests PRIVATE Qt5::Widgets ada::ada utf8proc::utf8proc)
     add_test(NAME webview_core_tests COMMAND webview_core_tests)
 
     if(APPLE)

@@ -51,6 +51,12 @@ int main(int argc, char** argv)
     bundle.source = webview::LocalBundle { profile.path().toStdString() };
     assert(session->createApplication(bundle));
     assert(!session->createApplication(std::move(bundle)));
+    webview::WebApplicationOptions unicodeBundle;
+    unicodeBundle.id = "应用-\U00020000";
+    unicodeBundle.source = webview::LocalBundle { profile.path().toStdString() };
+    const auto unicodeApplication = session->createApplication(unicodeBundle);
+    assert(unicodeApplication);
+    assert(!session->createApplication(std::move(unicodeBundle)));
     assert(session->supports(webview::WebViewCapability::PersistentProfile));
     assert(ephemeral->supports(webview::WebViewCapability::PersistentProfile));
     assert(ephemeral->supports(webview::WebViewCapability::PrivateProfile));
