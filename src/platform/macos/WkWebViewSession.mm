@@ -9,9 +9,9 @@
 #include "internal/HttpStatus.h"
 #include "internal/MimeType.h"
 #include "internal/HostView.h"
+#include "internal/HttpRange.h"
 #include "internal/ResourceMapping.h"
 
-#include <QRegularExpression>
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -103,32 +103,15 @@
         acceptRanges = true;
         const auto range = [task.request valueForHTTPHeaderField:@"Range"];
         if (range) {
-            static const QRegularExpression pattern(QStringLiteral("^bytes=(\\d*)-(\\d*)$"));
-            const auto match = pattern.match(QString::fromUtf8(range.UTF8String));
-            bool firstOk = false, lastOk = false;
-            const auto first = match.captured(1);
-            const auto last = match.captured(2);
-            if (!match.hasMatch() || (first.isEmpty() && last.isEmpty()))
-                status = webview::httpStatus::kRangeNotSatisfiable;
-            else if (first.isEmpty()) {
-                const auto suffix = last.toLongLong(&lastOk);
-                if (!lastOk || suffix <= 0)
-                    status = webview::httpStatus::kRangeNotSatisfiable;
-                else {
-                    offset = std::max<std::int64_t>(0, totalSize - suffix);
-                    length = totalSize - offset;
-                }
+            webview::ByteRange parsed;
+            if (webview::parseByteRange(std::string_view(range.UTF8String ?: ""), totalSize, &parsed)) {
+                offset = parsed.offset;
+                length = parsed.length;
+                status = webview::httpStatus::kPartialContent;
             }
             else {
-                offset = first.toLongLong(&firstOk);
-                const auto end = last.isEmpty() ? totalSize - 1 : last.toLongLong(&lastOk);
-                if (!firstOk || (!last.isEmpty() && !lastOk) || offset > end || end >= totalSize)
-                    status = webview::httpStatus::kRangeNotSatisfiable;
-                else
-                    length = end - offset + 1;
+                status = webview::httpStatus::kRangeNotSatisfiable;
             }
-            if (status != webview::httpStatus::kRangeNotSatisfiable)
-                status = webview::httpStatus::kPartialContent;
         }
     }
 
@@ -193,7 +176,7 @@
         [cancelledTasks removeObject:[NSValue valueWithNonretainedObject:task]];
     }
     [task didFinish];
-    Q_UNUSED(lease);
+    (void)lease;
 }
 
 - (void)webView:(WKWebView*)webView stopURLSchemeTask:(id<WKURLSchemeTask>)task

@@ -57,6 +57,8 @@ system_webview_add_simdutf()
 add_library(system_webview SHARED
     include/system_webview/system_webview.h
     src/internal/HostView.h
+    src/internal/HttpRange.cpp
+    src/internal/HttpRange.h
     src/webview/TextEncoding.cpp
     src/internal/RandomToken.cpp
     src/webview/Url.cpp
@@ -162,6 +164,7 @@ if(BUILD_TESTING)
     add_executable(webview_core_tests
         tests/JsonMessageTests.cpp
         src/internal/RandomToken.cpp
+        src/internal/HttpRange.cpp
         src/webview/Application.cpp
         src/webview/TextEncoding.cpp
         src/webview/Url.cpp

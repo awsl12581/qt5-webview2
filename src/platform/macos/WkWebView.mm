@@ -12,7 +12,6 @@
 #include "webview/JsonMessage.h"
 #include "webview/WebViewState.h"
 
-#include <QString>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -29,11 +28,6 @@ constexpr auto kBridgeName = "systemWebView";
 NSString* toNSString(std::string_view value)
 {
     return [[[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding] autorelease];
-}
-
-NSString* toNSString(const QString& value)
-{
-    return toNSString(value.toStdString());
 }
 
 webview::Url urlFromNSURL(NSURL* value)
@@ -486,7 +480,7 @@ public:
             webview::Url(
                 error.userInfo[NSURLErrorFailingURLErrorKey] ? [error.userInfo[NSURLErrorFailingURLErrorKey] absoluteString].UTF8String
                                                              : ""),
-            QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
+            std::string(error.localizedDescription.UTF8String ?: ""));
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
@@ -498,7 +492,7 @@ public:
         const auto navigationId = self.navigationState->idForNavigation(static_cast<void*>(navigation), self.state->navigationId);
         self.state->emitLoad(
             webview::LoadState::Failed, navigationId, urlFromNSURL(webView.URL),
-            QString::fromUtf8(error.localizedDescription.UTF8String).toStdString());
+            std::string(error.localizedDescription.UTF8String ?: ""));
         self.navigationState->navigationIds.erase(static_cast<void*>(navigation));
         self.state->provisionalMainFrameNavigation = false;
     }
@@ -506,7 +500,7 @@ public:
 
 - (void)webViewWebContentProcessDidTerminate:(WKWebView*)webView
 {
-    Q_UNUSED(webView);
+    (void)webView;
     if (!self.state || self.state->lifetime.isClosed()) {
         return;
     }

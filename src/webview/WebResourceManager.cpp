@@ -1,13 +1,11 @@
 #include "internal/Diagnostics.h"
 #include "internal/FileResource.h"
 #include "internal/HttpStatus.h"
+#include "internal/HttpRange.h"
 #include "internal/MimeType.h"
 #include "internal/RandomToken.h"
 #include <system_webview/system_webview.h>
 
-#include <QCoreApplication>
-#include <QRegularExpression>
-#include <QTimer>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -16,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -134,18 +133,13 @@ public:
 
         void scheduleRetry()
         {
-            auto* app = QCoreApplication::instance();
-            if (!app) {
-                std::lock_guard<std::mutex> lock(mutex);
-                retryScheduled = false;
-                return;
-            }
             const std::weak_ptr<SnapshotStore> weak = shared_from_this();
-            QTimer::singleShot(1000, app, [weak] {
+            std::thread([weak] {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
                 if (const auto store = weak.lock()) {
                     store->retry(true);
                 }
-            });
+            }).detach();
         }
     };
 
@@ -345,32 +339,13 @@ ResourceResponse WebResourceManager::open(const ResourceRequest& request) const
     std::int64_t end = request.rangeEnd < 0 ? entry->size - 1 : request.rangeEnd;
     const bool hasRange = !request.rangeHeader.empty() || request.rangeStart >= 0;
     if (!request.rangeHeader.empty()) {
-        static const QRegularExpression rangePattern(QStringLiteral("^bytes=(\\d*)-(\\d*)$"));
-        const auto match = rangePattern.match(QString::fromStdString(request.rangeHeader).trimmed());
-        bool startOk = false;
-        bool endOk = false;
-        const auto first = match.captured(1);
-        const auto last = match.captured(2);
-        if (!match.hasMatch() || (first.isEmpty() && last.isEmpty())) {
+        ByteRange range;
+        if (!parseByteRange(request.rangeHeader, entry->size, &range)) {
             start = -1;
         }
-        else if (first.isEmpty()) {
-            const auto suffix = last.toLongLong(&endOk);
-            start = endOk && suffix > 0 ? std::max<std::int64_t>(0, entry->size - suffix) : -1;
-            end = entry->size - 1;
-        }
         else {
-            start = first.toLongLong(&startOk);
-            end = last.isEmpty() ? entry->size - 1 : last.toLongLong(&endOk);
-            if (!last.isEmpty() && !endOk) {
-                end = -1;
-            }
-            if (!startOk) {
-                start = -1;
-            }
-            if (end >= entry->size) {
-                end = entry->size - 1;
-            }
+            start = range.offset;
+            end = range.offset + range.length - 1;
         }
     }
     if ((hasRange && (entry->size == 0 || start < 0 || start > end || start >= entry->size))
