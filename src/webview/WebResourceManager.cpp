@@ -1,11 +1,11 @@
 #include "internal/Diagnostics.h"
 #include "internal/HttpStatus.h"
+#include "internal/MimeType.h"
 #include <system_webview/system_webview.h>
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
-#include <QMimeDatabase>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QTemporaryDir>
@@ -270,7 +270,7 @@ PublishedResource WebResourceManager::publishFile(const std::string& path, const
 
     auto entry = std::make_shared<Impl::Entry>();
     entry->path = snapshotPath.toStdString();
-    entry->mime = mimeType.empty() ? QMimeDatabase().mimeTypeForFile(info).name().toStdString() : mimeType;
+    entry->mime = mimeType.empty() ? std::string(mime::fromPath(path)) : mimeType;
     entry->document = impl_->documentToken;
     entry->size = copied;
     entry->expiresAt = now + std::chrono::milliseconds(kResourceLifetimeMs);

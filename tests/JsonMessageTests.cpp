@@ -341,6 +341,7 @@ int main()
     assert(resources.publishFile(sourceFile.fileName().toStdString(), {}, "other-doc").token.empty());
     const auto published = resources.publishFile(sourceFile.fileName().toStdString());
     assert(!published.token.empty());
+    assert(published.mimeType == "application/octet-stream");
     assert(published.url.toString().find(sourceFile.fileName().toStdString()) == std::string::npos);
     assert(sourceFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
     assert(sourceFile.write("abcdefghij") == 10);

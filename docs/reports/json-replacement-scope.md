@@ -83,7 +83,7 @@ JSON 替代后，Qt 仍在以下边界使用，不能由 nlohmann/json 提供：
 | --- | --- | --- | --- |
 | `QApplication`、`QWidget`、布局、事件循环 | 公共宿主 API、demo 和原生视图容器 | 保留 Qt；Windows 可用 Win32，macOS 可用 AppKit，但需要重做公共宿主接口 | 暂不替换，属于 UI/消息循环迁移 |
 | `QFile`、`QDir`、`QFileInfo`、`QTemporaryDir` | 文件、目录、快照、测试临时目录 | `std::filesystem`、平台原生文件 API；测试可用 Catch2/GoogleTest | 逐模块迁移，不能用 JSON 库替代 |
-| `QIODevice`、`QBuffer`、`QMimeDatabase` | 流接口、资源响应和 MIME 推断 | `std::istream`/自有 I/O、平台 MIME API、libmagic | 先定义流所有权和 MIME 规则，再迁移 |
+| `QIODevice`、`QBuffer`、`QMimeDatabase` | 流接口、资源响应和 MIME 推断 | `std::istream`/自有 I/O、平台 MIME API、libmagic（仅内容检测） | 先定义流所有权和 MIME 规则；libmagic 不能单独替代 QMimeDatabase |
 | Qt 信号/槽、`QTimer`、`QMetaObject` | UI 调度、延迟删除、资源过期和回调 | 原生 RunLoop/dispatch、Boost.Asio/libuv；两平台主线程规则仍需自建 | 不因 JSON 替代而引入，避免扩大范围 |
 | `QLoggingCategory`、`qCDebug` | 诊断分类、过滤和宿主日志接管 | spdlog、独立日志 facade、平台统一日志 | 先保持 Qt 日志行为，后续单独评估 |
 | `QString` 的 Qt UI 边界 | 窗口标题、状态栏、Foundation/Qt 控件 | simdutf 只处理 UTF-8/UTF-16，平台原生字符串 API 更合适 | 继续按边界转换，不把 JSON 库当通用文本库 |

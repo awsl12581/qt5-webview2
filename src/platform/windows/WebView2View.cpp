@@ -4,6 +4,7 @@
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
 #include "internal/HttpStatus.h"
+#include "internal/MimeType.h"
 #include "internal/ResourceMapping.h"
 #include "internal/TextEncoding.h"
 #include "webview/HostCompletion.h"
@@ -14,7 +15,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
-#include <QMimeDatabase>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QThread>
@@ -508,7 +508,7 @@ public:
                                         return S_OK;
                                     }
                                     const QFileInfo info(QString::fromStdString(filePath));
-                                    mime = QMimeDatabase().mimeTypeForFile(QString::fromStdString(filePath)).name().toStdString();
+                                    mime = std::string(webview::mime::fromPath(filePath));
                                     totalSize = info.size();
                                     length = totalSize;
                                 }

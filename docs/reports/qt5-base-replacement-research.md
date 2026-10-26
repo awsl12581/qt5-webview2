@@ -1,16 +1,16 @@
 # Qt5 Base 完整替代选型调研
 
-> 最后修改时间：2026-10-26 11:32 CST
-> 文档版本：v7
-> 修改说明：补充 Qt JSON 完成替代后的剩余 Qt 范围和三方库建议。
+> 最后修改时间：2026-10-26 12:48 CST
+> 文档版本：v10
+> 修改说明：同步 MIME 固定扩展名 helper 的实施结果，明确暂不引入 libmagic。
 
 ## 结论与范围
 
 当前已采用 **C++20 标准库 + nlohmann/json + Ada URL + utf8proc + simdutf**；窗口、调度、文件、MIME 和日志仍按平台边界分别评估。libuv、libevent、spdlog 都不是当前移除 Qt 的必要依赖。
 
-前两个库是核心选型；后两个库用于保留容易遗漏的现有行为。四者组成的是待验证候选方案，不是已经证明完全等价的替代实现。特别是 libmagic 的 Windows/MSVC 构建与 MIME 数据库部署仍是选型关口，不能仅凭它能识别文件就宣布完整替代 QMimeDatabase。
+前两个库是核心选型；其余边界按项目内部实现或平台能力处理。MIME 已采用固定扩展名 helper，不引入 libmagic；未来若需要无扩展名内容识别，再单独评估内容检测库。
 
-本报告覆盖当前 Windows WebView2、macOS WKWebView、公共接口、资源管理、示例与测试，不讨论实现尚不存在的 Linux 后端，也不要求覆盖 Qt5 Base 中本项目没有使用的全部功能。用户已同意使用 C++20；本次只调研，不修改语言标准、安装依赖或迁移代码。
+本报告覆盖当前 Windows WebView2、macOS WKWebView、公共接口、资源管理、示例与测试，不讨论实现尚不存在的 Linux 后端，也不要求覆盖 Qt5 Base 中本项目没有使用的全部功能。用户已同意使用 C++20；MIME 固定扩展名 helper 的实施结果已在 v10 中同步。
 
 本地依据为提交 `6f5fb4bf098d5649161132b8d648f66a24948681`。调研开始时工作区无未提交修改。外部资料查阅于 2026-10-25；带版本的链接说明已核验版本，不代表最新版本或最终锁定版本。没有执行候选库构建、性能实验或 Windows 运行验证，不提供体积、速度或工期的估算值冒充实测。
 
@@ -64,14 +64,12 @@
 - 建议采用 utf8proc 按 Unicode 码点分类的新规则，接受字母、数字及连字符，不自动规范化或折叠大小写；补充平面字母/数字和 Unicode 表更新造成的接受范围变化记入文档，不复刻 Qt 的代理项遍历限制。
 - 也可用两平台原生 Unicode 分类，但分类表版本与实现差异更难统一。若追求跨平台一致，优先采用同一版本 utf8proc。
 
-### 4. libmagic：通用 MIME 检测候选，接入前必须验证
+### 4. MIME：固定扩展名 helper 已采用，libmagic 暂不引入
 
-- 提供文件内容识别。可以作为项目 MIME 组件的一部分，配合受维护的扩展名规则服务任意发布文件及本地资源。
-- 上游代码采用宽松 BSD 风格许可；还需核查选定版本的数据库、子文件及打包补丁的声明。
-- **不是 QMimeDatabase 的直接等价物。** 两者的规则、类型别名及扩展名/内容优先级不同；尤其不能仅靠内容识别区分所有 JS、CSS、JSON、SVG 和普通文本。
-- 部署需要匹配的 magic 数据库；不能依赖目标机恰好存在系统数据库。上游还支持多种可选压缩库，包管理器的实际 feature 和传递依赖需单独检查。
-- 当前使用 MSVC v143、AMD64/ARM64。上游构建与 Windows 端口需要专项验证；查到 MinGW 支持不构成 MSVC/ARM64 验证。
-- 推荐先确定扩展名规则来源和 libmagic 的内容回退顺序，验证项目网页资源及无扩展名、误扩展名文件。如构建成本不合适，再评估平台 MIME 适配。仅保留少量扩展名查表会缩减现有能力，不能作为“完全替代”的交付。
+- 当前三处 Qt MIME 查询已统一替换为项目内部固定扩展名 helper；调用方显式传入的 MIME 仍优先。
+- helper 覆盖 HTML、CSS、JavaScript、JSON、XML、SVG、常见图片、字体、音视频、WASM 和常见下载格式；未知扩展名回退到 `application/octet-stream`。
+- 该行为与当前代码实际需求一致：项目只使用 MIME 字符串构造 WebView 响应，不要求识别任意未知二进制格式。
+- libmagic 仍可作为未来“无扩展名内容检测”的候选，但当前不添加子模块、数据库或部署依赖。
 
 ### 可选项及未选方案
 
@@ -137,12 +135,12 @@ Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分
 | --- | --- | --- |
 | 文件、目录和路径 | C++20 `std::filesystem`，Windows UTF-16 API，macOS Foundation | 优先标准库和平台 API；不需要新增通用库 |
 | 流和资源文件 | `std::ifstream`/`std::fstream`、自有 range stream | 先替换 QIODevice 的项目内部接口，再评估是否需要额外 I/O 库 |
-| MIME 检测 | libmagic 或平台 MIME API | libmagic 需要数据库和 Windows ARM64 部署验证，不能直接宣称等价于 QMimeDatabase |
+| MIME 检测 | 项目内部固定扩展名 helper；未来可选 libmagic | 已完成显式 MIME、固定扩展名表和 `application/octet-stream` 回退；当前不需要第三方 MIME 库 |
 | 主线程调度、定时器和异步 I/O | Windows dispatcher、Grand Central Dispatch、libuv 或 Boost.Asio | WebView2 STA 和 WKWebView 主线程仍依赖平台循环；libuv/Asio 不能直接替代 Qt Widgets 事件循环 |
 | 日志 | spdlog 或自有日志 facade | 先保持 QLoggingCategory 行为，单独迁移日志分类和过滤 |
 | Widgets、布局、跨平台窗口 | Win32/Windows App SDK、AppKit，或保留 Qt Widgets | 没有一个轻量三方库能无损替代当前 UI；这是最大剩余范围 |
 
-这些库只解决各自边界，不能为了“完全替代 Qt5-base”把 libuv、Boost.Asio、libmagic 或 spdlog 混合成新的通用层。下一阶段应按文件系统、MIME、日志、调度、Widgets 的顺序分别调研和验证。
+这些库只解决各自边界，不能为了“完全替代 Qt5-base”把 libuv、Boost.Asio、libmagic 或 spdlog 混合成新的通用层。下一阶段应按文件系统、MIME、日志、调度、Widgets 的顺序分别调研和验证。libmagic 的具体调查和验证矩阵见 [专项报告](libmagic-replacement-scope.md)。
 
 ## 外部资料
 
@@ -174,3 +172,6 @@ Qt JSON 已由 nlohmann/json 完整替代，simdutf、utf8proc 和 Ada 也已分
 | v5 | 2026-10-26 11:10 CST | 同步 simdutf 已接入、Windows 转码调用已替换及 macOS 验证结果。 |
 | v6 | 2026-10-26 11:29 CST | 记录 nlohmann/json 已替代 Qt JSON，公开依赖及验证结果。 |
 | v7 | 2026-10-26 11:32 CST | 补充 Qt JSON 完成替代后的剩余 Qt 范围和三方库建议。 |
+| v8 | 2026-10-26 11:36 CST | 补充 libmagic MIME 调研及其与 QMimeDatabase 的替代边界。 |
+| v9 | 2026-10-26 11:40 CST | 补充 WebView2 资源响应中的 MIME 作用及 libmagic 的边界。 |
+| v10 | 2026-10-26 12:48 CST | 同步固定 MIME 扩展名 helper 已实施，明确暂不引入 libmagic。 |

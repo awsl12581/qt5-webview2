@@ -6,11 +6,11 @@
 #include "internal/Application.h"
 #include "internal/Diagnostics.h"
 #include "internal/HttpStatus.h"
+#include "internal/MimeType.h"
 #include "internal/ResourceMapping.h"
 
 #include <QFile>
 #include <QFileInfo>
-#include <QMimeDatabase>
 #include <QRegularExpression>
 #include <algorithm>
 #include <cstdint>
@@ -90,7 +90,7 @@
                                               userInfo:@{ NSLocalizedDescriptionKey : [NSString stringWithUTF8String:errorText.c_str()] }]];
             return;
         }
-        mimeType = QMimeDatabase().mimeTypeForFile(QString::fromStdString(path)).name().toStdString();
+        mimeType = std::string(webview::mime::fromPath(path));
         totalSize = QFileInfo(QString::fromStdString(path)).size();
         offset = 0;
         length = totalSize;
