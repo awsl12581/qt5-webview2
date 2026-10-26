@@ -10,3 +10,9 @@
 [submodule "3rdparty/simdutf"]
 	path = 3rdparty/simdutf
 	url = https://github.com/simdutf/simdutf.git
+[submodule "3rdparty/glfw3"]
+	path = 3rdparty/glfw3
+	url = https://github.com/glfw/glfw.git
+[submodule "3rdparty/sdl3"]
+	path = 3rdparty/sdl3
+	url = https://github.com/libsdl-org/SDL.git
