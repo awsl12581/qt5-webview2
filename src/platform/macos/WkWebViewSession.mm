@@ -190,8 +190,14 @@
 {
     self = [super init];
     if (self)
-        cancelledTasks = [NSMutableSet set];
+        cancelledTasks = [[NSMutableSet alloc] init];
     return self;
+}
+
+- (void)dealloc
+{
+    [cancelledTasks release];
+    [super dealloc];
 }
 @end
 
