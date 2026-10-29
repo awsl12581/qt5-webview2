@@ -1,6 +1,10 @@
 set(SYSTEM_WEBVIEW_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 set(SYSTEM_WEBVIEW_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 option(SYSTEM_WEBVIEW_BUILD_SAMPLES "Build the System WebView samples." ON)
 option(SYSTEM_WEBVIEW_BUILD_QT_HOST "Build the Qt 5 host adapter target." OFF)
 option(SYSTEM_WEBVIEW_BUILD_GLFW_HOST "Build the GLFW 3 host adapter target." ON)

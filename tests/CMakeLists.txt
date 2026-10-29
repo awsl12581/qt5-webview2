@@ -30,7 +30,9 @@ if(APPLE)
     target_sources(webview_core_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/PathSecurity.cpp)
     target_link_libraries(webview_core_tests PRIVATE ${SECURITY_FRAMEWORK})
 elseif(WIN32)
-    target_sources(webview_core_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/windows/PathSecurity.cpp)
+    target_sources(webview_core_tests PRIVATE
+        WindowsResourceTests.cpp
+        ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/windows/PathSecurity.cpp)
     target_link_libraries(webview_core_tests PRIVATE bcrypt)
 endif()
 add_test(NAME webview_core_tests COMMAND webview_core_tests)
@@ -50,12 +52,10 @@ if(APPLE)
         system_webview gtest_main ${COCOA_FRAMEWORK} ${SECURITY_FRAMEWORK})
     add_test(NAME webview_macos_view_tests COMMAND webview_macos_view_tests)
 elseif(WIN32)
-    add_executable(webview_windows_contract_tests
-        WebView2ContractTests.cpp
-        ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/TextEncoding.cpp)
-    target_include_directories(webview_windows_contract_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src)
+    find_package(unofficial-webview2 CONFIG REQUIRED)
+    add_executable(webview_windows_contract_tests WebView2ContractTests.cpp)
     target_link_libraries(webview_windows_contract_tests PRIVATE
-        system_webview gtest_main simdutf::simdutf)
+        system_webview gtest_main)
     add_test(NAME webview_windows_contract_tests COMMAND webview_windows_contract_tests)
 
     add_executable(webview_windows_runtime_probe
@@ -63,6 +63,8 @@ elseif(WIN32)
         ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/TextEncoding.cpp)
     target_include_directories(webview_windows_runtime_probe PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src)
     target_link_libraries(webview_windows_runtime_probe PRIVATE
-        system_webview gtest_main simdutf::simdutf)
+        system_webview gtest_main simdutf::simdutf unofficial::webview2::webview2)
     add_test(NAME webview_windows_runtime_probe COMMAND webview_windows_runtime_probe)
+    set_tests_properties(webview_windows_contract_tests webview_windows_runtime_probe PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:system_webview>")
 endif()

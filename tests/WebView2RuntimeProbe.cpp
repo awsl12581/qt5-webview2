@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <gtest/gtest.h>
@@ -30,9 +31,9 @@ std::string runtimeVersion()
     return value.value_or("unavailable:invalid_utf16");
 }
 
-LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM, LPARAM)
+LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    return DefWindowProcW(window, message, 0, 0);
+    return DefWindowProcW(window, message, wParam, lParam);
 }
 
 HWND makeHostWindow()
@@ -46,7 +47,33 @@ HWND makeHostWindow()
         klass.lpszClassName = className;
         RegisterClassW(&klass);
     });
-    return CreateWindowExW(0, className, className, WS_OVERLAPPEDWINDOW, 0, 0, 640, 480, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    return CreateWindowExW(
+        0,
+        className,
+        className,
+        WS_OVERLAPPEDWINDOW,
+        0,
+        0,
+        640,
+        480,
+        nullptr,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+}
+
+HWND observedHost = nullptr;
+int childWindowUpdates = 0;
+
+LRESULT CALLBACK observeWindowUpdates(int code, WPARAM wParam, LPARAM lParam)
+{
+    if (code >= 0 && observedHost) {
+        const auto* message = reinterpret_cast<const CWPSTRUCT*>(lParam);
+        if (IsChild(observedHost, message->hwnd) && (message->message == WM_WINDOWPOSCHANGING || message->message == WM_SHOWWINDOW)) {
+            ++childWindowUpdates;
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 } // namespace
 
@@ -73,4 +100,56 @@ TEST(WebView2Runtime, VersionAndSessionLifecycle)
     ASSERT_TRUE(completionCalled);
     view.reset();
     DestroyWindow(window);
+}
+
+TEST(WebView2Runtime, RepeatedAttachmentDoesNotUpdateChildWindows)
+{
+    const auto version = runtimeVersion();
+    if (version.starts_with("unavailable:")) {
+        GTEST_SKIP() << version;
+    }
+    HWND window = makeHostWindow();
+    ASSERT_NE(window, nullptr);
+    auto session = webview::createWebViewSession({});
+    webview::WebViewHost host;
+    host.nativeHandle = window;
+    host.width = 640;
+    host.height = 480;
+    auto view = session->createWebView(std::move(host));
+    view->attachNativeView();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (view->initializationState() == webview::InitializationState::Initializing && std::chrono::steady_clock::now() < deadline) {
+        MSG message {};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 20, QS_ALLINPUT);
+    }
+    ASSERT_EQ(view->initializationState(), webview::InitializationState::Ready);
+    view->attachNativeView();
+    observedHost = window;
+    const auto hook = SetWindowsHookExW(WH_CALLWNDPROC, observeWindowUpdates, nullptr, GetCurrentThreadId());
+    ASSERT_NE(hook, nullptr);
+    childWindowUpdates = 0;
+    for (int repeat = 0; repeat != 20; ++repeat) {
+        view->attachNativeView();
+    }
+    const auto repeatedUpdates = childWindowUpdates;
+    SetWindowPos(window, nullptr, 0, 0, 800, 600, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    childWindowUpdates = 0;
+    view->attachNativeView();
+    const auto resizeUpdates = childWindowUpdates;
+    childWindowUpdates = 0;
+    view->attachNativeView();
+    const auto unchangedUpdates = childWindowUpdates;
+    UnhookWindowsHookEx(hook);
+    observedHost = nullptr;
+    view->close();
+    view.reset();
+    session.reset();
+    DestroyWindow(window);
+    EXPECT_EQ(repeatedUpdates, 0);
+    EXPECT_GT(resizeUpdates, 0);
+    EXPECT_EQ(unchangedUpdates, 0);
 }

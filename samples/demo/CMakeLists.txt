@@ -10,3 +10,4 @@ target_link_libraries(system_webview_qt5_demo PRIVATE system_webview::system_web
 if(WIN32)
     target_link_libraries(system_webview_qt5_demo PRIVATE dwmapi)
 endif()
+system_webview_deploy_sample_runtime(system_webview_qt5_demo)

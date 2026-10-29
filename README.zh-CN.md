@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-26 11:30 CST
-> 文档版本：v6
-> 修改说明：同步 nlohmann/json 接口、子模块及安装包依赖。
+> 最后修改时间：2026-10-29 19:07 CST
+> 文档版本：v9
+> 修改说明：补充 Windows 示例增量构建时的 DLL 更新行为。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
@@ -68,16 +68,29 @@ JSON 为 PUBLIC 头文件依赖：项目安装同时提供 JSON 头文件、CMak
 
 打开与目标架构一致的 MSVC 开发者命令行，然后配置、构建并运行测试：
 
+CMake 会为 MSVC 添加 `/utf-8`，按 UTF-8 解析源码和字符串字面量，避免受 Windows 本地代码页影响。
+
 ```powershell
 cmake --preset windows-msvc-amd64-debug
 cmake --build --preset windows-msvc-amd64-debug
 ctest --preset windows-msvc-amd64-debug --output-on-failure
 ```
 
-运行示例：
+临时验证使用独立目录，不执行安装：
 
 ```powershell
-.\build\windows-msvc-amd64-debug\samples\demo\system_webview_qt5_demo.exe
+cmake --preset windows-msvc-amd64-debug -B build/verify-windows-debug
+cmake --build build/verify-windows-debug
+ctest --test-dir build/verify-windows-debug --output-on-failure
+```
+
+Windows 示例构建后会把运行依赖 DLL 复制到可执行文件旁边，包括 `system_webview.dll` 和 WebView2 Loader。
+依赖 DLL 更新时，增量构建也会重新链接并部署示例，避免继续加载旧 DLL。
+默认启用 GLFW 和 SDL3 示例，运行其中一个：
+
+```powershell
+.\build\windows-msvc-amd64-debug\samples\glfw_demo\system_webview_glfw3_demo.exe
+.\build\windows-msvc-amd64-debug\samples\sdl3_demo\system_webview_sdl3_demo.exe
 ```
 
 vcpkg 提供 WebView2 SDK 和 Loader。目标电脑仍需安装与架构匹配的 Microsoft Edge WebView2 Evergreen Runtime。
@@ -185,5 +198,8 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | v4 | 2026-10-25 21:51 CST | 更新 C++20 要求，并补充独立验证 preset。 |
 | v5 | 2026-10-25 22:20 CST | 同步公开接口的 UTF-8 标准字符串和标准容器用法。 |
 | v6 | 2026-10-26 11:30 CST | 同步 nlohmann/json 接口、子模块及安装包依赖。 |
+| v7 | 2026-10-29 18:53 CST | 补充 MSVC UTF-8 编译设置和独立 Windows 构建验证命令。 |
+| v8 | 2026-10-29 18:59 CST | 说明 Windows 示例的运行依赖部署，并修正默认示例启动路径。 |
+| v9 | 2026-10-29 19:07 CST | 补充 Windows 示例增量构建时的 DLL 更新行为。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

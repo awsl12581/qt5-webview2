@@ -327,7 +327,7 @@ WebViewPtr WebView2Session::createWebView(WebViewHost host)
     };
     return std::unique_ptr<IWebView>(new WebView2View(
         hostView,
-        ownsHost,
+        true,
         std::move(environmentProvider),
         impl_->async->scheduler,
         impl_->policy,

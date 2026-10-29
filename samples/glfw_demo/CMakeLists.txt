@@ -4,3 +4,4 @@ add_executable(system_webview_glfw3_demo main.cpp)
 target_compile_definitions(system_webview_glfw3_demo PRIVATE
     SYSTEM_WEBVIEW_RESOURCE_DIR="${SYSTEM_WEBVIEW_RESOURCE_DIR}")
 target_link_libraries(system_webview_glfw3_demo PRIVATE system_webview_glfw_host)
+system_webview_deploy_sample_runtime(system_webview_glfw3_demo)

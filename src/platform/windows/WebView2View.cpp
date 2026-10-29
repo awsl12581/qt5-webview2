@@ -318,7 +318,7 @@ public:
             if (const auto owner = weak.lock()) {
                 owner->applyHostState();
             }
-        };
+        });
         sessionState->runWhenReady([weak = weak_from_this()](const InitializationResult& result) {
             const auto owner = weak.lock();
             if (!owner || owner->state->lifetime.isClosed()) {
@@ -1138,16 +1138,28 @@ public:
         if (!controller) {
             return;
         }
+        BOOL visible = FALSE;
+        const auto visibilityResult = controller->get_IsVisible(&visible);
         if (!attached) {
-            controller->put_IsVisible(FALSE);
+            if (FAILED(visibilityResult) || visible) {
+                controller->put_IsVisible(FALSE);
+            }
             return;
         }
         const HWND hwnd = static_cast<HWND>(container->nativeHandle());
         RECT bounds {};
         GetClientRect(hwnd, &bounds);
-        controller->put_ParentWindow(hwnd);
-        controller->put_Bounds(bounds);
-        controller->put_IsVisible(TRUE);
+        HWND currentParent = nullptr;
+        if (FAILED(controller->get_ParentWindow(&currentParent)) || currentParent != hwnd) {
+            controller->put_ParentWindow(hwnd);
+        }
+        RECT currentBounds {};
+        if (FAILED(controller->get_Bounds(&currentBounds)) || !EqualRect(&currentBounds, &bounds)) {
+            controller->put_Bounds(bounds);
+        }
+        if (FAILED(visibilityResult) || !visible) {
+            controller->put_IsVisible(TRUE);
+        }
     }
 
     void removeEvents()

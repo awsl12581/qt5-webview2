@@ -1,6 +1,7 @@
 #include "internal/Application.h"
 #include "internal/BridgePageScript.h"
 #include "internal/Diagnostics.h"
+#include "internal/FileResource.h"
 #include "internal/ResourceMapping.h"
 #include "internal/RandomToken.h"
 #include "internal/TextEncoding.h"
@@ -45,8 +46,8 @@ public:
         std::filesystem::remove_all(path_, error);
     }
 
-    std::string path() const { return path_.string(); }
-    std::string filePath(std::string_view name) const { return (path_ / std::filesystem::path(name)).string(); }
+    std::string path() const { return webview::pathToUtf8(path_); }
+    std::string filePath(std::string_view name) const { return webview::pathToUtf8(path_ / webview::pathFromUtf8(name)); }
     bool isValid() const { return !path_.empty(); }
 
 private:
@@ -55,7 +56,7 @@ private:
 
 bool writeFile(const std::string& path, std::string_view bytes, bool truncate = true)
 {
-    std::ofstream file(path, std::ios::binary | (truncate ? std::ios::trunc : std::ios::app));
+    std::ofstream file(webview::pathFromUtf8(path), std::ios::binary | (truncate ? std::ios::trunc : std::ios::app));
     return file && (file.write(bytes.data(), static_cast<std::streamsize>(bytes.size())), file.good());
 }
 
@@ -397,11 +398,11 @@ TEST(CoreBehavior, ExistingCoverage)
     EXPECT_TRUE(resources.open({ published.url, documentOrigin, "other-doc" }).status == 403);
     resources.release(published.token);
     EXPECT_TRUE(resources.open({ published.url, documentOrigin, "文档-1" }).status == 410);
-    EXPECT_TRUE(std::filesystem::exists(snapshotPath));
+    EXPECT_TRUE(std::filesystem::exists(webview::pathFromUtf8(snapshotPath)));
     rangeResponse.body.reset();
     rangeResponse.lease.reset();
-    EXPECT_TRUE(!std::filesystem::exists(snapshotPath));
-    EXPECT_TRUE(std::filesystem::exists(sourceFile));
+    EXPECT_TRUE(!std::filesystem::exists(webview::pathFromUtf8(snapshotPath)));
+    EXPECT_TRUE(std::filesystem::exists(webview::pathFromUtf8(sourceFile)));
 
     const auto emptyFile = files.filePath("empty.bin");
     EXPECT_TRUE(writeFile(emptyFile, {}));
@@ -637,17 +638,18 @@ TEST(CoreBehavior, ExistingCoverage)
     };
     std::string mappingError;
     EXPECT_TRUE(webview::validateResourceMappings(&mappings, &mappingError));
-    EXPECT_TRUE(mappings.front().localDirectory == std::filesystem::canonical(selectedRoot.path()).string());
+    EXPECT_TRUE(
+        mappings.front().localDirectory == webview::pathToUtf8(std::filesystem::canonical(webview::pathFromUtf8(selectedRoot.path()))));
     const auto* mapping = webview::findResourceMapping(mappings, webview::Url("app://demo/selected.txt"));
     EXPECT_TRUE(mapping);
     EXPECT_TRUE(
         webview::resolveMappedResource(*mapping, webview::Url("app://demo/selected.txt"), &mappingError)
-        == std::filesystem::canonical(selectedFile).string());
+        == webview::pathToUtf8(std::filesystem::canonical(webview::pathFromUtf8(selectedFile))));
     EXPECT_TRUE(webview::resolveMappedResource(*mapping, webview::Url("app://demo/%2e%2e/secret"), &mappingError).empty());
     EXPECT_TRUE(webview::resolveMappedResource(*mapping, webview::Url("app://demo/missing.txt"), &mappingError).empty());
     EXPECT_TRUE(
         webview::resolveMappedResource(*mapping, webview::Url("app://demo/orders/42"), &mappingError, true)
-        == std::filesystem::canonical(indexFile).string());
+        == webview::pathToUtf8(std::filesystem::canonical(webview::pathFromUtf8(indexFile))));
     EXPECT_TRUE(webview::resolveMappedResource(*mapping, webview::Url("app://demo/missing.js"), &mappingError, true).empty());
     const auto deniedNetworkPolicy = webview::localBundleContentSecurityPolicy(webview::ExternalNetworkAccess::Denied);
     EXPECT_TRUE(deniedNetworkPolicy.find("default-src 'self'") != std::string::npos);
@@ -689,7 +691,7 @@ TEST(CoreBehavior, ExistingCoverage)
         EXPECT_TRUE(unicodeMapping);
         EXPECT_TRUE(
             webview::resolveMappedResource(*unicodeMapping, route, &mappingError)
-            == std::filesystem::canonical(indexFile).string());
+            == webview::pathToUtf8(std::filesystem::canonical(webview::pathFromUtf8(indexFile))));
         webview::WebViewPolicyConfig unicodeConfig;
         unicodeConfig.allowedAppHosts.insert(origin.host());
         const webview::WebViewPolicy unicodePolicy(std::move(unicodeConfig));
@@ -726,7 +728,7 @@ TEST(CoreBehavior, ExistingCoverage)
     EXPECT_TRUE(writeFile(unicodeFile, {}));
     EXPECT_TRUE(
         webview::resolveMappedResource(*mapping, webview::Url("app://demo/数据.txt"), &mappingError)
-        == std::filesystem::canonical(unicodeFile).string());
+        == webview::pathToUtf8(std::filesystem::canonical(webview::pathFromUtf8(unicodeFile))));
     webview::WebApplicationOptions invalidNetworkAccess;
     invalidNetworkAccess.id = "invalid-network-access";
     invalidNetworkAccess.source =
