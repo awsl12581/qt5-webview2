@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-10-26 20:23 CST
-> 文档版本：v25
-> 修改说明：同步公共头文件分组及内部后端合同隐藏边界。
+> 最后修改时间：2026-11-02 12:20 CST
+> 文档版本：v26
+> 修改说明：说明 Windows 跨来源 iframe 的资源过滤及 SDK、Runtime 要求。
 
 `system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
@@ -113,6 +113,8 @@ File selection and download destinations are host decisions. The backend request
 
 Local bundles default to `ExternalNetworkAccess::Denied`. The native resource handler adds a response-level Content Security Policy to local HTML. Connections and form targets are limited to the bundle origin; subresource directives retain `data:` or `blob:` only where local applications need them. Applications must explicitly choose `Allowed` to remove this host-provided policy. Top-level navigation remains a separate `WebViewPolicy` decision. Development and remote pages own their server response headers and do not use this local-bundle setting.
 
+On Windows, `app://*/*` resource filtering uses `ICoreWebView2_22::AddWebResourceRequestedFilterWithRequestSourceKinds` with `DOCUMENT`, which includes requests from cross-origin iframes. It does not enable worker request sources. The SDK must declare this interface (first stable SDK: `1.0.2365.46`), and the Runtime must implement it. If the interface or filter registration is unavailable, the view closes its controller and reports initialization failure with an instruction to update WebView2 Runtime. The backend does not fall back to the legacy filter, which misses iframe subresources. Resource mapping, path validation, and access policies still apply.
+
 Bridge authority belongs to the current committed main-frame document. The application must explicitly request bridge access and its origin must also be trusted by policy. Untrusted pages, pre-commit documents, cross-origin navigations, and an origin different from the committed page are rejected.
 
 On macOS, trusted pages send through `window.systemWebView.postMessage(message)`. The document-start transport attaches an unguessable token that native code rotates before each allowed main-frame navigation. The raw `window.webkit.messageHandlers.systemWebView` object is a backend detail: messages without the current token, including iframe calls and queued messages from an earlier same-origin document, are rejected.
@@ -195,3 +197,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v23 | 2026-10-26 18:47 CST | 同步核心脱 Qt、GoogleTest 测试迁移和原生平台测试边界。 |
 | v24 | 2026-10-26 19:28 CST | 同步 src/tests/samples CMake 子目录拆分，修正 Qt 日志和 Windows Qt 依赖描述。 |
 | v25 | 2026-10-26 20:23 CST | 同步公共头文件分组及内部后端合同隐藏边界。 |
+| v26 | 2026-11-02 12:20 CST | 说明 Windows 跨来源 iframe 的资源过滤及 SDK、Runtime 要求。 |

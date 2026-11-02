@@ -381,7 +381,19 @@ public:
                     const auto sessionModeForChildren = owner->sessionMode;
                     const auto profileRegistrarForChildren = owner->registerProfile;
                     const auto sessionCloseRegistrarForChildren = owner->registerSessionClose;
-                    webview->AddWebResourceRequestedFilter(L"app://*/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                    Microsoft::WRL::ComPtr<ICoreWebView2_22> resourceWebView;
+                    // The legacy filter misses subresources requested by cross-origin iframes.
+                    if (FAILED(webview.As(&resourceWebView))
+                        || FAILED(resourceWebView->AddWebResourceRequestedFilterWithRequestSourceKinds(
+                            L"app://*/*",
+                            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                            COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_DOCUMENT))) {
+                        controller->Close();
+                        controller.Reset();
+                        webview.Reset();
+                        state->failInitialization("WebView2 document resource filtering is unavailable; update WebView2 Runtime.");
+                        return S_OK;
+                    }
                     webview->add_WebResourceRequested(
                         Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
                             [state = state,

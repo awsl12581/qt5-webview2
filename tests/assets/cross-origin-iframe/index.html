@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Cross-origin iframe regression</title></head>
+<body>
+<script>
+window.addEventListener('message', event => {
+    const frame = document.getElementById('child');
+    if (event.origin === 'app://iframe-child' && event.source === frame.contentWindow) {
+        window.systemWebView.postMessage({version: 1, type: 'iframe-result', payload: event.data});
+    }
+});
+window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('child').src = 'app://iframe-child/';
+});
+</script>
+<iframe id="child"></iframe>
+</body>
+</html>

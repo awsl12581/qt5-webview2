@@ -1,8 +1,8 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
-> Last modified: 2026-09-24 18:29 CST
-> Document version: v4
-> Change: Added diagnostic logging and native runtime-failure behavior.
+> 最后修改时间：2026-11-02 12:20 CST
+> 文档版本：v5
+> 修改说明：记录跨来源 iframe 资源过滤要求和本机回归范围。
 
 > Snapshot date: 2026-08-16
 >
@@ -29,7 +29,7 @@ The two backends share the same public C++ API, but they do not have identical r
 | File selection | WK open-panel delegate | No supported host chooser interception in the SDK used by this project | macOS supports host-owned selection; Windows deliberately reports `FileSelection = Unsupported`. |
 | Ephemeral profile | `WKWebsiteDataStore nonPersistentDataStore` | InPrivate controller options through `ICoreWebView2Environment10` | macOS is available immediately. Windows is Runtime-interface dependent and fails explicitly rather than silently using persistent storage. |
 | Persistent profile path | Public WKWebsiteDataStore APIs use the system default store; `profilePath` is not a physical storage placement guarantee | `profilePath` is the WebView2 user-data directory and is created/validated | Application code must not assume persistent data lives at the requested path on macOS. |
-| Resource mapping | `WKURLSchemeHandler` for `app://` | WebView2 custom-scheme registration plus `WebResourceRequested` | Both use the shared path-validation code. Windows resource loads are implemented but not GUI-E2E verified. |
+| Resource mapping | `WKURLSchemeHandler` for `app://` | Custom-scheme registration plus `ICoreWebView2_22` document-source filtering and `WebResourceRequested`; SDK `1.0.2365.46` or later | Both use the shared path-validation code. Runtime interface/filter failure explicitly fails view initialization. See the dated iframe verification below. |
 | Runtime failure | `webViewWebContentProcessDidTerminate:` | `ProcessFailed` plus environment browser-process-exit events | Both report typed failures and Critical diagnostics; Windows Runtime execution remains unverified. |
 
 ## Capability Matrix
@@ -63,6 +63,18 @@ The two backends share the same public C++ API, but they do not have identical r
 | Diagnostics | Qt logging categories emit stable event codes and redacted origins | Same common categories, plus HRESULT and WebView2 process-kind values | The host owns filtering, persistence, rotation, and upload on both platforms. |
 
 ## Windows Evidence Timeline
+
+### Cross-origin iframe regression, 2026-11-02
+
+`WebView2Runtime.CrossOriginIframeLoadsExternalScriptAndStylesheet` runs a native HWND-backed WebView2 on Windows x64. It opens `app://iframe-main/index.html`, embeds `app://iframe-child/`, and checks an external module script's execution receipt and the external stylesheet's computed color (`rgb(12, 34, 56)`). The child reports through `postMessage`; the parent checks its source and origin before forwarding through the validated native bridge. The parent explicitly allows external subresources to permit the cross-origin iframe; the child keeps the default local-bundle CSP and has no native bridge access.
+
+This test passed on WebView2 Runtime `156.0.4314.58` with MSVC `19.44.35229.0`, CMake `4.1.2`, Ninja, Debug, and `x64-windows`. Existing path and resource-origin tests remain in `webview_core_tests`. This evidence covers the library fixture, not the easy-project plugins. An older Runtime without `ICoreWebView2_22` was not available for execution; the implementation checks the interface and filter-registration HRESULT instead of assuming support from a version string.
+
+Microsoft lists `1.0.2365.46` as the first stable SDK for [ICoreWebView2_22](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_22). A numeric minimum Runtime version was not independently verified here; the required Runtime contract is successful interface acquisition and document-filter registration.
+
+With the legacy filter restored temporarily, the same regression timed out waiting for the child script result. Restoring document-source filtering made all three CTest executables pass.
+
+### Earlier evidence
 
 | Time (UTC+08:00) | Change or observation | Scope and status |
 | --- | --- | --- |
@@ -122,3 +134,4 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 | v2 | 2026-09-24 04:37 CEST | Added standard metadata and version history. |
 | v3 | 2026-09-24 17:57 CST | Updated public API names without changing the recorded platform evidence. |
 | v4 | 2026-09-24 18:29 CST | Added diagnostic categories, runtime-failure callbacks, and dump ownership. |
+| v5 | 2026-11-02 12:20 CST | Recorded cross-origin iframe filtering requirements and local runtime regression scope. |

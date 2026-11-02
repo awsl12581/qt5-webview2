@@ -5,10 +5,13 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <format>
 #include <gtest/gtest.h>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -76,6 +79,66 @@ LRESULT CALLBACK observeWindowUpdates(int code, WPARAM wParam, LPARAM lParam)
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
 } // namespace
+
+TEST(WebView2Runtime, CrossOriginIframeLoadsExternalScriptAndStylesheet)
+{
+    const auto version = runtimeVersion();
+    SCOPED_TRACE(version);
+    ASSERT_FALSE(version.starts_with("unavailable:"));
+    const auto window = makeHostWindow();
+    ASSERT_NE(window, nullptr);
+    const auto windowGuard = std::unique_ptr<std::remove_pointer_t<HWND>, decltype(&DestroyWindow)>(window, DestroyWindow);
+
+    webview::WebViewPolicyConfig config;
+    config.allowedAppHosts = { "iframe-main", "iframe-child" };
+    config.pageToHostSchemas["iframe-result"] = { { { "script", webview::JsonType::String }, { "color", webview::JsonType::String } } };
+    auto session = webview::createWebViewSession({}, webview::createDefaultWebViewPolicy(std::move(config)));
+    ASSERT_TRUE(session);
+    const auto assets = (std::filesystem::path(__FILE__).parent_path() / "assets" / "cross-origin-iframe").generic_string();
+    webview::WebApplicationOptions mainOptions;
+    mainOptions.id = "iframe-main";
+    // The parent intentionally embeds a different local application origin.
+    mainOptions.source = webview::LocalBundle { assets, "index.html", false, webview::ExternalNetworkAccess::Allowed };
+    mainOptions.bridgeAccess = webview::BridgeAccess::Allowed;
+    const auto mainApplication = session->createApplication(std::move(mainOptions));
+    ASSERT_TRUE(mainApplication);
+    webview::WebApplicationOptions childOptions;
+    childOptions.id = "iframe-child";
+    childOptions.source = webview::LocalBundle { assets, "child.html" };
+    const auto childApplication = session->createApplication(std::move(childOptions));
+    ASSERT_TRUE(childApplication);
+
+    webview::WebViewHost host;
+    host.nativeHandle = window;
+    host.width = 640;
+    host.height = 480;
+    auto view = session->createWebView(std::move(host));
+    ASSERT_TRUE(view);
+    bool received = false;
+    webview::Json result;
+    view->bridge().setEventHandler("iframe-result", [&](const webview::Json& payload) {
+        result = payload;
+        received = true;
+    });
+    std::string initializationError;
+    view->whenInitialized([&](const webview::InitializationResult& initialized) { initializationError = initialized.error; });
+    view->open(mainApplication);
+    view->attachNativeView();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (!received && initializationError.empty() && std::chrono::steady_clock::now() < deadline) {
+        MSG message {};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 20, QS_ALLINPUT);
+    }
+    view->close();
+    EXPECT_TRUE(initializationError.empty()) << initializationError;
+    ASSERT_TRUE(received) << "No external iframe script result received";
+    EXPECT_EQ(result.at("script"), "external-script-loaded");
+    EXPECT_EQ(result.at("color"), "rgb(12, 34, 56)");
+}
 
 TEST(WebView2Runtime, VersionAndSessionLifecycle)
 {
