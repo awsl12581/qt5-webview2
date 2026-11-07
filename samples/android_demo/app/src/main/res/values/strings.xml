@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">System WebView</string>
+    <string name="back">后退</string>
+    <string name="reload">刷新</string>
+    <string name="status_ready">就绪</string>
+</resources>
