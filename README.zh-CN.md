@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-29 19:07 CST
-> 文档版本：v9
-> 修改说明：补充 Windows 示例增量构建时的 DLL 更新行为。
+> 最后修改时间：2026-11-06 13:18 CST
+> 文档版本：v10
+> 修改说明：增加 Android 后端与示例的构建方式和平台说明。
 
 一个在 Qt 5 C++ 应用中嵌入系统 WebView 的轻量库。
 
@@ -43,6 +43,7 @@ System WebView 用一套适合 Qt 的接口封装 Windows 上的 Microsoft WebVi
 | Windows AMD64 | Microsoft WebView2 | MSVC v143、Qt 5.15 | 需要 WebView2 Evergreen Runtime |
 | Windows ARM64 | Microsoft WebView2 | MSVC、Qt 5.15 | 使用 vcpkg 的 `arm64-windows` triplet |
 | macOS | WKWebView | Apple Clang、Qt 5.15 | 使用系统 WebKit 框架 |
+| Android | Android System WebView | NDK、Android Gradle Plugin、JDK 17+ | 通过 Java 宿主适配 + JNI；示例当前面向模拟器 x86_64 |
 
 目前不支持 Linux。WebKit2GTK 仅保留了接口映射设计，还没有实现。
 
@@ -126,6 +127,22 @@ ctest --preset macos-appleclang-verify --output-on-failure
 
 创建真实 WKWebView 的测试需要在已登录的图形桌面中运行，并且能够访问 WindowServer。
 
+## 在 Android 上构建示例
+
+Android 后端位于 `src/platform/android`，通过 Java 宿主适配器操作 `android.webkit.WebView`。示例工程在 `samples/android_demo`，复用同一份 `samples/demo/resources/demo.html`。
+
+需要 Android SDK Platform 36、NDK 28.2.13676358、CMake 3.31.6 和 JDK 17 及以上，并让 `ANDROID_HOME` 指向 SDK，或在 `samples/android_demo/local.properties` 中配置 `sdk.dir`。
+
+```powershell
+cd samples/android_demo
+.\gradlew.bat assembleDebug
+.\gradlew.bat installDebug
+```
+
+示例使用 `SessionMode::Persistent`，本地资源由 C++ 拦截并按 `app://<id>` 的既有策略校验；Android 实际加载的 `https://appassets.androidplatform.net/<id>/...` 只在后端边界出现。弹窗、文件选择、下载和相机/麦克风权限当前报告为 Unsupported。
+
+构建、运行、限制与验证记录见 [Android 示例指南](docs/guides/android-demo.md)。
+
 ## 接入项目
 
 创建会话，注册页面来源，再把视图挂载到 Qt 控件中：
@@ -185,6 +202,7 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 - [公开接口速查](docs/references/api-reference.md)
 - [架构与生命周期](docs/arch/architecture.md)
 - [平台行为矩阵](docs/references/platform-version-and-behavior-matrix.md)
+- [Android 示例指南](docs/guides/android-demo.md)
 - [架构决策记录](docs/adr/README.md)
 - [设计规格](docs/specs/)
 
@@ -201,5 +219,6 @@ target_link_libraries(my_app PRIVATE system_webview::system_webview)
 | v7 | 2026-10-29 18:53 CST | 补充 MSVC UTF-8 编译设置和独立 Windows 构建验证命令。 |
 | v8 | 2026-10-29 18:59 CST | 说明 Windows 示例的运行依赖部署，并修正默认示例启动路径。 |
 | v9 | 2026-10-29 19:07 CST | 补充 Windows 示例增量构建时的 DLL 更新行为。 |
+| v10 | 2026-11-06 13:18 CST | 增加 Android 后端与示例的构建方式和平台说明。 |
 
 平台行为矩阵会区分已经实现的代码与真实桌面环境中的运行证据。依赖 WKWebView 和 WebView2 的差异化能力前，建议先查看该文档。

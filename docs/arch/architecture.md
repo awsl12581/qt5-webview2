@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-11-02 12:20 CST
-> 文档版本：v26
-> 修改说明：说明 Windows 跨来源 iframe 的资源过滤及 SDK、Runtime 要求。
+> 最后修改时间：2026-11-06 13:18 CST
+> 文档版本：v27
+> 修改说明：记录 Android JNI 后端、Java 宿主适配、资源 origin 映射和事件顺序规范化。
 
 `system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
@@ -147,16 +147,44 @@ Crash dumps remain a process-level host responsibility. The library does not ins
 
 ## Backend mapping
 
-| Common concept | macOS WKWebView | Microsoft WebView2 | WebKit2GTK |
-| --- | --- | --- | --- |
-| Session/profile | `WKWebsiteDataStore` and configuration identity | `CoreWebView2Environment` and profile/user data folder | `WebKitWebsiteDataManager` and `WebKitWebContext` |
-| Ephemeral session | `nonPersistentDataStore` | InPrivate profile when supported | Ephemeral website data manager/context |
-| Lifecycle | `WKNavigationDelegate` | Navigation starting/source/content/completed events | policy decision, load-changed, and failure signals |
-| Popup | `WKUIDelegate` | `NewWindowRequested` | `create` signal |
-| Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source, top-level document token, and schema checks; no direct frame flag | script-message frame URI/origin checks |
-| Published resources | `WKURLSchemeHandler` and chunked file reads | `WebResourceRequested` and bounded `IStream` | not implemented |
+| Common concept | macOS WKWebView | Microsoft WebView2 | Android WebView | WebKit2GTK |
+| --- | --- | --- | --- | --- |
+| Session/profile | `WKWebsiteDataStore` and configuration identity | `CoreWebView2Environment` and profile/user data folder | `androidx.webkit` `Profile` when `MULTI_PROFILE` is available; otherwise the process-wide default profile | `WebKitWebsiteDataManager` and `WebKitWebContext` |
+| Ephemeral session | `nonPersistentDataStore` | InPrivate profile when supported | Named `Profile` per session; initialization fails without `MULTI_PROFILE` | Ephemeral website data manager/context |
+| Lifecycle | `WKNavigationDelegate` | Navigation starting/source/content/completed events | `WebViewClient` page callbacks; `Committed` is normalized before `Finished` | policy decision, load-changed, and failure signals |
+| Popup | `WKUIDelegate` | `NewWindowRequested` | Not implemented; multiple windows stay disabled | `create` signal |
+| Bridge | main-frame `WKScriptMessageHandler` plus origin checks | web-message source, top-level document token, and schema checks; no direct frame flag | `WebMessageListener` with main-frame, origin, document token, and schema checks | script-message frame URI/origin checks |
+| Published resources | `WKURLSchemeHandler` and chunked file reads | `WebResourceRequested` and bounded `IStream` | `shouldInterceptRequest` forwarded to native; response bytes are materialized in memory | not implemented |
 
-The macOS WKWebView and Windows WebView2 backends are implemented. WebKit2GTK remains a design mapping only. Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader or backend registry.
+The macOS WKWebView and Windows WebView2 backends are implemented. The Android backend targets `android.webkit.WebView` through
+a Java host adapter and JNI; it is currently built only by the Android sample project. WebKit2GTK remains a design mapping only.
+Backend selection is compile-time through CMake platform branches and preprocessor conditions; there is no runtime plugin loader
+or backend registry.
+
+### Android backend
+
+`android.webkit.WebView` is a Java view, so the Android backend cannot create its native view directly. `src/platform/android`
+implements `IWebViewSession` and `IWebView` and calls into a Java host adapter, `io.github.systemwebview.SystemWebViewHostView`.
+The adapter owns the real `WebView`, its clients, the web-message listener, and document-start script registration; the native
+backend owns policy, bridge validation, navigation state, and resource authorization. The Java classes ship with the Android
+application rather than the C++ library, so an Android consumer must provide that adapter package. The sample lives in
+`samples/android_demo`.
+
+Android has no process-wide data directory that can be assigned per session, and `WebViewHost::postToUi` is unused: every
+native entry point requires the Java main thread. Sessions and views created on another thread fail initialization with a
+typed error. `SessionMode::Ephemeral` requires the system WebView to report `MULTI_PROFILE`; otherwise view initialization
+fails instead of silently sharing persistent storage. `LocalBundle` still requires a real directory, so the sample extracts
+APK assets into the application files directory before registering the application.
+
+Because the asset loader needs an HTTPS origin, Android loads local bundles from
+`https://appassets.androidplatform.net/<application-id>/...` while the portable API keeps `app://<application-id>`. The backend
+maps both directions at one boundary: navigation policy, `committedUrl`, bridge origins, `findResourceMapping`, and
+`WebResourceManager::open` all observe `app://`. `shouldInterceptRequest` runs on a WebView IO thread, so the adapter posts the
+request to the main thread and waits for the native response; the native side resolves the path and returns status, MIME type,
+bytes, and any local-bundle Content Security Policy.
+
+Android delivers `onPageCommitVisible` after `onPageFinished` on some documents. To preserve the public event contract, the
+backend emits `Committed` immediately before `Finished` when commit visibility has not arrived yet.
 
 On Windows, the ARM64 and AMD64 CMake presets use vcpkg classic mode. Install the matching WebView2 package (`webview2:arm64-windows` or `webview2:x64-windows`) in the sibling vcpkg checkout before configuring the core library. Qt5 is needed only when the optional Qt host or Qt sample is enabled. The WebView2 package provides the SDK, import libraries, and `WebView2Loader.dll`. The Microsoft Edge WebView2 Evergreen Runtime is an operating-system/application prerequisite and is not installed by this library, the SDK package, or the Loader DLL.
 
@@ -198,3 +226,4 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v24 | 2026-10-26 19:28 CST | 同步 src/tests/samples CMake 子目录拆分，修正 Qt 日志和 Windows Qt 依赖描述。 |
 | v25 | 2026-10-26 20:23 CST | 同步公共头文件分组及内部后端合同隐藏边界。 |
 | v26 | 2026-11-02 12:20 CST | 说明 Windows 跨来源 iframe 的资源过滤及 SDK、Runtime 要求。 |
+| v27 | 2026-11-06 13:18 CST | 增加 Android JNI 后端、Java 宿主适配、资源 origin 映射和事件顺序规范化。 |

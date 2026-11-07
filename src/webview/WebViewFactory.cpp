@@ -5,6 +5,8 @@
 #include "platform/macos/WkWebViewSession.h"
 #elif defined(_WIN32)
 #include "platform/windows/WebView2Session.h"
+#elif defined(__ANDROID__)
+#include "platform/android/AndroidSession.h"
 #endif
 
 namespace webview
@@ -16,6 +18,8 @@ WebViewSessionPtr createWebViewSession(WebViewSessionOptions options, WebViewPol
     return std::make_unique<WkWebViewSession>(std::move(options), std::move(policy));
 #elif defined(_WIN32)
     return std::make_unique<WebView2Session>(std::move(options), std::move(policy));
+#elif defined(__ANDROID__)
+    return std::make_unique<AndroidSession>(std::move(options), std::move(policy));
 #else
     static_assert(false, "No system WebView backend is configured for this platform.");
 #endif

@@ -6,6 +6,8 @@
 #include <bcrypt.h>
 #elif defined(__APPLE__)
 #include <Security/SecRandom.h>
+#elif defined(__ANDROID__)
+#include <cstdio>
 #endif
 
 namespace webview
@@ -18,6 +20,11 @@ std::string randomToken128()
     success = BCryptGenRandom(nullptr, bytes.data(), static_cast<ULONG>(bytes.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
 #elif defined(__APPLE__)
     success = SecRandomCopyBytes(kSecRandomDefault, bytes.size(), bytes.data()) == errSecSuccess;
+#elif defined(__ANDROID__)
+    if (FILE* source = std::fopen("/dev/urandom", "rb")) {
+        success = std::fread(bytes.data(), 1, bytes.size(), source) == bytes.size();
+        std::fclose(source);
+    }
 #else
     success = false;
 #endif

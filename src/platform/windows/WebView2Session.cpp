@@ -366,7 +366,7 @@ bool WebView2Session::supports(WebViewCapability capability) const
         return false;
     }
     if (capability == WebViewCapability::PersistentProfile || capability == WebViewCapability::DownloadDefault
-        || capability == WebViewCapability::DownloadTarget) {
+        || capability == WebViewCapability::DownloadTarget || capability == WebViewCapability::NavigationHistory) {
         return true;
     }
     if (capability == WebViewCapability::PrivateProfile) {

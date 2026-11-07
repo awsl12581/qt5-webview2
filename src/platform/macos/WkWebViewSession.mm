@@ -370,6 +370,8 @@ bool WkWebViewSession::supports(WebViewCapability capability) const
     case WebViewCapability::Notifications:
     case WebViewCapability::Clipboard:
         return false;
+    case WebViewCapability::NavigationHistory:
+        return true;
     }
     return false;
 }

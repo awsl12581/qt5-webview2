@@ -1326,6 +1326,32 @@ void WebView2View::reload()
     }
 }
 
+bool WebView2View::canGoBack() const
+{
+    BOOL value = FALSE;
+    return impl_->webview && !impl_->state->lifetime.isClosed() && SUCCEEDED(impl_->webview->get_CanGoBack(&value)) && value != FALSE;
+}
+
+bool WebView2View::canGoForward() const
+{
+    BOOL value = FALSE;
+    return impl_->webview && !impl_->state->lifetime.isClosed() && SUCCEEDED(impl_->webview->get_CanGoForward(&value)) && value != FALSE;
+}
+
+void WebView2View::goBack()
+{
+    if (canGoBack()) {
+        impl_->webview->GoBack();
+    }
+}
+
+void WebView2View::goForward()
+{
+    if (canGoForward()) {
+        impl_->webview->GoForward();
+    }
+}
+
 void WebView2View::close()
 {
     if (impl_) {

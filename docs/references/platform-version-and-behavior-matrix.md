@@ -1,14 +1,16 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
-> 最后修改时间：2026-11-02 12:20 CST
-> 文档版本：v5
-> 修改说明：记录跨来源 iframe 资源过滤要求和本机回归范围。
+> 最后修改时间：2026-11-06 13:18 CST
+> 文档版本：v6
+> 修改说明：说明 Android 后端由示例指南单独记录，不在本矩阵范围内。
 
 > Snapshot date: 2026-08-16
 >
 > Source revision: `7259eee` (`test(windows): record non-UI regression evidence`)
 >
 > Scope: the public `IWebViewSession` / `IWebView` contract implemented by the macOS WKWebView and Windows WebView2 backends. This document distinguishes implemented code from evidence obtained from a real desktop Runtime.
+>
+> The Android backend is not covered by this matrix. Its baseline, capabilities, and emulator evidence are recorded in [the Android sample guide](../guides/android-demo.md).
 
 ## Read This First
 
@@ -135,3 +137,4 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 | v3 | 2026-09-24 17:57 CST | Updated public API names without changing the recorded platform evidence. |
 | v4 | 2026-09-24 18:29 CST | Added diagnostic categories, runtime-failure callbacks, and dump ownership. |
 | v5 | 2026-11-02 12:20 CST | Recorded cross-origin iframe filtering requirements and local runtime regression scope. |
+| v6 | 2026-11-06 13:18 CST | Pointed Android coverage to the sample guide instead of this matrix. |

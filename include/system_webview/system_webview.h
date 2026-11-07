@@ -224,7 +224,8 @@ enum class WebViewCapability : int
     Microphone,        ///< Microphone permission requests can be represented.
     Location,          ///< Geolocation permission requests can be represented.
     Notifications,     ///< Notification permission requests can be represented.
-    Clipboard          ///< Clipboard permission requests can be represented.
+    Clipboard,         ///< Clipboard permission requests can be represented.
+    NavigationHistory  ///< Back and forward history can be queried and driven.
 };
 
 enum class SessionMode : int
@@ -585,6 +586,15 @@ public:
     virtual void loadDocument(const std::string& html, const Url& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
+    /// Returns true when an earlier history entry is available. Backends that do
+    /// not expose history keep the default and report Unsupported.
+    virtual bool canGoBack() const { return false; }
+    /// Returns true when a later history entry is available.
+    virtual bool canGoForward() const { return false; }
+    /// Goes back one history entry; a no-op when canGoBack() is false.
+    virtual void goBack() {}
+    /// Goes forward one history entry; a no-op when canGoForward() is false.
+    virtual void goForward() {}
     /// Idempotently closes the native view and cancels pending callbacks.
     virtual void close() = 0;
     virtual bool isClosed() const = 0;

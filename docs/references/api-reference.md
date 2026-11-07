@@ -1,8 +1,8 @@
 # Public API quick reference / 公开接口速查
 
-> 最后修改时间：2026-10-26 21:05 CST
-> 文档版本：v19
-> 修改说明：明确桥接传输和资源响应类型属于库内部合同，不作为调用方接口。
+> 最后修改时间：2026-11-06 13:18 CST
+> 文档版本：v20
+> 修改说明：补充 IWebView 历史导航方法和 NavigationHistory 能力。
 
 公开接口全部声明在 `include/system_webview/system_webview.h`，使用方只需引入：
 
@@ -156,6 +156,10 @@ public:
     virtual void loadDocument(const std::string& html, const webview::Url& baseUrl = {}) = 0;
     virtual void stop() = 0;
     virtual void reload() = 0;
+    virtual bool canGoBack() const { return false; }
+    virtual bool canGoForward() const { return false; }
+    virtual void goBack() {}
+    virtual void goForward() {}
     virtual void close() = 0;
     virtual bool isClosed() const = 0;
     virtual WebViewBridge& bridge() = 0;
@@ -163,6 +167,8 @@ public:
     virtual void setHostCallbacks(WebViewHostCallbacks callbacks) = 0;
 };
 ```
+
+`canGoBack()`、`canGoForward()`、`goBack()` 和 `goForward()` 默认返回 `false` 或不执行操作。后端实现时通过 `WebViewCapability::NavigationHistory` 报告支持情况；macOS、Windows 和 Android 均已实现。
 
 推荐挂载顺序（Qt）：
 
@@ -482,7 +488,8 @@ enum class WebViewCapability : int {
     Microphone,
     Location,
     Notifications,
-    Clipboard
+    Clipboard,
+    NavigationHistory
 };
 ```
 
@@ -569,3 +576,4 @@ int main(int argc, char* argv[])
 | v17 | 2026-10-26 14:20 CST | 同步 WebViewHost popup 宿主交接接口，移除 Qt 宿主依赖说明。 |
 | v18 | 2026-10-26 14:49 CST | 说明 WebViewHost 动态刷新宿主句柄、尺寸和可见性。 |
 | v19 | 2026-10-26 21:05 CST | 明确桥接传输和资源响应类型属于库内部合同，不作为调用方接口。 |
+| v20 | 2026-11-06 13:18 CST | 补充 IWebView 历史导航方法和 NavigationHistory 能力。 |

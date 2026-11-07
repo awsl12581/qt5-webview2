@@ -703,6 +703,30 @@ void WkWebView::reload()
     }
 }
 
+bool WkWebView::canGoBack() const
+{
+    return !impl_->state->lifetime.isClosed() && impl_->view.canGoBack;
+}
+
+bool WkWebView::canGoForward() const
+{
+    return !impl_->state->lifetime.isClosed() && impl_->view.canGoForward;
+}
+
+void WkWebView::goBack()
+{
+    if (!impl_->state->lifetime.isClosed() && impl_->view.canGoBack) {
+        [impl_->view goBack];
+    }
+}
+
+void WkWebView::goForward()
+{
+    if (!impl_->state->lifetime.isClosed() && impl_->view.canGoForward) {
+        [impl_->view goForward];
+    }
+}
+
 void WkWebView::close()
 {
     if (impl_->state->lifetime.isClosed()) {

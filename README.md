@@ -2,9 +2,9 @@
 
 # System WebView
 
-> 最后修改时间：2026-10-26 20:12 CST
-> 文档版本：v7
-> 修改说明：Documented add_subdirectory integration, unified host options, and default SDL3/GLFW builds.
+> 最后修改时间：2026-11-06 13:18 CST
+> 文档版本：v8
+> 修改说明：Documented the Android backend, its sample project, and current limits.
 
 A small C++20 library for embedding the operating system's web view in a C++ application.
 
@@ -43,6 +43,7 @@ The demo also shows a frameless window whose title bar and controls live in the 
 | Windows AMD64 | Microsoft WebView2 | MSVC v143 | Requires the WebView2 Evergreen Runtime |
 | Windows ARM64 | Microsoft WebView2 | MSVC | Uses the `arm64-windows` vcpkg triplet |
 | macOS | WKWebView | Apple Clang | Uses the system WebKit framework |
+| Android | Android System WebView | NDK, Android Gradle Plugin, JDK 17+ | Java host adapter plus JNI; the sample targets emulator x86_64 |
 
 Linux is not implemented. WebKit2GTK is documented as a future mapping only.
 
@@ -123,6 +124,22 @@ ctest --preset macos-appleclang-verify --output-on-failure
 
 This preset writes to `build/verify-macos` and does not install artifacts.
 
+## Build the Android sample
+
+The Android backend lives in `src/platform/android` and drives `android.webkit.WebView` through a Java host adapter. The sample project is `samples/android_demo`; it reuses `samples/demo/resources/demo.html` instead of keeping a second copy.
+
+Install Android SDK Platform 36, NDK 28.2.13676358, CMake 3.31.6, and JDK 17 or later. Point `ANDROID_HOME` at the SDK, or set `sdk.dir` in `samples/android_demo/local.properties`.
+
+```powershell
+cd samples/android_demo
+.\gradlew.bat assembleDebug
+.\gradlew.bat installDebug
+```
+
+The sample uses `SessionMode::Persistent`. Local files are intercepted by C++ and validated against the existing `app://<id>` rules; the real `https://appassets.androidplatform.net/<id>/...` origin stays inside the backend. Popups, file selection, downloads, and camera/microphone permissions currently report Unsupported.
+
+See the [Android sample guide](docs/guides/android-demo.md) for build details, limits, and verification evidence.
+
 ## Use the library
 
 Create one session, register an application source, and attach a view to a Qt widget:
@@ -182,6 +199,7 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 - [Public API quick reference](docs/references/api-reference.md)
 - [Architecture and lifecycle](docs/arch/architecture.md)
 - [Platform behavior matrix](docs/references/platform-version-and-behavior-matrix.md)
+- [Android sample guide](docs/guides/android-demo.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Design specifications](docs/specs/)
 
@@ -196,5 +214,6 @@ Point `CMAKE_PREFIX_PATH` at the chosen install prefix when configuring the cons
 | v5 | 2026-10-25 22:20 CST | Updated examples for UTF-8 standard strings and standard containers in the public API. |
 | v6 | 2026-10-26 11:29 CST | Documented nlohmann/json API, submodules, and installed dependencies. |
 | v7 | 2026-10-26 20:12 CST | Documented add_subdirectory integration, unified host options, and default SDL3/GLFW builds. |
+| v8 | 2026-11-06 13:18 CST | Documented the Android backend, its sample project, and current limits. |
 
 The platform behavior matrix separates implemented code from desktop runtime evidence. Read it before relying on a capability that differs between WKWebView and WebView2.

@@ -30,6 +30,10 @@ public:
     void loadDocument(const std::string& html, const Url& baseUrl) override;
     void stop() override;
     void reload() override;
+    bool canGoBack() const override;
+    bool canGoForward() const override;
+    void goBack() override;
+    void goForward() override;
     void close() override;
     bool isClosed() const override;
     WebViewBridge& bridge() override;
