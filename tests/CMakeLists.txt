@@ -17,6 +17,7 @@ add_executable(webview_core_tests
     ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/JsonMessage.cpp
     ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/HostCompletion.cpp
     ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/ResourceMapping.cpp
+    ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/PathSecurity.cpp
     ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/WebViewPolicy.cpp
     ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/WebViewState.cpp)
 target_include_directories(webview_core_tests PRIVATE
@@ -27,13 +28,15 @@ target_compile_features(webview_core_tests PRIVATE cxx_std_20)
 target_link_libraries(webview_core_tests PRIVATE
     gtest_main nlohmann_json::nlohmann_json ada::ada utf8proc::utf8proc simdutf::simdutf)
 if(APPLE)
-    target_sources(webview_core_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/webview/PathSecurity.cpp)
+    target_sources(webview_core_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/macos/PathSecurity.cpp)
     target_link_libraries(webview_core_tests PRIVATE ${SECURITY_FRAMEWORK})
 elseif(WIN32)
     target_sources(webview_core_tests PRIVATE
         WindowsResourceTests.cpp
         ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/windows/PathSecurity.cpp)
     target_link_libraries(webview_core_tests PRIVATE bcrypt)
+elseif(ANDROID)
+    target_sources(webview_core_tests PRIVATE ${SYSTEM_WEBVIEW_SOURCE_DIR}/src/platform/android/PathSecurity.cpp)
 endif()
 add_test(NAME webview_core_tests COMMAND webview_core_tests)
 

@@ -1,4 +1,5 @@
 set(SYSTEM_WEBVIEW_WEBVIEW_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/PathSecurity.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TextEncoding.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Url.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Application.cpp

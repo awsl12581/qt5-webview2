@@ -8,6 +8,7 @@
 #include "webview/DocumentLifetime.h"
 #include "webview/HostCompletion.h"
 #include "webview/JsonMessage.h"
+#include "webview/PathSecurity.h"
 #include "webview/WebViewState.h"
 #include <system_webview/system_webview.h>
 
@@ -664,8 +665,20 @@ TEST(CoreBehavior, ExistingCoverage)
     std::error_code linkError;
     std::filesystem::create_symlink(outsideFile, linkedFile, linkError);
     if (!linkError && std::filesystem::is_symlink(linkedFile)) {
+        EXPECT_TRUE(webview::hasExternalFileLinkPortable(linkedFile));
+        EXPECT_TRUE(webview::hasExternalFileLink(linkedFile));
         EXPECT_TRUE(webview::resolveMappedResource(*mapping, webview::Url("app://demo/linked.txt"), &mappingError).empty());
     }
+    const auto hardLinkedFile = selectedRoot.filePath("hardlinked.txt");
+    std::error_code hardLinkError;
+    std::filesystem::create_hard_link(outsideFile, hardLinkedFile, hardLinkError);
+    ASSERT_FALSE(hardLinkError);
+    EXPECT_TRUE(webview::hasExternalFileLinkPortable(hardLinkedFile));
+    EXPECT_TRUE(webview::hasExternalFileLink(hardLinkedFile));
+    EXPECT_FALSE(webview::hasExternalFileLinkPortable(selectedFile));
+    EXPECT_FALSE(webview::hasExternalFileLink(selectedFile));
+    EXPECT_TRUE(webview::hasExternalFileLinkPortable(webview::pathFromUtf8(selectedRoot.path()) / "missing.txt"));
+    EXPECT_TRUE(webview::resolveMappedResource(*mapping, webview::Url("app://demo/hardlinked.txt"), &mappingError).empty());
 
     std::vector<webview::ResourceMapping> duplicateMappings { { webview::Url("app://demo"), selectedRoot.path() },
                                                               { webview::Url("APP://DEMO"), selectedRoot.path() } };

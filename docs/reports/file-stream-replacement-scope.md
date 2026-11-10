@@ -1,8 +1,8 @@
 # 文件与流替代范围调研
 
-> 最后修改时间：2026-10-26 12:55 CST
-> 文档版本：v2
-> 修改说明：完成生产代码中的 Qt 文件/流替代，并记录 macOS 构建与测试结果。
+> 最后修改时间：2026-11-10 10:20 CST
+> 文档版本：v4
+> 修改说明：说明链接检查的通用规则与各平台入口文件的分工。
 
 ## 结论
 
@@ -32,7 +32,7 @@
 
 `std::filesystem::path`、`exists`、`is_regular_file`、`is_directory`、`file_size`、`absolute` 和 `weakly_canonical` 可以覆盖大部分 `QFileInfo`、`QDir` 的基本查询。路径应保持为 `std::filesystem::path`，不要在内部先转换成窄字符串再依赖本地编码；Windows 到系统 API 时使用 `path::native()` 或直接构造宽字符路径。
 
-路径映射必须继续执行 URL 解码、规范化、根目录边界检查、目录拒绝和文件类型检查。`canonical`/`weakly_canonical` 只能提供路径解析结果，不能单独解决并发替换、硬链接、symlink 或 Windows reparse point；这些场景仍需 [PathSecurity.cpp](../../src/webview/PathSecurity.cpp) 的平台实现和回归测试。
+路径映射必须继续执行 URL 解码、规范化、根目录边界检查、目录拒绝和文件类型检查。`canonical`/`weakly_canonical` 只能提供路径解析结果，不能单独解决并发替换、硬链接、symlink 或 Windows reparse point；通用规则（symlink、硬链接、非普通文件、状态不可读）集中在 [PathSecurity.cpp](../../src/webview/PathSecurity.cpp)，各平台在自己的入口文件中组合这些规则：macOS 与 Android 直接复用，Windows 另外拒绝 reparse point 和打开失败。并发替换仍需调用方在使用前完成检查。
 
 ### 普通二进制文件读写
 
@@ -88,7 +88,7 @@ Range 头解析属于协议逻辑，不应由文件库隐式处理。继续限�
 ## 推荐迁移顺序
 
 1. 先从公共头文件移除 `QIODevice`，定义项目 reader/响应所有权契约；同时保留当前 Range、lease 和错误状态。
-2. 把 `ResourceMapping`、`WebViewPolicy`、`Application` 和 `HostCompletion` 的基本路径查询迁移到 `std::filesystem`，将 reparse point、symlink、硬链接和并发替换检查留在平台 PathSecurity helper。
+2. 把 `ResourceMapping`、`WebViewPolicy`、`Application` 和 `HostCompletion` 的基本路径查询迁移到 `std::filesystem`，将 reparse point、symlink、硬链接和并发替换检查留在 PathSecurity helper。
 3. 重写 `SnapshotStore` 的临时目录、原子提交、删除重试和容量统计，不要先把整个文件读入内存。
 4. 迁移 Windows `IStream` 和 macOS scheme handler，验证 Unicode 路径、64 位范围、短读、EOF、取消和租约生命周期。
 5. 最后迁移测试/示例的临时文件和 HTTP server，再从 [CMakeLists.txt](../../CMakeLists.txt) 移除 Qt 文件/网络组件中仅由这些目标使用的依赖。
@@ -109,3 +109,5 @@ Range 头解析属于协议逻辑，不应由文件库隐式处理。继续限�
 | --- | --- | --- |
 | v1 | 2026-10-26 12:48 CST | 审计 Qt 文件、目录、临时文件和流的实际使用，提出 C++20 与平台原生替代方案。 |
 | v2 | 2026-10-26 12:55 CST | 完成生产代码中的 Qt 文件/流替代，并记录 macOS 构建与测试结果。 |
+| v3 | 2026-11-10 10:01 CST | 按当前实现更新 PathSecurity 通用实现与 Windows 平台实现的职责描述。 |
+| v4 | 2026-11-10 10:20 CST | 说明链接检查的通用规则与各平台入口文件的分工。 |

@@ -6,6 +6,12 @@ namespace webview
 {
 bool hasExternalFileLink(const std::filesystem::path& path)
 {
+    if (hasExternalFileLinkPortable(path)) {
+        return true;
+    }
+    // The portable check only reports name-surrogate reparse points as symlinks. Opening with
+    // FILE_FLAG_OPEN_REPARSE_POINT and inspecting the attribute also rejects cloud placeholders,
+    // deduplicated files, and other reparse tags, and fails closed when the path cannot be opened.
     const auto handle = CreateFileW(
         path.c_str(),
         0,
@@ -17,11 +23,8 @@ bool hasExternalFileLink(const std::filesystem::path& path)
     if (handle == INVALID_HANDLE_VALUE) {
         return true;
     }
-    FILE_STANDARD_INFO information {};
-    const auto success = GetFileInformationByHandleEx(handle, FileStandardInfo, &information, sizeof(information)) != FALSE;
     const auto attributes = GetFileAttributesW(path.c_str());
     CloseHandle(handle);
-    return !success || attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
-           || information.NumberOfLinks > 1;
+    return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 }
 } // namespace webview

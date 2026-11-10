@@ -1,8 +1,8 @@
 # macOS and Windows Platform Version and Behavior Matrix
 
-> 最后修改时间：2026-11-06 13:18 CST
-> 文档版本：v6
-> 修改说明：说明 Android 后端由示例指南单独记录，不在本矩阵范围内。
+> 最后修改时间：2026-11-10 10:20 CST
+> 文档版本：v9
+> 修改说明：说明各平台各自拥有文件链接检查入口，macOS 与 Android 复用通用规则，Windows 追加 reparse 检测。
 
 > Snapshot date: 2026-08-16
 >
@@ -31,7 +31,7 @@ The two backends share the same public C++ API, but they do not have identical r
 | File selection | WK open-panel delegate | No supported host chooser interception in the SDK used by this project | macOS supports host-owned selection; Windows deliberately reports `FileSelection = Unsupported`. |
 | Ephemeral profile | `WKWebsiteDataStore nonPersistentDataStore` | InPrivate controller options through `ICoreWebView2Environment10` | macOS is available immediately. Windows is Runtime-interface dependent and fails explicitly rather than silently using persistent storage. |
 | Persistent profile path | Public WKWebsiteDataStore APIs use the system default store; `profilePath` is not a physical storage placement guarantee | `profilePath` is the WebView2 user-data directory and is created/validated | Application code must not assume persistent data lives at the requested path on macOS. |
-| Resource mapping | `WKURLSchemeHandler` for `app://` | Custom-scheme registration plus `ICoreWebView2_22` document-source filtering and `WebResourceRequested`; SDK `1.0.2365.46` or later | Both use the shared path-validation code. Runtime interface/filter failure explicitly fails view initialization. See the dated iframe verification below. |
+| Resource mapping | `WKURLSchemeHandler` for `app://` | Custom-scheme registration plus `ICoreWebView2_22` document-source filtering and `WebResourceRequested`; SDK `1.0.2365.46` or later | Both use the shared path-validation code. Link rejection starts from `hasExternalFileLinkPortable` in `src/webview/PathSecurity.cpp`; each platform owns the `hasExternalFileLink` entry point, where macOS and Android delegate to those rules and Windows adds reparse-tag detection and fail-closed open handling. Runtime interface/filter failure explicitly fails view initialization. See the dated iframe verification below. |
 | Runtime failure | `webViewWebContentProcessDidTerminate:` | `ProcessFailed` plus environment browser-process-exit events | Both report typed failures and Critical diagnostics; Windows Runtime execution remains unverified. |
 
 ## Capability Matrix
@@ -138,3 +138,6 @@ The runtime probe has a session-close preflight. It reported that a retained vie
 | v4 | 2026-09-24 18:29 CST | Added diagnostic categories, runtime-failure callbacks, and dump ownership. |
 | v5 | 2026-11-02 12:20 CST | Recorded cross-origin iframe filtering requirements and local runtime regression scope. |
 | v6 | 2026-11-06 13:18 CST | Pointed Android coverage to the sample guide instead of this matrix. |
+| v7 | 2026-11-10 10:10 CST | Split link rejection by build platform in the resource-mapping row. |
+| v8 | 2026-11-10 10:16 CST | Recorded that link rejection starts from the portable check and Windows only adds reparse and open-failure handling. |
+| v9 | 2026-11-10 10:20 CST | Recorded that each platform owns the link-check entry point; macOS and Android delegate, Windows adds reparse handling. |

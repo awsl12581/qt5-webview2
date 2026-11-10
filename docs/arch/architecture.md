@@ -1,8 +1,8 @@
 # System WebView Architecture
 
-> 最后修改时间：2026-11-06 13:18 CST
-> 文档版本：v27
-> 修改说明：记录 Android JNI 后端、Java 宿主适配、资源 origin 映射和事件顺序规范化。
+> 最后修改时间：2026-11-10 10:20 CST
+> 文档版本：v30
+> 修改说明：明确每个平台各自拥有文件链接检查入口，通用规则由 webview 提供，平台文件只做增量。
 
 `system_webview_qt5_demo | system_webview_glfw3_demo | system_webview_sdl3_demo -> webview platform backend -> portable webview contract`
 
@@ -28,6 +28,17 @@ pending-request keys, and resource metadata in UTF-8 standard strings. Bridge an
 `std::unordered_map` and `std::unordered_set`; snapshot copying uses `std::vector<char>`, and resource expiry
 uses `std::chrono::system_clock`. Private lifecycle and diagnostic counters use fixed-width standard integers.
 Native file-link checks accept `std::filesystem::path`, preserving Windows UTF-16 paths.
+Platform differences are selected at build time rather than through virtual dispatch: `src/platform/CMakeLists.txt`
+gives each supported platform the sources it compiles, and an unsupported platform fails configuration instead of
+degrading at runtime. `src/webview/PathSecurity.cpp` defines only `hasExternalFileLinkPortable`, which rejects
+symlinks, hard-linked files, non-regular files, and unreadable paths. Every platform owns the `hasExternalFileLink`
+entry point in its own source file: `src/platform/macos/PathSecurity.cpp` and
+`src/platform/android/PathSecurity.cpp` delegate to the portable rules because both file systems already express
+links through `lstat` and `st_nlink`, while `src/platform/windows/PathSecurity.cpp` adds reparse-tag detection and
+fail-closed handling of native open failures on top of the same portable check. The entry point therefore has
+exactly one definition per build, and a platform that forgets it fails at link time instead of inheriting a silent
+fallback. Virtual interfaces are reserved for stateful backends that need substitution or test doubles, such as
+`IWebViewSession`; stateless queries stay as plain functions so that per-request calls avoid indirect dispatch.
 Both platform backends retain their application lists in `std::vector` and use fixed-width standard integers
 for navigation and resource byte counts. Resource paths and MIME text use UTF-8 standard strings. The macOS
 resource reader uses `std::vector<char>`; bridge script text uses standard strings before conversion to
@@ -227,3 +238,6 @@ The session API is a source-breaking replacement. Remove calls to old session fa
 | v25 | 2026-10-26 20:23 CST | 同步公共头文件分组及内部后端合同隐藏边界。 |
 | v26 | 2026-11-02 12:20 CST | 说明 Windows 跨来源 iframe 的资源过滤及 SDK、Runtime 要求。 |
 | v27 | 2026-11-06 13:18 CST | 增加 Android JNI 后端、Java 宿主适配、资源 origin 映射和事件顺序规范化。 |
+| v28 | 2026-11-10 10:07 CST | 记录平台差异采用编译期源文件替代而非虚函数分派，以及文件链接检查的分层职责。 |
+| v29 | 2026-11-10 10:16 CST | 说明文件链接检查的通用实现与平台入口的分层，Windows 在通用检查之上补充 reparse 检测而不重复硬链接规则。 |
+| v30 | 2026-11-10 10:20 CST | 明确每个平台各自拥有文件链接检查入口，通用规则由 webview 提供，平台文件只做增量。 |
